@@ -98,14 +98,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={onOpenTeacherDashboard}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-400/20 text-amber-200 border border-amber-400/40 hover:bg-amber-400/30 transition-colors"
-              >
-                تبديل إلى لوحة المعلم
-              </button>
+              {currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' && (
+                <button
+                  onClick={onOpenTeacherDashboard}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-400/20 text-amber-200 border border-amber-400/40 hover:bg-amber-400/30 transition-colors cursor-pointer"
+                >
+                  لوحة التحكم (Admin)
+                </button>
+              )}
 
               <div className="px-3.5 py-2 rounded-xl bg-white/10 text-xs font-mono flex items-center gap-2">
+
                 <Award className="w-4 h-4 text-amber-300" />
                 <span>الدرجة التراكمية: 96%</span>
               </div>

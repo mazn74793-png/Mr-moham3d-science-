@@ -56,6 +56,7 @@ export interface CloudinaryConfig {
 export interface UserProfile {
   id: string;
   name: string;
+  email?: string;
   role: 'student' | 'teacher';
   grade?: GradeLevel;
   phone: string;
@@ -63,3 +64,4 @@ export interface UserProfile {
   avatarUrl?: string;
   score?: number;
 }
+

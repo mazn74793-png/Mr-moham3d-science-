@@ -9,7 +9,9 @@ export interface SiteConfig {
   bodyFont: 'Cairo' | 'Tajawal' | 'Almarai';
   primaryColor: string; // e.g. '#0d9488'
   googleClientId?: string;
+  adminEmails?: string[];
   phone1: string;
+
   phone2: string;
   whatsappNumber: string;
   facebookUrl: string;
@@ -40,7 +42,9 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   bodyFont: 'Cairo',
   primaryColor: '#0d9488',
   googleClientId: '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com',
+  adminEmails: ['mizoo2y2@gmail.com'],
   phone1: '0100 234 5678',
+
   phone2: '0111 987 6543',
   whatsappNumber: '201012345678',
   facebookUrl: 'https://facebook.com',

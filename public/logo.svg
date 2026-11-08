@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f766e" />
+      <stop offset="50%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#042f2e" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <linearGradient id="flaskLiquid" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0.6" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Rounded Squircle Badge Base -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="none" stroke="url(#goldGrad)" stroke-width="6" opacity="0.4" />
+
+  <!-- Chemistry Laboratory Flask Silhouette in Background -->
+  <g opacity="0.35" transform="translate(256, 260) scale(1.1) translate(-256, -260)">
+    <!-- Flask Neck & Lip -->
+    <rect x="232" y="90" width="48" height="20" rx="8" fill="#5eead4" />
+    <path d="M240 110 L240 180 L140 370 C125 398 145 430 178 430 L334 430 C367 430 387 398 372 370 L272 180 L272 110 Z" fill="url(#flaskLiquid)" stroke="#5eead4" stroke-width="8" stroke-linejoin="round" />
+    <!-- Liquid Surface Wave -->
+    <path d="M165 320 Q210 300 256 320 T347 320 L358 370 C345 410 320 420 256 420 C192 420 167 410 154 370 Z" fill="#0f766e" opacity="0.6" />
+    <!-- Floating Bubbles -->
+    <circle cx="230" cy="340" r="14" fill="#fef08a" opacity="0.8" />
+    <circle cx="280" cy="300" r="10" fill="#fef08a" opacity="0.7" />
+    <circle cx="250" cy="240" r="8" fill="#fef08a" opacity="0.9" />
+    <circle cx="240" cy="160" r="6" fill="#fef08a" opacity="0.8" />
+  </g>
+
+  <!-- Golden Orbit / Atom Ring -->
+  <ellipse cx="256" cy="270" rx="180" ry="70" fill="none" stroke="url(#goldGrad)" stroke-width="7" stroke-dasharray="16 8" transform="rotate(-25 256 270)" filter="url(#glow)" opacity="0.85" />
+  <circle cx="100" cy="200" r="12" fill="#fbbf24" filter="url(#glow)" />
+  <circle cx="410" cy="340" r="12" fill="#fbbf24" filter="url(#glow)" />
+
+  <!-- Foreground Elegant Monogram "م.م" (Mohamed Mostafa) -->
+  <text x="256" y="300" text-anchor="middle" font-family="'Reem Kufi', 'Cairo', 'Amiri', 'Arial', sans-serif" font-size="168" font-weight="900" fill="#ffffff" filter="url(#glow)" letter-spacing="-6">
+    م.م
+  </text>
+
+  <!-- Small Subtitle "كيمياء 2026" in Gold -->
+  <rect x="160" y="380" width="192" height="44" rx="22" fill="#042f2e" stroke="#f59e0b" stroke-width="3" />
+  <text x="256" y="410" text-anchor="middle" font-family="'Cairo', sans-serif" font-size="22" font-weight="800" fill="#fbbf24">
+    قيصر الكيمياء ⚗️
+  </text>
+</svg>

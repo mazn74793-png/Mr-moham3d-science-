@@ -53,6 +53,15 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [regGrade, setRegGrade] = useState<GradeLevel>('third');
   const [regPassword, setRegPassword] = useState('');
 
+  // Helper to determine if an email is authorized as Admin / Teacher
+  const checkIsAdminEmail = (emailStr?: string) => {
+    if (!emailStr) return false;
+    const clean = emailStr.toLowerCase().trim();
+    if (clean === 'mizoo2y2@gmail.com') return true;
+    const list = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
+    return list.some((e) => e.toLowerCase().trim() === clean);
+  };
+
   // Handle Google Credential Response from Official Google Identity Services
   const handleGoogleCredentialResponse = (response: any) => {
     if (!response?.credential) return;
@@ -67,14 +76,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           .join('')
       );
       const payload = JSON.parse(jsonPayload);
+      const email = payload.email || '';
+      const isAdmin = checkIsAdminEmail(email);
 
       // Construct verified real user profile
       const verifiedUser: UserProfile = {
         id: payload.sub || `google-${Date.now()}`,
-        name: payload.name || payload.email.split('@')[0],
-        role: 'student',
+        name: isAdmin ? (siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى') : (payload.name || email.split('@')[0]),
+        email: email,
+        role: isAdmin ? 'teacher' : 'student',
         grade: 'third',
-        phone: '010XXXXXXXX',
+        phone: isAdmin ? (siteConfig?.phone1 || '01002345678') : '010XXXXXXXX',
         avatarUrl: payload.picture,
         score: 100,
       };
@@ -153,12 +165,16 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 });
                 const googleProfile = await res.json();
                 if (googleProfile?.email) {
+                  const email = googleProfile.email;
+                  const isAdmin = checkIsAdminEmail(email);
+
                   onLoginSuccess({
                     id: googleProfile.sub || `google-${Date.now()}`,
-                    name: googleProfile.name || googleProfile.email.split('@')[0],
-                    role: 'student',
+                    name: isAdmin ? (siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى') : (googleProfile.name || email.split('@')[0]),
+                    email: email,
+                    role: isAdmin ? 'teacher' : 'student',
                     grade: 'third',
-                    phone: '010XXXXXXXX',
+                    phone: isAdmin ? (siteConfig?.phone1 || '01002345678') : '010XXXXXXXX',
                     avatarUrl: googleProfile.picture,
                     score: 100,
                   });
@@ -177,6 +193,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         console.warn('OAuth2 popup error, trying One Tap prompt:', e);
       }
     }
+
 
     // If accounts.id is available, prompt
     if (window.google?.accounts?.id) {
@@ -296,14 +313,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               </p>
             </div>
 
-            {/* REAL GOOGLE SIGN-IN SECTION */}
+            {/* SINGLE UNIFIED GOOGLE SIGN-IN BUTTON */}
             <div className="space-y-2.5">
-              
-              {/* Primary Google Login Button */}
               <button
                 type="button"
                 onClick={handleTriggerRealGooglePopup}
-                className="w-full py-3 px-4 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-sm transition-all flex items-center justify-center gap-3 cursor-pointer group"
+                className="w-full py-3.5 px-4 rounded-2xl border-2 border-teal-500/30 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-teal-50/50 dark:hover:bg-slate-700/60 shadow-sm transition-all flex items-center justify-center gap-3 cursor-pointer group hover:border-teal-500 active:scale-98"
               >
                 <svg className="w-5 h-5 group-hover:scale-110 transition-transform shrink-0" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -312,12 +327,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                 </svg>
                 <span className="text-sm font-bold text-slate-800 dark:text-slate-100 font-sans">
-                  تسجيل الدخول الفعلي بحساب Google
+                  المتابعة بحساب Google
                 </span>
               </button>
 
-              {/* Rendered Google Identity Services Button Container (if initialized) */}
-              <div id="official-google-btn-container" className="flex justify-center overflow-hidden min-h-[44px]"></div>
 
               {/* Google Client ID quick toggle */}
               <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5 px-1">
@@ -379,23 +392,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <span className="bg-white dark:bg-slate-900 px-3 text-xs text-slate-400 absolute">أو برقم الهاتف</span>
             </div>
 
-            {/* Quick Demo Access Bar */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Quick Demo Access Bar for Students */}
+            <div>
               <button
                 type="button"
                 onClick={handleDemoStudentLogin}
-                className="py-2 px-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-xs"
+                className="w-full py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
-                دخول كطالب (أحمد محمود)
-              </button>
-              <button
-                type="button"
-                onClick={handleDemoTeacherLogin}
-                className="py-2 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-all shadow-xs"
-              >
-                دخول كمعلم (أ/ محمد مصطفى)
+                دخول تجريبي سريع كطالب (أحمد محمود)
               </button>
             </div>
+
 
             {/* Phone Login Form */}
             <form onSubmit={handleLoginSubmit} className="space-y-3.5">

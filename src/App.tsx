@@ -3,9 +3,9 @@ import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
-import { VirtualLabSection } from './components/VirtualLabSection';
 import { StudentPortal } from './components/StudentPortal';
 import { TeacherDashboard } from './components/TeacherDashboard';
+
 import { AuthModals } from './components/AuthModals';
 import { SecretAdminCustomizerModal } from './components/SecretAdminCustomizerModal';
 import { Footer } from './components/Footer';
@@ -95,19 +95,36 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Strict route guard: Teacher Dashboard is invisible and inaccessible unless logged in as mizoo2y2@gmail.com
+  useEffect(() => {
+    if (currentView === 'teacher' && currentUser?.email?.toLowerCase().trim() !== 'mizoo2y2@gmail.com') {
+      setCurrentView('landing');
+    }
+  }, [currentView, currentUser]);
+
+
   const handleToggleTheme = () => {
     setDarkMode(prev => !prev);
   };
 
   const handleLoginSuccess = (user: UserProfile) => {
-    setCurrentUser(user);
-    if (user.role === 'teacher') {
+    const isAdmin = 
+      user.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' || 
+      user.role === 'teacher' || 
+      (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === user.email?.toLowerCase().trim());
+
+    const finalUser: UserProfile = isAdmin 
+      ? { ...user, role: 'teacher' } 
+      : user;
+
+    setCurrentUser(finalUser);
+    if (finalUser.role === 'teacher') {
       setCurrentView('teacher');
     } else {
-      // User requested: "لما اعمل تسجيل الدخول افتح المنصه للطلاب"
       setCurrentView('student');
     }
   };
+
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -181,7 +198,7 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
         currentUser={currentUser}
         onOpenLogin={() => setLoginModalOpen(true)}
-        onOpenRegister={() => setRegisterModalOpen(true)}
+        onOpenRegister={() => setLoginModalOpen(true)}
         onLogout={handleLogout}
         currentView={currentView}
         onNavigate={(view) => setCurrentView(view)}
@@ -195,9 +212,8 @@ export default function App() {
             {/* 1. Hero Section */}
             <HeroSection
               siteConfig={siteConfig}
-              onJoinNow={() => setRegisterModalOpen(true)}
+              onJoinNow={() => setLoginModalOpen(true)}
               onExploreLectures={() => handleScrollToSection('academic-years')}
-              onOpenLab={() => handleScrollToSection('virtual-lab')}
             />
 
             {/* 2. Features Section (4 modern cards) */}
@@ -210,9 +226,6 @@ export default function App() {
                 setCurrentView('student');
               }}
             />
-
-            {/* 4. Virtual Chemistry Lab Interactive Sandbox */}
-            <VirtualLabSection />
           </>
         )}
 
@@ -237,12 +250,14 @@ export default function App() {
             onDeleteAttachment={handleDeleteAttachment}
             cloudinaryConfig={cloudinaryConfig}
             onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
+            siteConfig={siteConfig}
+            onSaveSiteConfig={handleSaveSiteConfig}
             onBackToHome={() => setCurrentView('landing')}
             onOpenStudentPortal={() => setCurrentView('student')}
-            onOpenSecretAdmin={() => setSecretAdminOpen(true)}
           />
         )}
       </main>
+
 
       {/* Footer */}
       <Footer

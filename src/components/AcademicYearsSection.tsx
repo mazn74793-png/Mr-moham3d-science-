@@ -36,7 +36,8 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
           
           {/* 1. الصف الأول الثانوي */}
-          <div className="group rounded-3xl p-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-600 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between relative">
+          <div className="group rounded-3xl p-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-600 hover:shadow-2xl hover-card-lift transition-all duration-300 flex flex-col justify-between relative cursor-default">
+
             <div>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
@@ -92,7 +93,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
           </div>
 
           {/* 2. الصف الثاني الثانوي */}
-          <div className="group rounded-3xl p-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-600 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between relative">
+          <div className="group rounded-3xl p-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-600 hover:shadow-2xl hover-card-lift transition-all duration-300 flex flex-col justify-between relative cursor-default">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
@@ -139,7 +140,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
             <div className="space-y-2">
               <button
                 onClick={() => onSelectGrade('second')}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-2 cursor-pointer group-hover:bg-teal-600 group-hover:text-white"
               >
                 <span>دخول محاضرات تانية ثانوي</span>
                 <ArrowLeft className="w-4 h-4" />
@@ -148,7 +149,8 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
           </div>
 
           {/* 3. الصف الثالث الثانوي (Flagship / Highlighted) */}
-          <div className="group rounded-3xl p-7 bg-gradient-to-b from-teal-900 via-teal-950 to-slate-950 text-white border-2 border-teal-400/80 shadow-2xl shadow-teal-900/40 hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+          <div className="group rounded-3xl p-7 bg-gradient-to-b from-teal-900 via-teal-950 to-slate-950 text-white border-2 border-teal-400/80 shadow-2xl shadow-teal-900/40 hover-card-lift hover:scale-[1.03] transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-default">
+
             
             {/* Top Badge: الأكثر إقبالاً */}
             <div className="absolute top-0 left-0 bg-amber-400 text-slate-950 text-xs font-bold px-4 py-1 rounded-br-2xl font-mono shadow-sm">

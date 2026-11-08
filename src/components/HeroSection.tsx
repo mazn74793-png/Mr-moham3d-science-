@@ -1,19 +1,17 @@
 import React from 'react';
-import { ArrowLeft, Play, Sparkles, Award, FlaskConical } from 'lucide-react';
+import { ArrowLeft, Play, Sparkles, Award, Atom } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 
 interface HeroSectionProps {
   siteConfig: SiteConfig;
   onJoinNow: () => void;
   onExploreLectures: () => void;
-  onOpenLab: () => void;
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
   siteConfig,
   onJoinNow,
   onExploreLectures,
-  onOpenLab,
 }) => {
   // Determine calligraphy font class
   const getCalligraphyClass = () => {
@@ -26,33 +24,33 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   };
 
   return (
-    <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-20 bg-[#fafffb] dark:bg-slate-950 bg-molecules-pattern transition-colors w-full max-w-full">
-      {/* Contained ambient gradients without negative margins */}
-      <div className="absolute top-10 right-0 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 left-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+    <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24 bg-[#fafffb] dark:bg-slate-950 bg-molecules-pattern transition-colors w-full max-w-full">
+      {/* Contained ambient glowing auras with pulsing animation */}
+      <div className="absolute top-10 right-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none animate-glow-pulse" />
+      <div className="absolute bottom-10 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none animate-glow-pulse" style={{ animationDelay: '2s' }} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           
-          {/* Right Column (in RTL: Main text and CTAs) */}
-          <div className="lg:col-span-7 text-right space-y-6">
+          {/* Right Column (in RTL: Main text and CTAs) with smooth entrance animation */}
+          <div className="lg:col-span-7 text-right space-y-6 animate-fade-in-up">
             
             {/* Elegant Callout Tag */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300 text-xs sm:text-sm font-semibold shadow-xs">
-              <span className="flex h-2 w-2 rounded-full bg-teal-500"></span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-50/90 dark:bg-teal-950/70 border border-teal-200/80 dark:border-teal-800 text-teal-800 dark:text-teal-300 text-xs sm:text-sm font-semibold shadow-xs hover:scale-102 transition-transform">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-teal-500 animate-ping"></span>
               <span className="font-kufi">{siteConfig.heroBadge}</span>
-              <Sparkles className="w-4 h-4 text-amber-500" />
+              <Sparkles className="w-4 h-4 text-amber-500 animate-spin-once" />
             </div>
 
-            {/* Calligraphy Heading */}
+            {/* Calligraphy Heading with Gradient & Floating underline */}
             <div className="space-y-2">
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 dark:text-white leading-[1.25]">
                 <span>الأستاذ </span>
-                <span className={`${getCalligraphyClass()} text-teal-600 dark:text-teal-400 relative inline-block underline decoration-amber-400 decoration-wavy decoration-2 underline-offset-8`}>
+                <span className={`${getCalligraphyClass()} text-teal-600 dark:text-teal-400 relative inline-block underline decoration-amber-400 decoration-wavy decoration-2 underline-offset-8 transition-transform duration-300 hover:scale-105 inline-block cursor-default`}>
                   {siteConfig.teacherName}
                 </span>
               </h1>
-              <p className="font-ruqaa text-xl sm:text-2xl text-amber-600 dark:text-amber-400 pt-1 font-semibold">
+              <p className="font-ruqaa text-xl sm:text-2xl text-amber-600 dark:text-amber-400 pt-1 font-semibold leading-relaxed">
                 {siteConfig.tagline}
               </p>
             </div>
@@ -62,58 +60,51 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               {siteConfig.heroDescription}
             </p>
 
-            {/* Action Buttons */}
+            {/* Action Buttons with high-end micro-interactions */}
             <div className="pt-2 flex flex-wrap items-center gap-3.5 sm:gap-4">
               <button
                 onClick={onJoinNow}
-                className="group px-7 py-3.5 text-base sm:text-lg font-bold text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 rounded-2xl shadow-lg shadow-teal-700/25 active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+                className="group relative overflow-hidden px-8 py-4 text-base sm:text-lg font-bold text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 rounded-2xl shadow-xl shadow-teal-700/25 active:scale-95 transition-all duration-300 flex items-center gap-3 cursor-pointer hover:-translate-y-1"
               >
-                <span>+ انضم لينا الآن</span>
-                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                <div className="absolute inset-0 w-1/2 h-full bg-white/20 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
+                <span className="relative z-10">+ انضم لينا الآن</span>
+                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1.5 transition-transform duration-300 relative z-10" />
               </button>
 
               <button
                 onClick={onExploreLectures}
-                className="px-6 py-3.5 text-base font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
+                className="px-7 py-4 text-base font-bold text-slate-700 dark:text-slate-200 bg-white/90 dark:bg-slate-900/90 border-2 border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex items-center gap-2 cursor-pointer hover:-translate-y-1 active:scale-95"
               >
                 <Play className="w-4 h-4 text-teal-600 dark:text-teal-400 fill-teal-600 dark:fill-teal-400" />
                 <span>المحاضرات المتاحة</span>
               </button>
-
-              <button
-                onClick={onOpenLab}
-                className="px-4 py-3.5 text-sm font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40 rounded-2xl transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <FlaskConical className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                <span>المعمل الافتراضي</span>
-              </button>
             </div>
 
-            {/* Social Proof Stats Strip */}
-            <div className="pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-4 max-w-lg">
-              <div>
+            {/* Social Proof Stats Strip with Card Lift */}
+            <div className="pt-6 border-t border-slate-200/80 dark:border-slate-800 grid grid-cols-3 gap-4 max-w-lg">
+              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60 hover:-translate-y-1">
                 <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
                   14,800+
                 </div>
-                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
                   طالب متفوق في مصر
                 </div>
               </div>
 
-              <div>
+              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60 hover:-translate-y-1">
                 <div className="text-2xl sm:text-3xl font-extrabold text-teal-600 dark:text-teal-400 font-mono tabular-nums">
                   98.6%
                 </div>
-                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
                   نسبة تقفيل الكيمياء
                 </div>
               </div>
 
-              <div>
+              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60 hover:-translate-y-1">
                 <div className="text-2xl sm:text-3xl font-extrabold text-amber-500 font-mono tabular-nums">
                   15+ عاماً
                 </div>
-                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
                   خبرة ثانوية عامة
                 </div>
               </div>
@@ -121,46 +112,49 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
           </div>
 
-          {/* Left Column (in RTL: Stylish Profile Image Card - strictly contained within container) */}
-          <div className="lg:col-span-5 flex justify-center lg:justify-end">
-            <div className="relative w-full max-w-sm sm:max-w-md">
+          {/* Left Column (in RTL: TEACHER CUTOUT PHOTO WITHOUT SOLID FRAME - COMPLETELY TRANSPARENT AS REQUESTED) */}
+          <div className="lg:col-span-5 flex justify-center lg:justify-end animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <div className="relative w-full max-w-sm sm:max-w-md flex flex-col items-center">
               
-              {/* Orange-to-Amber Gradient Frame Card */}
-              <div className="relative rounded-3xl p-3 bg-gradient-to-tr from-amber-500 via-orange-500 to-amber-400 shadow-2xl shadow-orange-500/20 overflow-hidden">
-                <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-[3/4] flex items-end">
-                  
-                  {/* Image with fallback */}
-                  <img
-                    src={siteConfig.profileImageUrl || '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg'}
-                    alt={siteConfig.teacherName}
-                    className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-700"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.src = '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
-                    }}
-                  />
+              {/* Soft atmospheric radial glow behind the transparent cutout image */}
+              <div className="absolute inset-0 bg-gradient-to-t from-teal-500/25 via-teal-400/10 to-amber-400/10 rounded-full blur-3xl pointer-events-none animate-glow-pulse -z-10" />
 
-                  {/* Scrim gradient overlay for high contrast readability */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none" />
+              {/* Floating Orbit Atom Ring in the background */}
+              <div className="absolute -top-6 -right-6 w-20 h-20 text-teal-500/20 dark:text-teal-400/20 pointer-events-none animate-float-slow">
+                <Atom className="w-full h-full animate-orbit" />
+              </div>
 
-                  {/* Teacher Title Card Inside Frame */}
-                  <div className="relative z-10 p-5 text-right w-full">
-                    <div className="inline-block px-2.5 py-1 rounded-md bg-amber-400 text-slate-950 font-bold text-xs font-mono mb-1.5 shadow-sm">
-                      {siteConfig.heroBadge.split('·')[0]}
-                    </div>
-                    <h3 className="text-2xl font-bold text-white font-kufi">
+              {/* Pure Transparent Image Wrapper (Zero border, zero solid box) */}
+              <div className="relative w-full flex items-center justify-center group">
+                <img
+                  src={siteConfig.profileImageUrl || '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg'}
+                  alt={siteConfig.teacherName}
+                  className="w-full max-h-[500px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.src = '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
+                  }}
+                />
+
+                {/* Elegant Glass Floating Badge for the Teacher */}
+                <div className="absolute bottom-4 backdrop-blur-md bg-white/85 dark:bg-slate-900/85 border border-teal-200/60 dark:border-teal-700/50 rounded-2xl px-4 py-2 shadow-xl shadow-teal-900/10 flex items-center gap-3 transition-transform duration-300 group-hover:-translate-y-1">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm font-kufi shadow-xs">
+                    م.م
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-kufi">
                       أ/ {siteConfig.teacherName}
-                    </h3>
-                    <p className="text-xs text-amber-200 font-sans">
-                      كبير معلّمي الكيمياء للثانوية العامة ومدرب أوائل الجمهورية
-                    </p>
+                    </div>
+                    <div className="text-[10px] text-teal-600 dark:text-teal-400 font-sans">
+                      كبير معلمي الكيمياء للثانوية العامة
+                    </div>
                   </div>
                 </div>
 
-                {/* Contained Top badge */}
-                <div className="absolute top-5 right-5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border border-amber-300 dark:border-amber-700 rounded-xl px-3 py-1.5 shadow-md flex items-center gap-2">
-                  <Award className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-bold text-slate-900 dark:text-white font-kufi">أوائل الجمهورية</span>
+                {/* Floating Award pill on the top */}
+                <div className="absolute top-2 right-2 backdrop-blur-md bg-amber-400/90 text-slate-950 rounded-xl px-3 py-1 shadow-md flex items-center gap-1.5 text-xs font-bold font-kufi animate-float-reverse">
+                  <Award className="w-3.5 h-3.5 text-slate-950" />
+                  <span>مدرب أوائل 2026</span>
                 </div>
               </div>
 
