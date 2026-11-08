@@ -270,6 +270,8 @@ export default function App() {
           setRegisterModalOpen(false);
           setLoginModalOpen(true);
         }}
+        siteConfig={siteConfig}
+        onUpdateGoogleClientId={(id) => handleSaveSiteConfig({ ...siteConfig, googleClientId: id })}
       />
 
       {/* Secret Admin Master Customizer Modal (© symbol + PIN 2825) */}

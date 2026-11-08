@@ -290,6 +290,23 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                       className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
                     />
                   </div>
+
+                  <div className="p-4 rounded-2xl bg-teal-50/60 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 space-y-2">
+                    <label className="text-xs font-bold text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-teal-600" />
+                      <span>معرف عميل جوجل (Google OAuth Client ID) لتسجيل الدخول الفعلي:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.googleClientId || ''}
+                      onChange={(e) => handleFieldChange('googleClientId', e.target.value)}
+                      placeholder="xxxxxxxxxx.apps.googleusercontent.com"
+                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-left"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      الصق هنا الـ Client ID الذي أنشأته من Google Cloud Console لتفعيل نافذة اختيار حسابات جوجل الحقيقية فوراً لجميع الطلاب.
+                    </p>
+                  </div>
                 </div>
               )}
 

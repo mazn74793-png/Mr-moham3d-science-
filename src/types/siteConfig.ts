@@ -8,6 +8,7 @@ export interface SiteConfig {
   calligraphyFont: 'Reem Kufi' | 'Aref Ruqaa' | 'Amiri' | 'Cairo';
   bodyFont: 'Cairo' | 'Tajawal' | 'Almarai';
   primaryColor: string; // e.g. '#0d9488'
+  googleClientId?: string;
   phone1: string;
   phone2: string;
   whatsappNumber: string;
