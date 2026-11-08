@@ -39,6 +39,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   calligraphyFont: 'Reem Kufi',
   bodyFont: 'Cairo',
   primaryColor: '#0d9488',
+  googleClientId: '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com',
   phone1: '0100 234 5678',
   phone2: '0111 987 6543',
   whatsappNumber: '201012345678',

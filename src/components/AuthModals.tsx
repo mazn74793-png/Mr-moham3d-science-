@@ -41,7 +41,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   // Client ID state
   const [clientIdInput, setClientIdInput] = useState(() => {
-    return siteConfig?.googleClientId || localStorage.getItem('mm_google_client_id') || '';
+    return siteConfig?.googleClientId || localStorage.getItem('mm_google_client_id') || '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com';
   });
   const [savedClientIdMsg, setSavedClientIdMsg] = useState(false);
   const [googleStatus, setGoogleStatus] = useState<string>('جاهز للربط');
