@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-cairo: 'Cairo', sans-serif;
+  --font-kufi: 'Reem Kufi', sans-serif;
+  --font-ruqaa: 'Aref Ruqaa', cursive;
+  --font-amiri: 'Amiri', serif;
+  --font-tajawal: 'Tajawal', sans-serif;
+  --font-almarai: 'Almarai', sans-serif;
+}
+
+body {
+  font-family: 'Cairo', sans-serif;
+  overflow-x: hidden;
+}
+
+.font-kufi {
+  font-family: 'Reem Kufi', sans-serif;
+}
+
+.font-ruqaa {
+  font-family: 'Aref Ruqaa', cursive;
+}
+
+.font-amiri {
+  font-family: 'Amiri', serif;
+}
+
+.font-tajawal {
+  font-family: 'Tajawal', sans-serif;
+}
+
+.font-almarai {
+  font-family: 'Almarai', sans-serif;
+}
+
+/* Subtle chemical molecule / grid background */
+.bg-molecules-pattern {
+  background-image: radial-gradient(rgba(13, 148, 136, 0.08) 1.5px, transparent 1.5px),
+                    radial-gradient(rgba(15, 118, 110, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px, 16px 16px;
+  background-position: 0 0, 16px 16px;
+}
+
+.dark .bg-molecules-pattern {
+  background-image: radial-gradient(rgba(45, 212, 191, 0.1) 1.5px, transparent 1.5px),
+                    radial-gradient(rgba(20, 184, 166, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px, 16px 16px;
+  background-position: 0 0, 16px 16px;
+}
+
+/* Subtle animations */
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+/* Smooth custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 148, 136, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 148, 136, 0.45);
+}

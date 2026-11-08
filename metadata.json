@@ -1,0 +1,6 @@
+{
+  "name": "منصة أ/ محمد مصطفى - قيصر الكيمياء",
+  "description": "المنصة التعليمية الشاملة للأستاذ محمد مصطفى لتدريس الكيمياء للثانوية العامة دفعة 2026 - محاضرات تفاعلية، معمل افتراضي، وامتحانات دورية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
