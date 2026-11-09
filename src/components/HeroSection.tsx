@@ -60,11 +60,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               {siteConfig.heroDescription}
             </p>
 
-            {/* Action Buttons with high-end micro-interactions */}
-            <div className="pt-2 flex flex-wrap items-center gap-3.5 sm:gap-4">
+            {/* Action Buttons with high-end micro-interactions and mobile responsiveness */}
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
               <button
                 onClick={onJoinNow}
-                className="group relative overflow-hidden px-8 py-4 text-base sm:text-lg font-bold text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 rounded-2xl shadow-xl shadow-teal-700/25 active:scale-95 transition-all duration-300 flex items-center gap-3 cursor-pointer hover:-translate-y-1"
+                className="group relative overflow-hidden px-8 py-3.5 sm:py-4 text-base sm:text-lg font-bold text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 rounded-2xl shadow-xl shadow-teal-700/25 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 cursor-pointer hover:-translate-y-1 w-full sm:w-auto min-h-[50px]"
               >
                 <div className="absolute inset-0 w-1/2 h-full bg-white/20 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
                 <span className="relative z-10">+ انضم لينا الآن</span>
@@ -73,7 +73,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
               <button
                 onClick={onExploreLectures}
-                className="px-7 py-4 text-base font-bold text-slate-700 dark:text-slate-200 bg-white/90 dark:bg-slate-900/90 border-2 border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex items-center gap-2 cursor-pointer hover:-translate-y-1 active:scale-95"
+                className="px-7 py-3.5 sm:py-4 text-base font-bold text-slate-700 dark:text-slate-200 bg-white/90 dark:bg-slate-900/90 border-2 border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer hover:-translate-y-1 active:scale-95 w-full sm:w-auto min-h-[50px]"
               >
                 <Play className="w-4 h-4 text-teal-600 dark:text-teal-400 fill-teal-600 dark:fill-teal-400" />
                 <span>المحاضرات المتاحة</span>

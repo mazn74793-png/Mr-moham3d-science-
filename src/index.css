@@ -145,6 +145,42 @@ body {
   animation: orbitSpin 24s linear infinite;
 }
 
+/* Alternating Tilted Floating Animation for Feature Cards */
+@keyframes floatCardLeft {
+  0%, 100% {
+    transform: translateY(0px) rotate(-2.2deg);
+  }
+  50% {
+    transform: translateY(-9px) rotate(-1deg);
+  }
+}
+
+@keyframes floatCardRight {
+  0%, 100% {
+    transform: translateY(0px) rotate(2.2deg);
+  }
+  50% {
+    transform: translateY(9px) rotate(1deg);
+  }
+}
+
+.animate-tilt-left {
+  animation: floatCardLeft 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+}
+
+.animate-tilt-right {
+  animation: floatCardRight 5.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+}
+
+.animate-tilt-left:hover,
+.animate-tilt-right:hover {
+  animation-play-state: paused;
+  transform: translateY(-8px) rotate(0deg) scale(1.03) !important;
+}
+
+
 /* Card Lift & Polish */
 .hover-card-lift {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;

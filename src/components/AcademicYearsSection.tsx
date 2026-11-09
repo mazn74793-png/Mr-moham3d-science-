@@ -84,7 +84,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
             <div className="space-y-2">
               <button
                 onClick={() => onSelectGrade('first')}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 min-h-[48px]"
               >
                 <span>دخول محاضرات أولى ثانوي</span>
                 <ArrowLeft className="w-4 h-4" />
@@ -140,7 +140,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
             <div className="space-y-2">
               <button
                 onClick={() => onSelectGrade('second')}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-2 cursor-pointer group-hover:bg-teal-600 group-hover:text-white"
+                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-all flex items-center justify-center gap-2 cursor-pointer group-hover:bg-teal-600 group-hover:text-white active:scale-95 min-h-[48px]"
               >
                 <span>دخول محاضرات تانية ثانوي</span>
                 <ArrowLeft className="w-4 h-4" />
@@ -210,7 +210,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
             <div className="space-y-2">
               <button
                 onClick={() => onSelectGrade('third')}
-                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 shadow-md shadow-amber-400/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 shadow-md shadow-amber-400/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 min-h-[48px]"
               >
                 <span>دخول محاضرات تالتة ثانوي 2026</span>
                 <ArrowLeft className="w-4 h-4" />
