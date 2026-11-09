@@ -5,6 +5,7 @@ import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { StudentPortal } from './components/StudentPortal';
 import { TeacherDashboard } from './components/TeacherDashboard';
+import { StudentOnboardingModal } from './components/StudentOnboardingModal';
 
 import { AuthModals } from './components/AuthModals';
 import { SecretAdminCustomizerModal } from './components/SecretAdminCustomizerModal';
@@ -13,7 +14,8 @@ import {
   INITIAL_LECTURES, 
   INITIAL_ATTACHMENTS, 
   INITIAL_QUIZZES, 
-  INITIAL_CLOUDINARY_CONFIG 
+  INITIAL_CLOUDINARY_CONFIG,
+  INITIAL_STUDENTS
 } from './data/initialData';
 import { Lecture, AttachmentFile, Quiz, CloudinaryConfig, UserProfile, GradeLevel } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
@@ -55,7 +57,15 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_ATTACHMENTS;
   });
 
-  const [quizzes] = useState<Quiz[]>(INITIAL_QUIZZES);
+  const [quizzes, setQuizzes] = useState<Quiz[]>(() => {
+    const saved = localStorage.getItem('mm_quizzes');
+    return saved ? JSON.parse(saved) : INITIAL_QUIZZES;
+  });
+
+  const [students, setStudents] = useState<UserProfile[]>(() => {
+    const saved = localStorage.getItem('mm_registered_students');
+    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
+  });
 
   const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(() => {
     const saved = localStorage.getItem('mm_cloudinary');
@@ -88,6 +98,14 @@ export default function App() {
   }, [attachments]);
 
   useEffect(() => {
+    localStorage.setItem('mm_quizzes', JSON.stringify(quizzes));
+  }, [quizzes]);
+
+  useEffect(() => {
+    localStorage.setItem('mm_registered_students', JSON.stringify(students));
+  }, [students]);
+
+  useEffect(() => {
     if (currentUser) {
       localStorage.setItem('mm_user', JSON.stringify(currentUser));
     } else {
@@ -102,7 +120,6 @@ export default function App() {
     }
   }, [currentView, currentUser]);
 
-
   const handleToggleTheme = () => {
     setDarkMode(prev => !prev);
   };
@@ -114,17 +131,26 @@ export default function App() {
       (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === user.email?.toLowerCase().trim());
 
     const finalUser: UserProfile = isAdmin 
-      ? { ...user, role: 'teacher' } 
+      ? { ...user, role: 'teacher', profileCompleted: true } 
       : user;
 
     setCurrentUser(finalUser);
+
+    // Also register in student list if student
+    if (!isAdmin) {
+      setStudents(prev => {
+        const exists = prev.some(s => s.id === finalUser.id || (finalUser.email && s.email === finalUser.email));
+        if (exists) return prev;
+        return [finalUser, ...prev];
+      });
+    }
+
     if (finalUser.role === 'teacher') {
       setCurrentView('teacher');
     } else {
       setCurrentView('student');
     }
   };
-
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -151,6 +177,28 @@ export default function App() {
     }
   };
 
+  const handleAddQuiz = (newQuiz: Quiz) => {
+    setQuizzes(prev => [newQuiz, ...prev]);
+  };
+
+  const handleDeleteQuiz = (id: string) => {
+    setQuizzes(prev => prev.filter(q => q.id !== id));
+  };
+
+  const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
+    setCurrentUser(updatedUser);
+    setStudents(prev => {
+      const idx = prev.findIndex(s => s.id === updatedUser.id || (updatedUser.email && s.email === updatedUser.email));
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedUser;
+        return copy;
+      } else {
+        return [updatedUser, ...prev];
+      }
+    });
+  };
+
   const handleSaveCloudinaryConfig = (config: CloudinaryConfig) => {
     setCloudinaryConfig(config);
     localStorage.setItem('mm_cloudinary', JSON.stringify(config));
@@ -175,9 +223,21 @@ export default function App() {
   };
 
   const handleSelectGrade = (grade: GradeLevel) => {
-    // Open student portal with chosen grade
+    if (currentUser) {
+      handleUpdateStudentProfile({
+        ...currentUser,
+        grade: grade,
+      });
+    }
     setCurrentView('student');
   };
+
+  // Check if onboarding is needed
+  const shouldShowOnboarding = Boolean(
+    currentUser && 
+    currentUser.role !== 'teacher' && 
+    !currentUser.profileCompleted
+  );
 
   // Dynamic body font class
   const getBodyFontClass = () => {
@@ -223,7 +283,7 @@ export default function App() {
             <AcademicYearsSection
               onSelectGrade={handleSelectGrade}
               onPreviewCurriculum={(grade) => {
-                setCurrentView('student');
+                handleSelectGrade(grade);
               }}
             />
           </>
@@ -237,6 +297,7 @@ export default function App() {
             attachments={attachments}
             onBackToHome={() => setCurrentView('landing')}
             onOpenTeacherDashboard={() => setCurrentView('teacher')}
+            onUpdateStudentProfile={handleUpdateStudentProfile}
           />
         )}
 
@@ -248,6 +309,10 @@ export default function App() {
             attachments={attachments}
             onAddAttachment={handleAddAttachment}
             onDeleteAttachment={handleDeleteAttachment}
+            quizzes={quizzes}
+            onAddQuiz={handleAddQuiz}
+            onDeleteQuiz={handleDeleteQuiz}
+            students={students}
             cloudinaryConfig={cloudinaryConfig}
             onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
             siteConfig={siteConfig}
@@ -257,7 +322,6 @@ export default function App() {
           />
         )}
       </main>
-
 
       {/* Footer */}
       <Footer
@@ -288,6 +352,15 @@ export default function App() {
         siteConfig={siteConfig}
         onUpdateGoogleClientId={(id) => handleSaveSiteConfig({ ...siteConfig, googleClientId: id })}
       />
+
+      {/* Student Onboarding & Data Completion Modal (Mandatory on student login with zero mock data) */}
+      {currentUser && (
+        <StudentOnboardingModal
+          isOpen={shouldShowOnboarding}
+          currentUser={currentUser}
+          onSaveProfile={handleUpdateStudentProfile}
+        />
+      )}
 
       {/* Secret Admin Master Customizer Modal (© symbol + PIN 2825) */}
       <SecretAdminCustomizerModal

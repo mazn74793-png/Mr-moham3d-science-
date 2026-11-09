@@ -1,4 +1,4 @@
-import { Lecture, Quiz, AttachmentFile, CloudinaryConfig } from '../types';
+import { Lecture, Quiz, AttachmentFile, CloudinaryConfig, UserProfile } from '../types';
 
 export const INITIAL_CLOUDINARY_CONFIG: CloudinaryConfig = {
   cloudName: 'chemistry-egypt',
@@ -9,14 +9,16 @@ export const INITIAL_LECTURES: Lecture[] = [
   // الصف الثالث الثانوي
   {
     id: 'lec-3-1',
-    title: 'مقدمة العناصر الانتقالية والتركيب الإلكتروني للسلسلة الأولى 3d',
+    sessionOrder: 1,
+    quizId: 'quiz-3-1',
+    title: 'مقدمة العناصر الانتقالية والتركيب الإلكتروني للسلسلة الأولى 3d (الحصة 1)',
     grade: 'third',
     gradeLabel: 'الصف الثالث الثانوي',
     chapter: 'الباب الأول: العناصر الانتقالية',
     duration: '48 دقيقة',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ', // educational fallback embed
+    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
     thumbnailUrl: '/src/assets/images/chemistry_lab_visual_1794141316456.jpg',
-    pdfTitle: 'مذكرة شرح الباب الأول - التوزيع الإلكتروني وحالات التأكسد.pdf',
+    pdfTitle: 'مذكرة شرح الحصة الأولى - التوزيع الإلكتروني وحالات التأكسد.pdf',
     pdfUrl: '#',
     description: 'شرح مفصل وممتع لقواعد التوزيع الإلكتروني الشاذ للكروم والنحاس، مع تحليل حالات التأكسد الأكثر استقراراً وعلاقتها بالطاقة وطرق حل مسائل امتحان الثانوية العامة.',
     isFreePreview: true,
@@ -25,7 +27,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   },
   {
     id: 'lec-3-2',
-    title: 'الخواص العامة للفلزات الانتقالية: الألوان والمغناطيسية والنشاط الحفزي',
+    sessionOrder: 2,
+    quizId: 'quiz-3-2',
+    title: 'الخواص العامة للفلزات الانتقالية: الألوان والمغناطيسية والنشاط الحفزي (الحصة 2)',
     grade: 'third',
     gradeLabel: 'الصف الثالث الثانوي',
     chapter: 'الباب الأول: العناصر الانتقالية',
@@ -41,7 +45,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   },
   {
     id: 'lec-3-3',
-    title: 'تفاعلات وأكاسيد الحديد: خريطة طريق المعادلات من خام الهيماتيت للحديد الصلب',
+    sessionOrder: 3,
+    quizId: 'quiz-3-3',
+    title: 'تفاعلات وأكاسيد الحديد: خريطة طريق المعادلات من خام الهيماتيت للحديد الصلب (الحصة 3)',
     grade: 'third',
     gradeLabel: 'الصف الثالث الثانوي',
     chapter: 'الباب الأول: العناصر الانتقالية',
@@ -51,13 +57,15 @@ export const INITIAL_LECTURES: Lecture[] = [
     pdfTitle: 'خريطة ذهنية لمعادلات الحديد وأكاسيده الثلاثة.pdf',
     pdfUrl: '#',
     description: 'الخريطة السحرية لمعادلات الحديد اللي هتخليك تحل أي مسألة أو تحويلة في أقل من 30 ثانية. من الفرن العالي وفرن مدركس وحتى تسخين أكسالات الحديد بمعزل عن الهواء.',
-    isFreePreview: true,
+    isFreePreview: false,
     viewsCount: 4120,
     dateAdded: '2026-11-01',
   },
   {
     id: 'lec-3-4',
-    title: 'الكيمياء العضوية الأسطورية: الألكانات وطرق التسمية بنظام الأيوباك IUPAC',
+    sessionOrder: 4,
+    quizId: 'quiz-3-4',
+    title: 'الكيمياء العضوية الأسطورية: الألكانات وطرق التسمية بنظام الأيوباك IUPAC (الحصة 4)',
     grade: 'third',
     gradeLabel: 'الصف الثالث الثانوي',
     chapter: 'الباب الخامس: الكيمياء العضوية',
@@ -75,7 +83,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   // الصف الثاني الثانوي
   {
     id: 'lec-2-1',
-    title: 'تطور مفهوم بنية الذرة: من دالتون وطومسون إلى تجربة رذرفورد الذهبية',
+    sessionOrder: 1,
+    quizId: 'quiz-2-1',
+    title: 'تطور مفهوم بنية الذرة: من دالتون وطومسون إلى تجربة رذرفورد الذهبية (الحصة 1)',
     grade: 'second',
     gradeLabel: 'الصف الثاني الثانوي',
     chapter: 'الباب الأول: بنية الذرة',
@@ -91,7 +101,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   },
   {
     id: 'lec-2-2',
-    title: 'أعداد الكم الأربعة (n, l, ml, ms) وقواعد التوزيع الإلكتروني',
+    sessionOrder: 2,
+    quizId: 'quiz-2-2',
+    title: 'أعداد الكم الأربعة (n, l, ml, ms) وقواعد التوزيع الإلكتروني (الحصة 2)',
     grade: 'second',
     gradeLabel: 'الصف الثاني الثانوي',
     chapter: 'الباب الأول: بنية الذرة',
@@ -109,7 +121,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   // الصف الأول الثانوي
   {
     id: 'lec-1-1',
-    title: 'الكيمياء مركز العلوم وأهمية أدوات القياس في المعمل الكيميائي',
+    sessionOrder: 1,
+    quizId: 'quiz-1-1',
+    title: 'الكيمياء مركز العلوم وأهمية أدوات القياس في المعمل الكيميائي (الحصة 1)',
     grade: 'first',
     gradeLabel: 'الصف الأول الثانوي',
     chapter: 'الباب الأول: الكيمياء مركز العلوم',
@@ -125,7 +139,9 @@ export const INITIAL_LECTURES: Lecture[] = [
   },
   {
     id: 'lec-1-2',
-    title: 'المول والمعادلة الأيونية وحساب كتل المواد المتفاعلة والناتجة',
+    sessionOrder: 2,
+    quizId: 'quiz-1-2',
+    title: 'المول والمعادلة الأيونية وحساب كتل المواد المتفاعلة والناتجة (الحصة 2)',
     grade: 'first',
     gradeLabel: 'الصف الأول الثانوي',
     chapter: 'الباب الثاني: الكيمياء الكمية',
@@ -205,11 +221,13 @@ export const INITIAL_ATTACHMENTS: AttachmentFile[] = [
 ];
 
 export const INITIAL_QUIZZES: Quiz[] = [
+  // كويز الحصة الأولى - تالتة ثانوي
   {
     id: 'quiz-3-1',
-    title: 'امتحان إلكتروني شامل على الباب الأول (العناصر الانتقالية)',
+    lectureId: 'lec-3-1',
+    title: 'امتحان الحصة 1: التوزيع الإلكتروني للعناصر الانتقالية وحالات التأكسد',
     grade: 'third',
-    chapter: 'العناصر الانتقالية',
+    chapter: 'الباب الأول: العناصر الانتقالية',
     durationMinutes: 15,
     questions: [
       {
@@ -227,6 +245,81 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'q2',
+        question: 'أي العناصر التالية له أعلى حالة تأكسد شائعة ومستقرة تصل إلى +7؟',
+        options: [
+          'المنجنيز (Mn)',
+          'الفاناديوم (V)',
+          'السكانديوم (Sc)',
+          'التيتانيوم (Ti)'
+        ],
+        correctAnswer: 0,
+        explanation: 'المنجنيز يفقد إلكتروني 4s وإلكترونات 3d الخمسة بالكامل ليعطي حالة التأكسد القصوى +7 كما في برمنجانات البوتاسيوم KMnO4.',
+        formula: 'Mn_{25} = [Ar]_{18} 4s^2 3d^5 \\implies Mn^{7+} = [Ar]_{18}'
+      },
+      {
+        id: 'q3',
+        question: 'المستوى الفرعي 3d يكون نصف ممتلئ وأكثر استقراراً في أيون:',
+        options: [
+          'Fe³⁺ (الحديد الثلاثي)',
+          'Fe²⁺ (الحديد الثنائي)',
+          'Cu²⁺ (النحاس الثنائي)',
+          'Sc³⁺ (السكانديوم الثلاثي)'
+        ],
+        correctAnswer: 0,
+        explanation: 'عند تأكسد الحديد Fe إلى Fe³⁺ يفقد إلكترونين من 4s وإلكتروناً من 3d فيصبح 3d⁵ (نصف ممتلئ)، مما يجعله أكثر استقراراً من Fe²⁺.',
+        formula: 'Fe^{3+} = [Ar]_{18} 3d^5'
+      }
+    ]
+  },
+
+  // كويز الحصة الثانية - تالتة ثانوي
+  {
+    id: 'quiz-3-2',
+    lectureId: 'lec-3-2',
+    title: 'امتحان الحصة 2: الخواص العامة، الألوان والمغناطيسية والنشاط الحفزي',
+    grade: 'third',
+    chapter: 'الباب الأول: العناصر الانتقالية',
+    durationMinutes: 15,
+    questions: [
+      {
+        id: 'q2-1',
+        question: 'المادة التي تتنافر مع المجال المغناطيسي الخارجي (ديامغناطيسية) هي:',
+        options: [
+          'ZnSO₄ (كبريتات الخارصين)',
+          'FeCl₃ (كلوريد الحديد الثلاثي)',
+          'Cr₂O₃ (أكسيد الكروم الثلاثي)',
+          'V₂O₅ (خامس أكسيد الفاناديوم)'
+        ],
+        correctAnswer: 0,
+        explanation: 'أيون الخارصين Zn²⁺ يكون تركيبه [Ar] 3d¹⁰، وجميع أوربيتالات 3d ممتلئة في حالة ازدواج تام ولا توجد إلكترونات مفردة.',
+        formula: 'Zn^{2+} = [Ar]_{18} 3d^{10}'
+      },
+      {
+        id: 'q2-2',
+        question: 'عندما تمتص المادة الانتقالية فوتونات اللون الأحمر من الضوء الأبيض فإنها تبدو للعين باللون:',
+        options: [
+          'الأخضر (اللون المتمم للأحمر)',
+          'الأزرق',
+          'الأصفر',
+          'البرتقالي'
+        ],
+        correctAnswer: 0,
+        explanation: 'اللون الذي تراه العين هو محصلة الألوان المتبقية المنعكسة (اللون المتمم Complementary Color)، والمتمم للون الأحمر هو اللون الأخضر.',
+      }
+    ]
+  },
+
+  // كويز الحصة الثالثة - تالتة ثانوي
+  {
+    id: 'quiz-3-3',
+    lectureId: 'lec-3-3',
+    title: 'امتحان الحصة 3: معادلات وتحويلات أكاسيد الحديد',
+    grade: 'third',
+    chapter: 'الباب الأول: العناصر الانتقالية',
+    durationMinutes: 15,
+    questions: [
+      {
+        id: 'q3-1',
         question: 'عند تسخين أكسالات الحديد (II) بمعزل عن الهواء يتكون:',
         options: [
           'أكسيد حديد (II) وغازات أول وثاني أكسيد الكربون',
@@ -239,54 +332,56 @@ export const INITIAL_QUIZZES: Quiz[] = [
         formula: '(COO)_2Fe \\xrightarrow{\\Delta \\text{ (بمعزل عن الهواء)}} FeO + CO\\uparrow + CO_2\\uparrow'
       },
       {
-        id: 'q3',
-        question: 'أي من الأيونات التالية يكون محلوها المائي عديم اللون (ديامغناطيسي)؟',
+        id: 'q3-2',
+        question: 'أكسيد الحديد الأسود المغناطيسي Fe3O4 يعتبر أكسيداً مختلطاً لأنه يتفاعل مع الأحماض المركزة الساخنة ليعطي:',
         options: [
-          'Sc³⁺ (السكانديوم الثلاثي)',
-          'Fe³⁺ (الحديد الثلاثي)',
-          'Cu²⁺ (النحاس الثنائي)',
-          'Cr³⁺ (الكروم الثلاثي)'
+          'أملاح حديد (II) وأملاح حديد (III) وماء',
+          'أملاح حديد (II) فقط وغاز هيدروجين',
+          'أملاح حديد (III) فقط وماء',
+          'غاز ثاني أكسيد الكبريت وفلز الحديد'
         ],
         correctAnswer: 0,
-        explanation: 'أيون السكانديوم Sc³⁺ يفقد جميع إلكترونات 4s و 3d فيكون المستوى الفرعي 3d فارغاً تماماً (3d⁰)، وبالتالي لا توجد إلكترونات مفردة لتمتص الضوء المرئي فيبدو عديم اللون.',
-        formula: 'Sc^{3+} = [Ar]_{18} 3d^0'
-      },
-      {
-        id: 'q4',
-        question: 'المادة التي تستخدم كعامل حفاز في تحضير النشادر بطريقة هابر - بوش هي:',
-        options: [
-          'الحديد المجزأ Fe',
-          'خامس أكسيد الفاناديوم V₂O₅',
-          'ثاني أكسيد المنجنيز MnO₂',
-          'فلز التيتانيوم Ti'
-        ],
-        correctAnswer: 0,
-        explanation: 'يستخدم الحديد المجزأ كعامل حفاز في طريقة هابر - بوش لتحضير غاز الأمونيا صناعياً من عنصري النيتروجين والهيدروجين.',
-        formula: 'N_2 + 3H_2 \\xrightarrow{Fe / 500^\\circ C / 200\\text{ atm}} 2NH_3'
+        explanation: 'Fe3O4 خليط من FeO و Fe2O3 ولذلك يعطي خليطاً من أملاح الحديد الثنائي والثلاثي مع الأحماض المركزة الساخنة.',
       }
     ]
   },
+
+  // كويز الحصة الرابعة - تالتة ثانوي
+  {
+    id: 'quiz-3-4',
+    lectureId: 'lec-3-4',
+    title: 'امتحان الحصة 4: أساسيات الكيمياء العضوية وتسمية الأيوباك',
+    grade: 'third',
+    chapter: 'الكيمياء العضوية',
+    durationMinutes: 20,
+    questions: [
+      {
+        id: 'q4-1',
+        question: 'الاسم الصحيح للمركب التالي طبقاً لنظام الأيوباك IUPAC: (CH3)2CH-CH2-CH3 هو:',
+        options: [
+          '2-ميثيل بيوتان',
+          '3-ميثيل بيوتان',
+          'أيزوبنتان',
+          '2-إيثيل بروبان'
+        ],
+        correctAnswer: 0,
+        explanation: 'أطول سلسلة كربونية متصلة تحتوي على 4 ذرات كربون (بيوتان)، ونبدأ الترقيم من الطرف الأقرب للتفرع ليأخذ التفرع الميثيل رقم 2.',
+        formula: 'CH_3-CH(CH_3)-CH_2-CH_3'
+      }
+    ]
+  },
+
+  // الصف الثاني الثانوي
   {
     id: 'quiz-2-1',
-    title: 'اختبار تجريبي: بنية الذرة وأعداد الكم',
+    lectureId: 'lec-2-1',
+    title: 'امتحان الحصة 1: تطور بنية الذرة وتجربة رذرفورد',
     grade: 'second',
     chapter: 'بنية الذرة',
     durationMinutes: 10,
     questions: [
       {
-        id: 'q2-1',
-        question: 'أقصى عدد من الإلكترونات يستوعبه المستوى الفرعي الذي له عدد الكم الثانوي l = 2 هو:',
-        options: [
-          '10 إلكترونات (المستوى الفرعي d)',
-          '6 إلكترونات (المستوى الفرعي p)',
-          '14 إلكترون (المستوى الفرعي f)',
-          '2 إلكترون (المستوى الفرعي s)'
-        ],
-        correctAnswer: 0,
-        explanation: 'عندما تكون قيمة l = 2 فإن المستوى الفرعي هو d، ويحتوي على 5 أوربيتالات، وكل أوربيتال يتسع لإلكترونين كحد أقصى (5 × 2 = 10).',
-      },
-      {
-        id: 'q2-2',
+        id: 'q2-1-1',
         question: 'العالم الذي افترض أن معظم حجم الذرة فراغ بعد ارتداد قلة ضئيلة جداً من جسيمات ألفا هو:',
         options: [
           'رذرفورد',
@@ -298,6 +393,184 @@ export const INITIAL_QUIZZES: Quiz[] = [
         explanation: 'تجربة رذرفورد الشهيرة بإطلاق جسيمات ألفا على صفيحة رقيقة من الذهب أثبتت أن معظم حجم الذرة فراغ لوجود نواة متناهية الصغر وكثيفة في المركز.',
       }
     ]
+  },
+  {
+    id: 'quiz-2-2',
+    lectureId: 'lec-2-2',
+    title: 'امتحان الحصة 2: أعداد الكم وقواعد التوزيع الإلكتروني',
+    grade: 'second',
+    chapter: 'بنية الذرة',
+    durationMinutes: 10,
+    questions: [
+      {
+        id: 'q2-2-1',
+        question: 'أقصى عدد من الإلكترونات يستوعبه المستوى الفرعي الذي له عدد الكم الثانوي l = 2 هو:',
+        options: [
+          '10 إلكترونات (المستوى الفرعي d)',
+          '6 إلكترونات (المستوى الفرعي p)',
+          '14 إلكترون (المستوى الفرعي f)',
+          '2 إلكترون (المستوى الفرعي s)'
+        ],
+        correctAnswer: 0,
+        explanation: 'عندما تكون قيمة l = 2 فإن المستوى الفرعي هو d، ويحتوي على 5 أوربيتالات، وكل أوربيتال يتسع لإلكترونين كحد أقصى (5 × 2 = 10).',
+      }
+    ]
+  },
+
+  // الصف الأول الثانوي
+  {
+    id: 'quiz-1-1',
+    lectureId: 'lec-1-1',
+    title: 'امتحان الحصة 1: الكيمياء مركز العلوم وأدوات القياس',
+    grade: 'first',
+    chapter: 'مركز العلوم',
+    durationMinutes: 10,
+    questions: [
+      {
+        id: 'q1-1-1',
+        question: 'الأداة الزجاجية الدقيقة المستخدمة في عمليات المعايرة بدقة عالية تسمى:',
+        options: [
+          'السحاحة (Burette)',
+          'المخبار المدرج',
+          'الكأس الزجاجي',
+          'الماصة العادية'
+        ],
+        correctAnswer: 0,
+        explanation: 'تستخدم السحاحة في تجارب المعايرة الدقيقة لقياس حجوم المحاليل المضافة قطرة قطرة بدقة بالغة.',
+      }
+    ]
+  },
+  {
+    id: 'quiz-1-2',
+    lectureId: 'lec-1-2',
+    title: 'امتحان الحصة 2: الحسابات الكيميائية والمول والمعادلة الأيونية',
+    grade: 'first',
+    chapter: 'الكيمياء الكمية',
+    durationMinutes: 12,
+    questions: [
+      {
+        id: 'q1-2-1',
+        question: 'كتلة مول واحد من غاز الأكسجين O2 (الكتلة الذرية O = 16) تساوي:',
+        options: [
+          '32 جرام/مول',
+          '16 جرام/مول',
+          '64 جرام/مول',
+          '8 جرام/مول'
+        ],
+        correctAnswer: 0,
+        explanation: 'جزيء غاز الأكسجين ثنائي الذرة O2، وبالتالي كتلته المولية = 2 × 16 = 32 جم/مول.',
+        formula: 'M(O_2) = 2 \\times 16 = 32\\text{ g/mol}'
+      }
+    ]
+  }
+];
+
+// الطلاب المسجلين لمتابعة الحضور والغياب ولوحة الشرف للمدرس
+export const INITIAL_STUDENTS: UserProfile[] = [
+  {
+    id: 'std-101',
+    name: 'مريم أحمد الصاوي',
+    phone: '01019845672',
+    parentPhone: '01223984511',
+    grade: 'third',
+    role: 'student',
+    profileCompleted: true,
+    score: 98,
+    watchedLectureIds: ['lec-3-1', 'lec-3-2', 'lec-3-3', 'lec-3-4'],
+    passedQuizIds: ['quiz-3-1', 'quiz-3-2', 'quiz-3-3', 'quiz-3-4'],
+    quizScores: { 'quiz-3-1': 100, 'quiz-3-2': 100, 'quiz-3-3': 95, 'quiz-3-4': 98 },
+    governorate: 'القاهرة',
+    joinedAt: '2026-09-01',
+  },
+  {
+    id: 'std-102',
+    name: 'عمر خالد الديب',
+    phone: '01154328901',
+    parentPhone: '01009876543',
+    grade: 'third',
+    role: 'student',
+    profileCompleted: true,
+    score: 95,
+    watchedLectureIds: ['lec-3-1', 'lec-3-2', 'lec-3-3'],
+    passedQuizIds: ['quiz-3-1', 'quiz-3-2', 'quiz-3-3'],
+    quizScores: { 'quiz-3-1': 95, 'quiz-3-2': 90, 'quiz-3-3': 100 },
+    governorate: 'الجيزة',
+    joinedAt: '2026-09-05',
+  },
+  {
+    id: 'std-103',
+    name: 'سارة محمود حسنين',
+    phone: '01287654321',
+    parentPhone: '01112345678',
+    grade: 'third',
+    role: 'student',
+    profileCompleted: true,
+    score: 92,
+    watchedLectureIds: ['lec-3-1', 'lec-3-2'],
+    passedQuizIds: ['quiz-3-1', 'quiz-3-2'],
+    quizScores: { 'quiz-3-1': 90, 'quiz-3-2': 94 },
+    governorate: 'الإسكندرية',
+    joinedAt: '2026-09-10',
+  },
+  {
+    id: 'std-104',
+    name: 'يوسف مصطفى عثمان',
+    phone: '01099887766',
+    parentPhone: '01234567890',
+    grade: 'third',
+    role: 'student',
+    profileCompleted: true,
+    score: 40,
+    watchedLectureIds: ['lec-3-1'], // Absent for other lectures!
+    passedQuizIds: [],
+    quizScores: { 'quiz-3-1': 40 },
+    governorate: 'الدقهلية (المنصورة)',
+    joinedAt: '2026-09-12',
+  },
+  {
+    id: 'std-105',
+    name: 'كريم هاني عبد الرحمن',
+    phone: '01122334455',
+    parentPhone: '01066778899',
+    grade: 'third',
+    role: 'student',
+    profileCompleted: true,
+    score: 0,
+    watchedLectureIds: [], // Completely absent!
+    passedQuizIds: [],
+    quizScores: {},
+    governorate: 'الغربية (طنطا)',
+    joinedAt: '2026-09-15',
+  },
+  {
+    id: 'std-106',
+    name: 'نور الدين وليد',
+    phone: '01077665544',
+    parentPhone: '01299887711',
+    grade: 'second',
+    role: 'student',
+    profileCompleted: true,
+    score: 96,
+    watchedLectureIds: ['lec-2-1', 'lec-2-2'],
+    passedQuizIds: ['quiz-2-1', 'quiz-2-2'],
+    quizScores: { 'quiz-2-1': 95, 'quiz-2-2': 97 },
+    governorate: 'القليوبية',
+    joinedAt: '2026-09-08',
+  },
+  {
+    id: 'std-107',
+    name: 'حازم إبراهيم توفيق',
+    phone: '01188990011',
+    parentPhone: '01011223344',
+    grade: 'first',
+    role: 'student',
+    profileCompleted: true,
+    score: 94,
+    watchedLectureIds: ['lec-1-1', 'lec-1-2'],
+    passedQuizIds: ['quiz-1-1', 'quiz-1-2'],
+    quizScores: { 'quiz-1-1': 92, 'quiz-1-2': 96 },
+    governorate: 'الشرقية (الزقازيق)',
+    joinedAt: '2026-09-03',
   }
 ];
 

@@ -15,6 +15,8 @@ export interface Lecture {
   isFreePreview: boolean;
   viewsCount: number;
   dateAdded: string;
+  sessionOrder?: number; // Sequence number (1, 2, 3...)
+  quizId?: string; // Connected quiz ID
 }
 
 export interface QuizQuestion {
@@ -32,6 +34,7 @@ export interface Quiz {
   grade: GradeLevel;
   chapter: string;
   durationMinutes: number;
+  lectureId?: string;
   questions: QuizQuestion[];
 }
 
@@ -61,7 +64,13 @@ export interface UserProfile {
   grade?: GradeLevel;
   phone: string;
   parentPhone?: string;
+  governorate?: string;
   avatarUrl?: string;
   score?: number;
+  profileCompleted?: boolean;
+  watchedLectureIds?: string[];
+  passedQuizIds?: string[];
+  quizScores?: Record<string, number>;
+  joinedAt?: string;
 }
 

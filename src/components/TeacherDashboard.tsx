@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { 
   Upload, Plus, Video, FileText, Image as ImageIcon, CheckCircle, 
   Trash2, ExternalLink, Settings, Cloud, Copy, RefreshCw, AlertCircle, 
-  ChevronRight, Palette, Sparkles, KeyRound, Phone, User, Check, RefreshCcw, Type
+  ChevronRight, Palette, Sparkles, KeyRound, Phone, User, Check, RefreshCcw, Type,
+  Award, Trophy, Users
 } from 'lucide-react';
-import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig } from '../types';
+import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfile } from '../types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
+import { TeacherQuizManager } from './TeacherQuizManager';
+import { TeacherReportsManager } from './TeacherReportsManager';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
@@ -14,6 +17,10 @@ interface TeacherDashboardProps {
   attachments: AttachmentFile[];
   onAddAttachment: (newFile: AttachmentFile) => void;
   onDeleteAttachment: (id: string) => void;
+  quizzes: Quiz[];
+  onAddQuiz: (newQuiz: Quiz) => void;
+  onDeleteQuiz: (quizId: string) => void;
+  students: UserProfile[];
   cloudinaryConfig: CloudinaryConfig;
   onSaveCloudinaryConfig: (config: CloudinaryConfig) => void;
   siteConfig: SiteConfig;
@@ -29,6 +36,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   attachments,
   onAddAttachment,
   onDeleteAttachment,
+  quizzes,
+  onAddQuiz,
+  onDeleteQuiz,
+  students,
   cloudinaryConfig,
   onSaveCloudinaryConfig,
   siteConfig,
@@ -36,7 +47,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onBackToHome,
   onOpenStudentPortal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'upload-lecture' | 'lectures-list' | 'files' | 'cloudinary' | 'site-customizer'>('upload-lecture');
+  const [activeTab, setActiveTab] = useState<'upload-lecture' | 'lectures-list' | 'quizzes-bank' | 'student-reports' | 'files' | 'cloudinary' | 'site-customizer'>('upload-lecture');
   
   // Cloudinary settings state
   const [cloudName, setCloudName] = useState(cloudinaryConfig.cloudName || 'chemistry-egypt');
@@ -58,6 +69,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [lecPdfTitle, setLecPdfTitle] = useState('');
   const [lecDescription, setLecDescription] = useState('');
   const [lecIsFree, setLecIsFree] = useState(false);
+  const [lecSessionOrder, setLecSessionOrder] = useState<number>(() => {
+    return lectures.filter(l => l.grade === 'third').length + 1;
+  });
+  const [lecQuizId, setLecQuizId] = useState<string>('');
 
   // New File/PDF Form State
   const [fileTitle, setFileTitle] = useState('');
@@ -159,6 +174,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
     const newLec: Lecture = {
       id: `lec-${Date.now()}`,
+      sessionOrder: Number(lecSessionOrder) || (lectures.filter(l => l.grade === lecGrade).length + 1),
+      quizId: lecQuizId || undefined,
       title: lecTitle,
       grade: lecGrade,
       gradeLabel: lecGrade === 'first' ? 'الصف الأول الثانوي' : lecGrade === 'second' ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي',
@@ -178,6 +195,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setLecTitle('');
     setLecPdfTitle('');
     setLecDescription('');
+    setLecQuizId('');
     setActiveTab('lectures-list');
   };
 
@@ -341,6 +359,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('quizzes-bank')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              activeTab === 'quizzes-bank'
+                ? 'bg-teal-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Award className="w-4 h-4 text-amber-400" />
+            <span>بنك الأسئلة والاختبارات ({quizzes.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('student-reports')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              activeTab === 'student-reports'
+                ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                : 'text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100'
+            }`}
+          >
+            <Trophy className="w-4 h-4 text-amber-500" />
+            <span>تقارير الطلاب والغياب ولوحة الشرف ({students.filter(s => s.role !== 'teacher').length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('files')}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === 'files'
@@ -483,8 +525,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   />
                 </div>
 
+                {/* Session Sequence Order */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    ترتيب الحصة في التسلسل (رقم الحصة) *
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={lecSessionOrder}
+                    onChange={(e) => setLecSessionOrder(Number(e.target.value))}
+                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono text-right"
+                  />
+                  <p className="text-[10px] text-slate-500">يستخدم لتطبيق نظام القفل المتسلسل للحصص (1 ثم 2 ثم 3...)</p>
+                </div>
+
+                {/* Associated Quiz for Unlocking */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الكويز الإجباري المرتبط (مطلوب اجتيازه لفتح الحصة التالية)
+                  </label>
+                  <select
+                    value={lecQuizId}
+                    onChange={(e) => setLecQuizId(e.target.value)}
+                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">بدون كويز إجباري</option>
+                    {quizzes
+                      .filter((q) => q.grade === lecGrade)
+                      .map((q) => (
+                        <option key={q.id} value={q.id}>
+                          {q.title} ({q.questions.length} أسئلة - {q.durationMinutes} دقيقة)
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
                 {/* Free Preview Toggle */}
-                <div className="space-y-1.5 flex items-center gap-3 pt-6">
+                <div className="space-y-1.5 flex items-center gap-3 pt-6 md:col-span-2">
                   <input
                     type="checkbox"
                     id="isFree"
@@ -583,6 +662,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               ))}
             </div>
           </div>
+        )}
+
+        {/* ========================================================
+            TAB: QUESTION BANK & MCQs CREATOR
+        ======================================================== */}
+        {activeTab === 'quizzes-bank' && (
+          <TeacherQuizManager
+            quizzes={quizzes}
+            lectures={lectures}
+            onAddQuiz={onAddQuiz}
+            onDeleteQuiz={onDeleteQuiz}
+          />
+        )}
+
+        {/* ========================================================
+            TAB: STUDENT REPORTS, ATTENDANCE & LEADERBOARD
+        ======================================================== */}
+        {activeTab === 'student-reports' && (
+          <TeacherReportsManager
+            students={students}
+            lectures={lectures}
+            quizzes={quizzes}
+          />
         )}
 
         {/* ========================================================
