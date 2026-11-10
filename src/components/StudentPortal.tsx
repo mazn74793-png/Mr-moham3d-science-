@@ -208,7 +208,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <div className="space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-bold font-kufi">
-                    لوحة تحكم الطالب · قيصر الكيمياء
+                    لوحة تحكم الطالب · Chemistry & Science
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-bold font-mono">
                     {getGradeTitle(selectedGrade)}
@@ -404,7 +404,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         </div>
 
                         <button
-                          onClick={() => alert('تم بدء تحميل مذكرة الشرح بنجاح!')}
+                          onClick={() => {
+                            if (activeLecture.pdfUrl && activeLecture.pdfUrl !== '#') {
+                              window.open(activeLecture.pdfUrl, '_blank');
+                            }
+                          }}
                           className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
                         >
                           <Download className="w-4 h-4" />
@@ -765,7 +769,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                       <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2 text-right">
                         <div className="text-xs font-bold text-amber-800 dark:text-amber-300 font-kufi flex items-center gap-1.5">
                           <HelpCircle className="w-4 h-4" />
-                          <span>التفسير العلمي وملاحظة قيصر الكيمياء:</span>
+                          <span>التفسير العلمي وملاحظة مستر محمد مصطفى (Science Note):</span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                           {activeQuiz.questions[currentQuestionIndex].explanation}
@@ -867,7 +871,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   </div>
 
                   <button
-                    onClick={() => alert(`تم بدء تحميل ملف (${file.title}) بنجاح!`)}
+                    onClick={() => {
+                      if (file.downloadUrl && file.downloadUrl !== '#') {
+                        window.open(file.downloadUrl, '_blank');
+                      }
+                    }}
                     className="w-full py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-600 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />

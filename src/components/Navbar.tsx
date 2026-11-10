@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
             <span className="text-[10px] sm:text-xs font-medium text-teal-600 dark:text-teal-400 tracking-wide font-sans truncate">
-              {siteConfig.tagline.split('..')[0] || 'قيصر الكيمياء'}
+              {siteConfig.tagline || 'Senior Chemistry & Science Educator'}
             </span>
           </div>
         </div>

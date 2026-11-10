@@ -89,9 +89,9 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   };
 
   // Watermark text
-  const studentDisplayName = currentUser?.name || 'طالب منصة القيصر';
+  const studentDisplayName = currentUser?.name || 'طالب المنصة';
   const studentDisplayPhone = currentUser?.phone || '010XXXXXXXX';
-  const studentDisplayCode = currentUser?.id ? `ID: ${currentUser.id.slice(-6)}` : 'ID: 2026-CHEM';
+  const studentDisplayCode = currentUser?.id ? `ID: ${currentUser.id.slice(-6)}` : 'ID: 2026-SCIENCE';
 
   return (
     <div className="space-y-4">
@@ -134,7 +134,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
         {/* Security protection watermark stamp in lower right corner */}
         <div className="absolute bottom-3 right-3 z-10 pointer-events-none select-none hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-xs text-[10px] text-slate-400 font-mono">
           <Lock className="w-3 h-3 text-teal-400" />
-          <span>حماية القيصر المشفرة · قيصر الكيمياء 2026</span>
+          <span>بث مشفر ومحمي · Mr. Mohamed Mostafa 2026</span>
         </div>
 
         {/* Transparent Click Guard Overlay to prevent browser context inspection */}

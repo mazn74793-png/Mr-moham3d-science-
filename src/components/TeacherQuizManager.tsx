@@ -46,8 +46,12 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   const availableLectures = lectures.filter((l) => l.grade === quizGrade);
 
-  // Question manipulation
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [quizSuccess, setQuizSuccess] = useState<string | null>(null);
+  const [deleteConfirmQuizId, setDeleteConfirmQuizId] = useState<string | null>(null);
+
   const handleAddQuestionSlot = () => {
+    setQuizError(null);
     setQuestions((prev) => [
       ...prev,
       {
@@ -63,7 +67,7 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   const handleRemoveQuestionSlot = (idx: number) => {
     if (questions.length <= 1) {
-      alert('يجب أن يحتوي الامتحان على سؤال واحد على الأقل.');
+      setQuizError('يجب أن يحتوي الامتحان على سؤال واحد على الأقل.');
       return;
     }
     setQuestions((prev) => prev.filter((_, i) => i !== idx));
@@ -89,8 +93,10 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   const handleSubmitQuiz = (e: React.FormEvent) => {
     e.preventDefault();
+    setQuizError(null);
+
     if (!quizTitle.trim()) {
-      alert('يرجى كتابة عنوان الامتحان الإلكتروني.');
+      setQuizError('يرجى كتابة عنوان الامتحان الإلكتروني.');
       return;
     }
 
@@ -98,12 +104,12 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q.question.trim()) {
-        alert(`يرجى كتابة نص السؤال رقم ${i + 1}.`);
+        setQuizError(`يرجى كتابة نص السؤال رقم ${i + 1}.`);
         return;
       }
       for (let j = 0; j < q.options.length; j++) {
         if (!q.options[j].trim()) {
-          alert(`يرجى ملء جميع الخيارات الأربعة للسؤال رقم ${i + 1}.`);
+          setQuizError(`يرجى ملء جميع الخيارات الأربعة للسؤال رقم ${i + 1}.`);
           return;
         }
       }
@@ -120,7 +126,8 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     };
 
     onAddQuiz(newQuiz);
-    alert('تم حفظ وإضافة الامتحان بنجاح إلى بنك الأسئلة والمنصة! 🎯');
+    setQuizSuccess('تم حفظ وإضافة الامتحان بنجاح إلى بنك الأسئلة والمنصة! 🎯');
+    setTimeout(() => setQuizSuccess(null), 4000);
 
     // Reset Form
     setQuizTitle('');
@@ -139,6 +146,20 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   return (
     <div className="space-y-6">
+      
+      {/* Quiz Feedback Banners */}
+      {quizError && (
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/80 border border-rose-300 text-rose-800 dark:text-rose-200 text-xs font-bold flex items-center justify-between">
+          <span>{quizError}</span>
+          <button onClick={() => setQuizError(null)} className="text-rose-500 hover:text-rose-800">×</button>
+        </div>
+      )}
+      {quizSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center justify-between">
+          <span>{quizSuccess}</span>
+          <button onClick={() => setQuizSuccess(null)} className="text-emerald-500 hover:text-emerald-800">×</button>
+        </div>
+      )}
       
       {/* Top Header & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -510,17 +531,35 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                  <button
-                    onClick={() => {
-                      if (confirm(`هل أنت متأكد من حذف امتحان (${quiz.title})؟`)) {
-                        onDeleteQuiz(quiz.id);
-                      }
-                    }}
-                    className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
-                    title="حذف الامتحان"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {deleteConfirmQuizId === quiz.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          onDeleteQuiz(quiz.id);
+                          setDeleteConfirmQuizId(null);
+                          setQuizSuccess(`تم حذف امتحان (${quiz.title}) بنجاح.`);
+                          setTimeout(() => setQuizSuccess(null), 3000);
+                        }}
+                        className="px-2.5 py-1 rounded bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                      >
+                        تأكيد الحذف
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmQuizId(null)}
+                        className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteConfirmQuizId(quiz.id)}
+                      className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                      title="حذف الامتحان"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

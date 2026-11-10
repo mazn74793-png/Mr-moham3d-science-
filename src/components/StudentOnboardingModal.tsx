@@ -48,13 +48,15 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
   const [phone, setPhone] = useState(currentUser.phone && currentUser.phone !== '010XXXXXXXX' ? currentUser.phone : '');
   const [parentPhone, setParentPhone] = useState(currentUser.parentPhone || '');
   const [governorate, setGovernorate] = useState(currentUser.governorate || 'القاهرة');
+  const [onboardError, setOnboardError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setOnboardError(null);
     if (!name.trim() || !phone.trim() || !parentPhone.trim()) {
-      alert('من فضلك أكمل جميع البيانات المطلوبة لتفعيل حسابك.');
+      setOnboardError('من فضلك أكمل جميع البيانات المطلوبة لتفعيل حسابك.');
       return;
     }
 
@@ -98,6 +100,12 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           
+          {onboardError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 text-rose-700 dark:text-rose-300 text-xs font-bold">
+              {onboardError}
+            </div>
+          )}
+
           {/* Name */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">

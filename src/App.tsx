@@ -130,26 +130,61 @@ export default function App() {
       user.role === 'teacher' || 
       (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === user.email?.toLowerCase().trim());
 
-    const finalUser: UserProfile = isAdmin 
-      ? { ...user, role: 'teacher', profileCompleted: true } 
-      : user;
+    if (isAdmin) {
+      const finalAdmin: UserProfile = { ...user, role: 'teacher', profileCompleted: true };
+      setCurrentUser(finalAdmin);
+      setCurrentView('teacher');
+      return;
+    }
+
+    // Check if this student has previously completed their profile
+    const savedStudentsRaw = localStorage.getItem('mm_registered_students');
+    let existingStudents: UserProfile[] = students;
+    if (savedStudentsRaw) {
+      try {
+        const parsed = JSON.parse(savedStudentsRaw);
+        if (Array.isArray(parsed)) existingStudents = parsed;
+      } catch (e) {}
+    }
+
+    const matched = existingStudents.find(s => 
+      (user.id && s.id === user.id) || 
+      (user.email && s.email && s.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
+      (user.phone && s.phone && s.phone === user.phone)
+    );
+
+    const isMarkedDone = 
+      Boolean(user.profileCompleted) ||
+      Boolean(matched?.profileCompleted) ||
+      Boolean(user.email && localStorage.getItem(`mm_profile_done_${user.email.toLowerCase().trim()}`) === 'true') ||
+      Boolean(user.id && localStorage.getItem(`mm_profile_done_${user.id}`) === 'true');
+
+    const finalUser: UserProfile = matched
+      ? {
+          ...matched,
+          avatarUrl: user.avatarUrl || matched.avatarUrl,
+          name: matched.name || user.name,
+          profileCompleted: isMarkedDone,
+        }
+      : {
+          ...user,
+          profileCompleted: isMarkedDone,
+        };
 
     setCurrentUser(finalUser);
 
-    // Also register in student list if student
-    if (!isAdmin) {
-      setStudents(prev => {
-        const exists = prev.some(s => s.id === finalUser.id || (finalUser.email && s.email === finalUser.email));
-        if (exists) return prev;
-        return [finalUser, ...prev];
-      });
-    }
+    // Also register/update in student list
+    setStudents(prev => {
+      const existsIdx = prev.findIndex(s => s.id === finalUser.id || (finalUser.email && s.email === finalUser.email));
+      if (existsIdx >= 0) {
+        const copy = [...prev];
+        copy[existsIdx] = finalUser;
+        return copy;
+      }
+      return [finalUser, ...prev];
+    });
 
-    if (finalUser.role === 'teacher') {
-      setCurrentView('teacher');
-    } else {
-      setCurrentView('student');
-    }
+    setCurrentView('student');
   };
 
   const handleLogout = () => {
@@ -162,9 +197,11 @@ export default function App() {
   };
 
   const handleDeleteLecture = (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذه المحاضرة؟')) {
-      setLectures(prev => prev.filter(l => l.id !== id));
-    }
+    setLectures(prev => prev.filter(l => l.id !== id));
+  };
+
+  const handleUpdateLecture = (updated: Lecture) => {
+    setLectures(prev => prev.map(l => l.id === updated.id ? updated : l));
   };
 
   const handleAddAttachment = (newFile: AttachmentFile) => {
@@ -172,9 +209,7 @@ export default function App() {
   };
 
   const handleDeleteAttachment = (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا الملف؟')) {
-      setAttachments(prev => prev.filter(a => a.id !== id));
-    }
+    setAttachments(prev => prev.filter(a => a.id !== id));
   };
 
   const handleAddQuiz = (newQuiz: Quiz) => {
@@ -185,16 +220,37 @@ export default function App() {
     setQuizzes(prev => prev.filter(q => q.id !== id));
   };
 
+  const handleAdminDeleteStudent = (studentId: string) => {
+    setStudents(prev => prev.filter(s => s.id !== studentId));
+  };
+
+  const handleAdminAddStudent = (student: UserProfile) => {
+    setStudents(prev => [student, ...prev]);
+  };
+
   const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
-    setCurrentUser(updatedUser);
+    const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
+    setCurrentUser(finalized);
+
+    // Permanently remember that this student completed their profile
+    if (finalized.email) {
+      localStorage.setItem(`mm_profile_done_${finalized.email.toLowerCase().trim()}`, 'true');
+    }
+    if (finalized.id) {
+      localStorage.setItem(`mm_profile_done_${finalized.id}`, 'true');
+    }
+    if (finalized.phone) {
+      localStorage.setItem(`mm_profile_done_${finalized.phone.trim()}`, 'true');
+    }
+
     setStudents(prev => {
-      const idx = prev.findIndex(s => s.id === updatedUser.id || (updatedUser.email && s.email === updatedUser.email));
+      const idx = prev.findIndex(s => s.id === finalized.id || (finalized.email && s.email === finalized.email));
       if (idx >= 0) {
         const copy = [...prev];
-        copy[idx] = updatedUser;
+        copy[idx] = finalized;
         return copy;
       } else {
-        return [updatedUser, ...prev];
+        return [finalized, ...prev];
       }
     });
   };
@@ -306,6 +362,7 @@ export default function App() {
             lectures={lectures}
             onAddLecture={handleAddLecture}
             onDeleteLecture={handleDeleteLecture}
+            onUpdateLecture={handleUpdateLecture}
             attachments={attachments}
             onAddAttachment={handleAddAttachment}
             onDeleteAttachment={handleDeleteAttachment}
@@ -313,6 +370,9 @@ export default function App() {
             onAddQuiz={handleAddQuiz}
             onDeleteQuiz={handleDeleteQuiz}
             students={students}
+            onUpdateStudent={handleUpdateStudentProfile}
+            onDeleteStudent={handleAdminDeleteStudent}
+            onAddStudent={handleAdminAddStudent}
             cloudinaryConfig={cloudinaryConfig}
             onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
             siteConfig={siteConfig}

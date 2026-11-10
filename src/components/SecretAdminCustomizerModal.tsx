@@ -57,11 +57,10 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
   };
 
   const handleResetDefaults = () => {
-    if (confirm('هل أنت متأكد من استعادة كافة نصوص وإعدادات الموقع الافتراضية؟')) {
-      setFormData(DEFAULT_SITE_CONFIG);
-      onSaveSiteConfig(DEFAULT_SITE_CONFIG);
-      alert('تمت استعادة الإعدادات الأصلية بنجاح!');
-    }
+    setFormData(DEFAULT_SITE_CONFIG);
+    onSaveSiteConfig(DEFAULT_SITE_CONFIG);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
   };
 
   // Device file upload for teacher photo

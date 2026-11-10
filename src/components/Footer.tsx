@@ -52,7 +52,7 @@ export const Footer: React.FC<FooterProps> = ({
                   أ/ {siteConfig.teacherName}
                 </h3>
                 <p className="text-xs text-teal-400 font-sans">
-                  {siteConfig.tagline.split('..')[0] || 'قيصر الكيمياء'} · دفعة 2026
+                  {siteConfig.tagline || 'Senior Chemistry & Science Educator'} · دفعة 2026
                 </p>
               </div>
             </div>
@@ -187,7 +187,7 @@ export const Footer: React.FC<FooterProps> = ({
               className="cursor-default select-none"
               title=""
             >
-              © 2026 جميع الحقوق محفوظة لمنصة الأستاذ {siteConfig.teacherName} - قيصر الكيمياء.
+              © 2026 جميع الحقوق محفوظة لمنصة الأستاذ {siteConfig.teacherName} - Chemistry & Science Educator.
             </span>
           </div>
 
