@@ -297,15 +297,11 @@ export default function App() {
 
   // Dynamic body font class
   const getBodyFontClass = () => {
-    switch (siteConfig.bodyFont) {
-      case 'Tajawal': return 'font-tajawal';
-      case 'Almarai': return 'font-almarai';
-      default: return 'font-cairo';
-    }
+    return 'font-cairo';
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}>
+    <div className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}>
       
       {/* Top Navbar */}
       <Navbar
@@ -337,6 +333,8 @@ export default function App() {
 
             {/* 3. Academic Years Section */}
             <AcademicYearsSection
+              lectures={lectures}
+              attachments={attachments}
               onSelectGrade={handleSelectGrade}
               onPreviewCurriculum={(grade) => {
                 handleSelectGrade(grade);

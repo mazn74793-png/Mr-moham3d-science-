@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   Play, CheckCircle2, Clock, FileText, Download, Award, BookOpen, 
   ChevronRight, ArrowRight, Video, Sparkles, Filter, Check, X, AlertCircle, HelpCircle,
-  Lock, AlertTriangle, ShieldCheck, Trophy, ChevronLeft
+  Lock, AlertTriangle, ShieldCheck, Trophy, ChevronLeft, Compass, Flame, Target, TrendingUp
 } from 'lucide-react';
 import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile } from '../types';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
+import { useLanguage } from '../context/LanguageContext';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -26,6 +27,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onOpenTeacherDashboard,
   onUpdateStudentProfile,
 }) => {
+  const { lang, isRtl, t } = useLanguage();
   const isTeacher = currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' || currentUser?.role === 'teacher';
   
   // Student view is locked strictly to their own grade; teacher can toggle to inspect all
@@ -187,8 +189,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
   };
 
+  // Real strictly-calculated metrics for student activity & progress
+  const completedLecturesCount = filteredLectures.filter(l => currentUser?.watchedLectureIds?.includes(l.id)).length;
+  const totalLecturesCount = filteredLectures.length;
+  const progressPercentage = totalLecturesCount > 0 ? Math.round((completedLecturesCount / totalLecturesCount) * 100) : 0;
+  const passedQuizzesCount = filteredQuizzes.filter(q => currentUser?.passedQuizIds?.includes(q.id) || (currentUser?.quizScores?.[q.id] ?? 0) >= 60).length;
+
+  // Next target session for the student
+  const nextTargetLecture = filteredLectures.find(l => !currentUser?.watchedLectureIds?.includes(l.id)) || filteredLectures[0] || null;
+  const isNextLectureReady = nextTargetLecture ? isLectureUnlocked(nextTargetLecture) : true;
+
+  // Next recommended quiz for the student
+  const nextTargetQuiz = (nextTargetLecture?.quizId ? quizzes.find(q => q.id === nextTargetLecture.quizId) : null) || 
+                         filteredQuizzes.find(q => !currentUser?.passedQuizIds?.includes(q.id)) || 
+                         filteredQuizzes[0] || null;
+
   return (
-    <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden">
+    <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo">
       
       {/* Top Portal Banner */}
       <div className="bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white border-b border-teal-700/50">
@@ -198,24 +215,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <div className="flex items-center gap-4">
               <button
                 onClick={onBackToHome}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
-                title="العودة للصفحة الرئيسية"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                title={lang === 'en' ? 'Back to Home' : 'العودة للصفحة الرئيسية'}
               >
-                <ChevronRight className="w-4 h-4" />
-                <span>الرئيسية</span>
+                {isRtl ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                <span>{lang === 'en' ? 'Home' : 'الرئيسية'}</span>
               </button>
 
               <div className="space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold font-kufi">
-                    لوحة تحكم الطالب · Chemistry & Science
+                  <h1 className="text-xl sm:text-2xl font-bold">
+                    {lang === 'en' ? 'Student Portal · Chemistry & Science' : 'لوحة تحكم الطالب · Chemistry & Science'}
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-bold font-mono">
                     {getGradeTitle(selectedGrade)}
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-teal-200">
-                  مرحباً بك يا {currentUser ? currentUser.name : 'دكتور المستقبل'}! المحتوى مخصص لصفك الدراسي ومؤمن بنظام التسلسل الذكي.
+                  {lang === 'en'
+                    ? `Welcome, ${currentUser ? currentUser.name : 'Future Leader'}! Your customized curriculum is protected by smart sequential learning.`
+                    : `مرحباً بك يا ${currentUser ? currentUser.name : 'دكتور المستقبل'}! المحتوى مخصص لصفك الدراسي ومؤمن بنظام التسلسل الذكي.`}
                 </p>
               </div>
             </div>
@@ -224,15 +243,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               {isTeacher && (
                 <button
                   onClick={onOpenTeacherDashboard}
-                  className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-amber-400/20 text-amber-200 border border-amber-400/40 hover:bg-amber-400/30 transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-400/20 text-amber-200 border border-amber-400/40 hover:bg-amber-400/30 transition-colors cursor-pointer"
                 >
-                  لوحة التحكم (Admin)
+                  {lang === 'en' ? 'Admin Dashboard' : 'لوحة التحكم (Admin)'}
                 </button>
               )}
 
               <div className="px-3.5 py-2 rounded-xl bg-white/10 text-xs font-mono flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-300" />
-                <span>الدرجة التراكمية الحقيقية: {studentCumulativeScore}%</span>
+                <span>
+                  {lang === 'en'
+                    ? `Cumulative Score: ${studentCumulativeScore}%`
+                    : `الدرجة التراكمية الحقيقية: ${studentCumulativeScore}%`}
+                </span>
               </div>
             </div>
 
@@ -242,6 +265,216 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
+        {/* ========================================================
+            INTERACTIVE ACTIVITY & DESTINATION CARDS (مركز الأنشطة والوجهات السريعة)
+        ======================================================== */}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-600">
+                <Compass className="w-5 h-5" />
+              </span>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white font-kufi">
+                  {lang === 'en' ? 'Activity & Quick Destination Hub 🎯' : 'مركز أنشطة الطالب والوجهات السريعة 🎯'}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {lang === 'en'
+                    ? 'Instant shortcuts to your next session, pending quiz, handouts library, and periodic table.'
+                    : 'محطة وصولك السريعة لحصتك المستحقة، كويز التقييم، مكتبة المذكرات، ومختبر الجدول الدوري.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Overall Curriculum Progress Tag */}
+            <div className="flex items-center gap-3 p-2 px-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs self-start sm:self-auto font-mono text-xs">
+              <span className="text-slate-500">{lang === 'en' ? 'Curriculum Progress:' : 'إتقان المنهج:'}</span>
+              <div className="w-24 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+              <span className="font-bold text-teal-600 dark:text-teal-400">{progressPercentage}%</span>
+            </div>
+          </div>
+
+          {/* 5 Destination Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* DESTINATION CARD 1: NEXT LECTURE */}
+            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-teal-200/80 dark:border-slate-800 hover:border-teal-500 dark:hover:border-teal-500 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/80 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
+                    <Video className="w-5 h-5" />
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono ${
+                    isNextLectureReady ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    {isNextLectureReady ? (lang === 'en' ? 'Next Up ▶️' : 'حصتك التالية ▶️') : (lang === 'en' ? 'Locked 🔒' : 'مقفولة 🔒')}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-bold text-teal-600 dark:text-teal-400 font-mono">
+                    {lang === 'en' ? `Session #${nextTargetLecture?.sessionOrder || 1}` : `الحصة رقم ${nextTargetLecture?.sessionOrder || 1}`}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                    {nextTargetLecture?.title || (lang === 'en' ? 'First Lecture' : 'محاضرة التأسيس')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
+                    {nextTargetLecture?.chapter || 'الباب الأول'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    if (nextTargetLecture) {
+                      setActiveLecture(nextTargetLecture);
+                      setActiveTab('lectures');
+                      setActiveQuiz(null);
+                      setTimeout(() => {
+                        document.getElementById('videoPlayerSection')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{lang === 'en' ? 'Watch Lecture Now' : 'مشاهدة الحصة الآن'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* DESTINATION CARD 2: ASSESSMENT QUIZ */}
+            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-amber-200/80 dark:border-slate-800 hover:border-amber-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                    <Award className="w-5 h-5" />
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                    {lang === 'en' ? 'Assessment' : 'كويز الترقية 📝'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono">
+                    {nextTargetQuiz ? `${nextTargetQuiz.questions.length} ${lang === 'en' ? 'Questions' : 'أسئلة MCQ'}` : 'اختبار إلكتروني'}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                    {nextTargetQuiz?.title || (lang === 'en' ? 'General Chemistry Quiz' : 'كويز قياس المستوى الدوري')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
+                    {nextTargetQuiz?.chapter || (lang === 'en' ? 'Grade Syllabus' : 'منهج الصف')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    if (nextTargetQuiz) {
+                      handleStartQuiz(nextTargetQuiz);
+                      setTimeout(() => {
+                        document.getElementById('quizSection')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    } else {
+                      setActiveTab('quizzes');
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>{lang === 'en' ? 'Start Assessment Quiz' : 'بدء الكويز الآن'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* DESTINATION CARD 3: HANDOUTS & PDF NOTES */}
+            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-teal-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/80 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
+                    {filteredAttachments.length} {lang === 'en' ? 'Files' : 'مذكرات'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-bold text-teal-600 dark:text-teal-400 font-mono">
+                    {lang === 'en' ? 'Download Center' : 'مكتبة الملازم والشيتات'}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                    {filteredAttachments[0]?.title || (lang === 'en' ? 'Chemistry Handouts PDF' : 'مذكرات الشرح والمسائل')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
+                    {lang === 'en' ? 'PDFs available for offline study' : 'جاهزة للتحميل والطباعة مباشرة'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    setActiveTab('files');
+                    setActiveQuiz(null);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{lang === 'en' ? 'Explore Handouts' : 'تصفح المذكرات PDF'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* DESTINATION CARD 4: INTERACTIVE 3D PERIODIC TABLE */}
+            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-purple-200/80 dark:border-slate-800 hover:border-purple-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300">
+                    118 {lang === 'en' ? 'Elements' : 'عنصراً'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400 font-mono">
+                    {lang === 'en' ? 'Interactive 3D Lab' : 'المختبر ثلاثي الأبعاد'}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                    {lang === 'en' ? 'Modern Periodic Table' : 'الجدول الدوري الحديث'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
+                    {lang === 'en' ? 'Atomic numbers & electron configs' : 'أعداد التأكسد والتوزيع الإلكتروني'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    setActiveTab('periodic-table');
+                    setActiveQuiz(null);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{lang === 'en' ? 'Open Periodic Table' : 'استكشف الجدول الدوري'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         {/* Navigation Tabs & Grade Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800">
           
@@ -249,50 +482,64 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
             <button
               onClick={() => { setActiveTab('lectures'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                 activeTab === 'lectures' && !activeQuiz
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <Video className="w-4 h-4" />
-              <span>المحاضرات والشرح ({filteredLectures.length})</span>
+              <span>
+                {lang === 'en'
+                  ? `Lectures & Sessions (${filteredLectures.length})`
+                  : `المحاضرات والشرح (${filteredLectures.length})`}
+              </span>
             </button>
 
             <button
               onClick={() => { setActiveTab('quizzes'); }}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                 activeTab === 'quizzes'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <Award className="w-4 h-4" />
-              <span>الامتحانات الإلكترونية ({filteredQuizzes.length})</span>
+              <span>
+                {lang === 'en'
+                  ? `Online Quizzes (${filteredQuizzes.length})`
+                  : `الامتحانات الإلكترونية (${filteredQuizzes.length})`}
+              </span>
             </button>
 
             <button
               onClick={() => { setActiveTab('files'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                 activeTab === 'files'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>المذكرات والملفات ({filteredAttachments.length})</span>
+              <span>
+                {lang === 'en'
+                  ? `PDF Handouts (${filteredAttachments.length})`
+                  : `المذكرات والملفات (${filteredAttachments.length})`}
+              </span>
             </button>
 
             <button
               onClick={() => { setActiveTab('periodic-table'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                 activeTab === 'periodic-table'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>الجدول الدوري السريع</span>
+              <span>
+                {lang === 'en' ? 'Periodic Table' : 'الجدول الدوري الحديث'}
+              </span>
             </button>
           </div>
 

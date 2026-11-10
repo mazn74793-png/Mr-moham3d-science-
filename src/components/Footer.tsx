@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MessageCircle, Phone, Youtube, Facebook, Send, KeyRound, X, Shield, FileText } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
+import { useLanguage } from '../context/LanguageContext';
 
 interface FooterProps {
   siteConfig: SiteConfig;
@@ -17,6 +18,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenLogin,
   onOpenSecretAdmin,
 }) => {
+  const { lang, isRtl, t } = useLanguage();
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
 
@@ -35,24 +37,24 @@ export const Footer: React.FC<FooterProps> = ({
   }, []);
 
   return (
-    <footer className="bg-slate-950 text-slate-300 border-t border-slate-800 transition-colors w-full max-w-full overflow-hidden">
+    <footer className="bg-slate-950 text-slate-300 border-t border-slate-800 transition-colors w-full max-w-full overflow-hidden font-cairo">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-12">
         
         {/* Main Footer Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-8 pb-12 border-b border-slate-800">
           
           {/* Brand & Teacher Bio (Cols 1-5) */}
-          <div className="lg:col-span-5 space-y-4 text-right">
+          <div className={`lg:col-span-5 space-y-4 ${isRtl ? 'text-right' : 'text-left'}`}>
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 flex items-center justify-center text-white font-bold text-xl shadow-md">
-                <span className="font-kufi text-2xl">م.م</span>
+                <span className="font-mono text-xl">M.M</span>
               </div>
               <div>
-                <h3 className="font-kufi text-xl font-bold text-white">
-                  أ/ {siteConfig.teacherName}
+                <h3 className="text-xl font-bold text-white">
+                  {lang === 'en' ? 'Mr. Mohamed Mostafa' : `أ/ ${siteConfig.teacherName}`}
                 </h3>
-                <p className="text-xs text-teal-400 font-sans">
-                  {siteConfig.tagline || 'Senior Chemistry & Science Educator'} · دفعة 2026
+                <p className="text-xs text-teal-400">
+                  {lang === 'en' ? 'Senior Chemistry & Science Educator · Class 2026' : (siteConfig.tagline || 'Senior Chemistry & Science Educator · دفعة 2026')}
                 </p>
               </div>
             </div>
