@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
+import defaultTeacherPhoto from '../assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
 
 interface HeroSectionProps {
   siteConfig: SiteConfig;
@@ -17,6 +18,28 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   const { lang, isRtl, t } = useLanguage();
 
   const ActionArrow = isRtl ? ArrowLeft : ArrowRight;
+
+  const resolveInitialImage = () => {
+    const raw = siteConfig.profileImageUrl;
+    if (!raw || raw.includes('/src/assets/')) {
+      return defaultTeacherPhoto;
+    }
+    return raw;
+  };
+
+  const [imgSrc, setImgSrc] = useState<string>(resolveInitialImage);
+
+  useEffect(() => {
+    setImgSrc(resolveInitialImage());
+  }, [siteConfig.profileImageUrl]);
+
+  const handleImageError = () => {
+    if (imgSrc !== defaultTeacherPhoto) {
+      setImgSrc(defaultTeacherPhoto);
+    } else if (imgSrc !== '/images/teacher_mohamed_mostafa_1794141316649.jpg') {
+      setImgSrc('/images/teacher_mohamed_mostafa_1794141316649.jpg');
+    }
+  };
 
   return (
     <section className="relative overflow-hidden pt-6 pb-14 lg:pt-12 lg:pb-20 bg-[#fafffb] dark:bg-slate-950 bg-molecules-pattern transition-colors w-full max-w-full font-cairo">
@@ -137,13 +160,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               {/* Pure Transparent Image Wrapper (Zero border, zero solid box) */}
               <div className="relative w-full flex items-center justify-center group">
                 <img
-                  src={siteConfig.profileImageUrl || '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg'}
+                  src={imgSrc}
                   alt={siteConfig.teacherName}
                   className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer"
                   referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    e.currentTarget.src = '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
-                  }}
+                  onError={handleImageError}
                 />
 
                 {/* Elegant Glass Floating Badge for the Teacher */}

@@ -29,7 +29,18 @@ export default function App() {
   // Master Site Configuration state (Customizable via © + PIN 2825)
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('mm_site_config');
-    return saved ? JSON.parse(saved) : DEFAULT_SITE_CONFIG;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.profileImageUrl === 'string' && parsed.profileImageUrl.includes('/src/assets/')) {
+          parsed.profileImageUrl = parsed.profileImageUrl.replace('/src/assets/images/', '/images/');
+        }
+        return { ...DEFAULT_SITE_CONFIG, ...parsed };
+      } catch (e) {
+        return DEFAULT_SITE_CONFIG;
+      }
+    }
+    return DEFAULT_SITE_CONFIG;
   });
 
   // Current logged in user
@@ -122,12 +133,37 @@ export default function App() {
     return Boolean(email && (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === email));
   };
 
-  // Strict route guard: accessible to primary teacher and verified co-admins
+  // Strict route guard: strictly lock student and teacher portals without login
   useEffect(() => {
     if (currentView === 'teacher' && !isUserAdmin(currentUser)) {
       setCurrentView('landing');
+      setLoginModalOpen(true);
+    } else if (currentView === 'student' && !currentUser) {
+      setCurrentView('landing');
+      setLoginModalOpen(true);
     }
   }, [currentView, currentUser, siteConfig.adminEmails]);
+
+  // Centralized navigation guard
+  const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
+    if (view === 'teacher') {
+      if (!isUserAdmin(currentUser)) {
+        setLoginModalOpen(true);
+        return;
+      }
+      setCurrentView('teacher');
+      return;
+    }
+    if (view === 'student') {
+      if (!currentUser) {
+        setLoginModalOpen(true);
+        return;
+      }
+      setCurrentView('student');
+      return;
+    }
+    setCurrentView(view);
+  };
 
   const handleToggleTheme = () => {
     setDarkMode(prev => !prev);
@@ -285,12 +321,14 @@ export default function App() {
   };
 
   const handleSelectGrade = (grade: GradeLevel) => {
-    if (currentUser) {
-      handleUpdateStudentProfile({
-        ...currentUser,
-        grade: grade,
-      });
+    if (!currentUser) {
+      setLoginModalOpen(true);
+      return;
     }
+    handleUpdateStudentProfile({
+      ...currentUser,
+      grade: grade,
+    });
     setCurrentView('student');
   };
 
@@ -319,7 +357,7 @@ export default function App() {
         onOpenRegister={() => setLoginModalOpen(true)}
         onLogout={handleLogout}
         currentView={currentView}
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={handleNavigate}
         onScrollToSection={handleScrollToSection}
       />
 
@@ -330,7 +368,13 @@ export default function App() {
             {/* 1. Hero Section */}
             <HeroSection
               siteConfig={siteConfig}
-              onJoinNow={() => setLoginModalOpen(true)}
+              onJoinNow={() => {
+                if (currentUser) {
+                  setCurrentView('student');
+                } else {
+                  setLoginModalOpen(true);
+                }
+              }}
               onExploreLectures={() => handleScrollToSection('academic-years')}
             />
 
@@ -350,19 +394,19 @@ export default function App() {
           </>
         )}
 
-        {currentView === 'student' && (
+        {currentView === 'student' && currentUser && (
           <StudentPortal
             currentUser={currentUser}
             lectures={lectures}
             quizzes={quizzes}
             attachments={attachments}
             onBackToHome={() => setCurrentView('landing')}
-            onOpenTeacherDashboard={() => setCurrentView('teacher')}
+            onOpenTeacherDashboard={() => handleNavigate('teacher')}
             onUpdateStudentProfile={handleUpdateStudentProfile}
           />
         )}
 
-        {currentView === 'teacher' && (
+        {currentView === 'teacher' && isUserAdmin(currentUser) && (
           <TeacherDashboard
             lectures={lectures}
             onAddLecture={handleAddLecture}
@@ -383,7 +427,7 @@ export default function App() {
             siteConfig={siteConfig}
             onSaveSiteConfig={handleSaveSiteConfig}
             onBackToHome={() => setCurrentView('landing')}
-            onOpenStudentPortal={() => setCurrentView('student')}
+            onOpenStudentPortal={() => handleNavigate('student')}
           />
         )}
       </main>
@@ -391,7 +435,7 @@ export default function App() {
       {/* Footer */}
       <Footer
         siteConfig={siteConfig}
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={handleNavigate}
         onScrollToSection={handleScrollToSection}
         onOpenLogin={() => setLoginModalOpen(true)}
         onOpenSecretAdmin={() => setSecretAdminOpen(true)}

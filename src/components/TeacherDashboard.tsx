@@ -156,7 +156,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [lecChapter, setLecChapter] = useState('الباب الأول: العناصر الانتقالية');
   const [lecDuration, setLecDuration] = useState('45 دقيقة');
   const [lecVideoUrl, setLecVideoUrl] = useState('https://www.youtube.com/embed/dQw4w9WgXcQ');
-  const [lecThumbnail, setLecThumbnail] = useState('/src/assets/images/chemistry_lab_visual_1794141316456.jpg');
+  const [lecThumbnail, setLecThumbnail] = useState('/images/chemistry_lab_visual_1794141316456.jpg');
   const [lecPdfTitle, setLecPdfTitle] = useState('');
   const [lecDescription, setLecDescription] = useState('');
   const [lecIsFree, setLecIsFree] = useState(false);
@@ -409,7 +409,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       chapter: lecChapter,
       duration: lecDuration || '50 دقيقة',
       videoUrl: lecVideoUrl || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-      thumbnailUrl: lecThumbnail || '/src/assets/images/chemistry_lab_visual_1794141316456.jpg',
+      thumbnailUrl: lecThumbnail || '/images/chemistry_lab_visual_1794141316456.jpg',
       pdfTitle: lecPdfTitle ? `${lecPdfTitle}.pdf` : undefined,
       description: lecDescription || 'شرح تفاعلي لموضوع الدرس مع أمثلة وتدريبات تطبيقية.',
       isFreePreview: lecIsFree,
@@ -628,10 +628,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="p-3 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/60 dark:border-teal-900/40 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-teal-600 shrink-0 border border-teal-400/40">
                 <img
-                  src={siteForm.profileImageUrl || '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg'}
+                  src={siteForm.profileImageUrl?.replace('/src/assets/images/', '/images/') || '/images/teacher_mohamed_mostafa_1794141316649.jpg'}
                   alt={siteForm.teacherName}
                   className="w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  onError={(e) => { e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg'; }}
                 />
               </div>
               <div className="min-w-0">
@@ -1055,7 +1055,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {lectures.slice(0, 3).map(lec => (
                     <div key={lec.id} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center gap-3">
                       <img 
-                        src={lec.thumbnailUrl || '/src/assets/images/chemistry_lab_visual_1794141316456.jpg'} 
+                        src={lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'} 
                         alt={lec.title} 
                         className="w-14 h-14 rounded-xl object-cover shrink-0" 
                       />
@@ -2759,7 +2759,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       type="text"
                       value={siteForm.profileImageUrl}
                       onChange={(e) => setSiteForm({ ...siteForm, profileImageUrl: e.target.value })}
-                      placeholder="https://... أو /src/assets/images/..."
+                      placeholder="https://... أو /images/teacher_mohamed_mostafa_1794141316649.jpg"
                       className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr"
                     />
                   </div>
@@ -2789,7 +2789,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       alt="معاينة الصورة"
                       className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
                       onError={(e) => {
-                        e.currentTarget.src = '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
+                        e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg';
                       }}
                     />
                     <div className="space-y-1">

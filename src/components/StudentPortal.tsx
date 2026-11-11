@@ -204,6 +204,30 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                          filteredQuizzes.find(q => !currentUser?.passedQuizIds?.includes(q.id)) || 
                          filteredQuizzes[0] || null;
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center font-cairo">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 border border-amber-500/20">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">
+          {isRtl ? 'تسجيل الدخول مطلوب' : 'Authentication Required'}
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400 max-w-md mb-6 text-sm">
+          {isRtl 
+            ? 'من فضلك قم بتسجيل الدخول أولاً بحسابك للوصول إلى منصة الطالب والمحاضرات والاختبارات.'
+            : 'Please log in with your student account first to access lectures, quizzes, and files.'}
+        </p>
+        <button
+          onClick={onBackToHome}
+          className="px-6 py-2.5 rounded-xl bg-teal-600 text-white font-semibold hover:bg-teal-700 transition-colors shadow-md cursor-pointer"
+        >
+          {isRtl ? 'العودة للصفحة الرئيسية وتسجيل الدخول' : 'Return Home & Log In'}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo">
       

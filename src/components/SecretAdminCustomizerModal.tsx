@@ -320,7 +320,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                       type="text"
                       value={formData.profileImageUrl}
                       onChange={(e) => handleFieldChange('profileImageUrl', e.target.value)}
-                      placeholder="https://... أو /src/assets/images/..."
+                      placeholder="https://... أو /images/..."
                       className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr"
                     />
                   </div>
@@ -350,7 +350,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                       alt="معاينة الصورة"
                       className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
                       onError={(e) => {
-                        e.currentTarget.src = '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
+                        e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg';
                       }}
                     />
                     <div className="space-y-1">
