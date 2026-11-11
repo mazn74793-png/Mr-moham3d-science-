@@ -4,9 +4,11 @@ import {
   Video, FileText
 } from 'lucide-react';
 import { GradeLevel, Lecture, AttachmentFile } from '../types';
+import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 
 interface AcademicYearsSectionProps {
+  siteConfig?: SiteConfig;
   lectures?: Lecture[];
   attachments?: AttachmentFile[];
   onSelectGrade: (grade: GradeLevel) => void;
@@ -28,7 +30,7 @@ interface GradeCardData {
   isPopular?: boolean;
 }
 
-const GRADES_DATA: GradeCardData[] = [
+const BASE_GRADES_DATA: GradeCardData[] = [
   {
     grade: 'first',
     badgeAr: 'الصف الأول الثانوي',
@@ -100,10 +102,43 @@ const GRADES_DATA: GradeCardData[] = [
 ];
 
 export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
+  siteConfig,
   lectures = [],
   attachments = [],
   onSelectGrade,
 }) => {
+  // Dynamically compute grade data with admin customized names
+  const GRADES_DATA: GradeCardData[] = BASE_GRADES_DATA.map((card) => {
+    if (!siteConfig) return card;
+    if (card.grade === 'first') {
+      return {
+        ...card,
+        titleAr: siteConfig.gradeFirstTitleAr || card.titleAr,
+        titleEn: siteConfig.gradeFirstTitleEn || card.titleEn,
+        badgeAr: siteConfig.gradeFirstBadgeAr || card.badgeAr,
+        descriptionAr: siteConfig.gradeFirstDescAr || card.descriptionAr,
+      };
+    }
+    if (card.grade === 'second') {
+      return {
+        ...card,
+        titleAr: siteConfig.gradeSecondTitleAr || card.titleAr,
+        titleEn: siteConfig.gradeSecondTitleEn || card.titleEn,
+        badgeAr: siteConfig.gradeSecondBadgeAr || card.badgeAr,
+        descriptionAr: siteConfig.gradeSecondDescAr || card.descriptionAr,
+      };
+    }
+    if (card.grade === 'third') {
+      return {
+        ...card,
+        titleAr: siteConfig.gradeThirdTitleAr || card.titleAr,
+        titleEn: siteConfig.gradeThirdTitleEn || card.titleEn,
+        badgeAr: siteConfig.gradeThirdBadgeAr || card.badgeAr,
+        descriptionAr: siteConfig.gradeThirdDescAr || card.descriptionAr,
+      };
+    }
+    return card;
+  });
   const [currentIndex, setCurrentIndex] = useState(2); // Start on 3rd Secondary (flagship)
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const sliderRef = useRef<HTMLDivElement>(null);

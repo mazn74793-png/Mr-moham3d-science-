@@ -3,7 +3,8 @@ import {
   Upload, Plus, Video, FileText, Image as ImageIcon, CheckCircle, 
   Trash2, ExternalLink, Settings, Cloud, Copy, RefreshCw, AlertCircle, 
   ChevronRight, Palette, Sparkles, KeyRound, Phone, User, Check, RefreshCcw, Type,
-  Award, Trophy, Users, Edit3, Film, X
+  Award, Trophy, Users, Edit3, Film, X, Shield, ShieldCheck, GraduationCap,
+  LayoutDashboard, Menu, Link as LinkIcon, Compass, Eye
 } from 'lucide-react';
 import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfile } from '../types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
@@ -33,6 +34,18 @@ interface TeacherDashboardProps {
   onOpenStudentPortal: () => void;
 }
 
+export type TeacherDashboardTab = 
+  | 'overview' 
+  | 'all-students' 
+  | 'upload-lecture' 
+  | 'lectures-list' 
+  | 'quizzes-bank' 
+  | 'files' 
+  | 'academic-years' 
+  | 'co-admins' 
+  | 'site-customizer' 
+  | 'cloudinary';
+
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   lectures,
   onAddLecture,
@@ -55,7 +68,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onBackToHome,
   onOpenStudentPortal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'upload-lecture' | 'lectures-list' | 'quizzes-bank' | 'student-reports' | 'files' | 'cloudinary' | 'site-customizer'>('upload-lecture');
+  const [activeTab, setActiveTab] = useState<TeacherDashboardTab>('overview');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [adminNotice, setAdminNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [deleteAdminConfirmEmail, setDeleteAdminConfirmEmail] = useState<string | null>(null);
+  const [selectedAcademicTab, setSelectedAcademicTab] = useState<'first' | 'second' | 'third'>('first');
+  const [newQuickLinkTitle, setNewQuickLinkTitle] = useState('');
+  const [newQuickLinkUrl, setNewQuickLinkUrl] = useState('');
   
   // Cloudinary settings state
   const [cloudName, setCloudName] = useState(cloudinaryConfig.cloudName || 'chemistry-egypt');
@@ -152,10 +172,76 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [fileSize, setFileSize] = useState('3.5 MB');
 
   // Site Customizer Sub-Tab & Form State
-  const [customizerSubTab, setCustomizerSubTab] = useState<'general' | 'images' | 'fonts-colors' | 'features' | 'contact' | 'tech' | 'credits'>('general');
+  const [customizerSubTab, setCustomizerSubTab] = useState<'general' | 'images' | 'fonts-colors' | 'features' | 'footer' | 'contact' | 'tech' | 'credits'>('general');
   const [siteForm, setSiteForm] = useState<SiteConfig>(siteConfig);
   const [siteSaveSuccess, setSiteSaveSuccess] = useState(false);
   const [uploadingTeacherPhoto, setUploadingTeacherPhoto] = useState(false);
+
+  // Sync siteForm when siteConfig updates from props
+  React.useEffect(() => {
+    setSiteForm(siteConfig);
+  }, [siteConfig]);
+
+  // Handle adding new Co-Admin with full permissions
+  const handleAddCoAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminNotice(null);
+    const email = newAdminEmail.trim().toLowerCase();
+    if (!email || !email.includes('@') || !email.includes('.')) {
+      setAdminNotice({ type: 'error', message: 'يرجى إدخال بريد إلكتروني صحيح.' });
+      return;
+    }
+    const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
+    if (currentAdmins.includes(email)) {
+      setAdminNotice({ type: 'error', message: 'هذا البريد مسجل كمدير ومسؤول بالفعل!' });
+      return;
+    }
+    const updatedAdmins = [...currentAdmins, email];
+    const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
+    setSiteForm(updatedConfig);
+    onSaveSiteConfig(updatedConfig);
+    setNewAdminEmail('');
+    setAdminNotice({ type: 'success', message: `تمت إضافة المشرف والمدير المساعد (${email}) بنجاح وبكامل الصلاحيات! 🛡️` });
+    setTimeout(() => setAdminNotice(null), 4000);
+  };
+
+  // Handle removing a Co-Admin
+  const handleRemoveCoAdmin = (emailToRemove: string) => {
+    if (emailToRemove === 'mizoo2y2@gmail.com') return; // Cannot delete primary owner
+    const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
+    const updatedAdmins = currentAdmins.filter(em => em !== emailToRemove);
+    const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
+    setSiteForm(updatedConfig);
+    onSaveSiteConfig(updatedConfig);
+    setDeleteAdminConfirmEmail(null);
+    setAdminNotice({ type: 'success', message: `تم حذف المدير المساعد (${emailToRemove}) بنجاح.` });
+    setTimeout(() => setAdminNotice(null), 4000);
+  };
+
+  // Handle adding new Footer Quick Link
+  const handleAddQuickLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuickLinkTitle.trim() || !newQuickLinkUrl.trim()) return;
+    const currentLinks = siteForm.footerQuickLinks || [];
+    const newLink = {
+      id: `link-${Date.now()}`,
+      title: newQuickLinkTitle.trim(),
+      url: newQuickLinkUrl.trim()
+    };
+    const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: [...currentLinks, newLink] };
+    setSiteForm(updatedConfig);
+    onSaveSiteConfig(updatedConfig);
+    setNewQuickLinkTitle('');
+    setNewQuickLinkUrl('');
+  };
+
+  // Handle removing a Footer Quick Link
+  const handleRemoveQuickLink = (idToRemove: string) => {
+    const currentLinks = siteForm.footerQuickLinks || [];
+    const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: currentLinks.filter(l => l.id !== idToRemove) };
+    setSiteForm(updatedConfig);
+    onSaveSiteConfig(updatedConfig);
+  };
 
   // Handle Cloudinary settings save
   const handleSaveConfig = (e: React.FormEvent) => {
@@ -468,182 +554,971 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   return (
     <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden">
       
-      {/* Top Admin Banner */}
-      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-teal-950 text-white border-b border-teal-800/60 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Top Admin Header */}
+      <header className="bg-gradient-to-r from-teal-900 via-slate-900 to-teal-950 text-white border-b border-teal-800/60 shadow-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+          <div className="flex items-center justify-between gap-3">
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {/* Mobile Sidebar Toggle Button */}
+              <button
+                onClick={() => setIsMobileSidebarOpen(prev => !prev)}
+                className="lg:hidden p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                aria-label="القائمة الجانبية"
+              >
+                {isMobileSidebarOpen ? <X className="w-5 h-5 text-amber-300" /> : <Menu className="w-5 h-5" />}
+              </button>
+
               <button
                 onClick={onBackToHome}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
                 title="العودة للرئيسية"
               >
                 <ChevronRight className="w-4 h-4" />
-                <span>الرئيسية</span>
+                <span className="hidden sm:inline">الرئيسية</span>
               </button>
 
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-bold font-kufi">
+                  <h1 className="text-sm sm:text-base lg:text-lg font-bold font-kufi">
                     لوحة تحكم الأستاذ {siteConfig.teacherName} ⚗️
                   </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-bold font-mono">
-                    لوحة الإدارة والتحكم الشاملة
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold font-mono flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    <span>مسؤول معتمد</span>
                   </span>
                 </div>
-                <p className="text-xs sm:text-sm text-teal-200 font-sans">
-                  إدارة المحاضرات، رفع المذكرات، وسائط Cloudinary، وتخصيص هوية الموقع بالكامل بدون تعقيد.
-                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('site-customizer')}
-                className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'site-customizer'
                     ? 'bg-amber-400 text-slate-950 shadow-md'
-                    : 'bg-white/10 hover:bg-white/20 text-amber-300'
+                    : 'bg-white/10 hover:bg-white/20 text-amber-300 hidden sm:flex'
                 }`}
               >
-                <Palette className="w-4 h-4" />
-                <span>تعديل وهوية الموقع 🎨</span>
+                <Palette className="w-3.5 h-3.5" />
+                <span>هوية الموقع 🎨</span>
               </button>
 
               <button
                 onClick={onOpenStudentPortal}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-teal-500 hover:bg-teal-600 text-white shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-teal-500 hover:bg-teal-600 text-white shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <span>معاينة منصة الطلاب</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <span>معاينة الطلاب</span>
+                <ExternalLink className="w-3 h-3" />
               </button>
             </div>
 
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Admin Content Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Modern Two-Column Layout: Responsive Sidebar on Side + Main Content */}
+      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-65px)] w-full">
         
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-sans">إجمالي المحاضرات</div>
-            <div className="text-2xl sm:text-3xl font-bold text-teal-600 font-mono tabular-nums">{lectures.length}</div>
-            <div className="text-[11px] text-teal-700 dark:text-teal-400">متاحة ومفعلة للطلاب</div>
-          </div>
-
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-sans">المذكرات والملفات</div>
-            <div className="text-2xl sm:text-3xl font-bold text-amber-500 font-mono tabular-nums">{attachments.length}</div>
-            <div className="text-[11px] text-amber-600 dark:text-amber-400">PDF قابلة للتحميل</div>
-          </div>
-
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-sans">الطلاب المشتركون</div>
-            <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
-              {students.filter(s => s.role !== 'teacher').length}
+        {/* Sidebar Navigation on the side */}
+        <aside className={`w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 lg:p-5 flex flex-col justify-between ${isMobileSidebarOpen ? 'block' : 'hidden lg:flex'}`}>
+          <div className="space-y-6">
+            
+            {/* Quick Profile Pill in Sidebar */}
+            <div className="p-3 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/60 dark:border-teal-900/40 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl overflow-hidden bg-teal-600 shrink-0 border border-teal-400/40">
+                <img
+                  src={siteForm.profileImageUrl || '/src/assets/images/teacher_mohamed_mostafa_1794141316649.jpg'}
+                  alt={siteForm.teacherName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-900 dark:text-white truncate font-kufi">
+                  {siteForm.teacherName}
+                </div>
+                <div className="text-[10px] text-teal-700 dark:text-teal-400 truncate font-mono">
+                  {siteForm.adminEmails?.[0] || 'mizoo2y2@gmail.com'}
+                </div>
+              </div>
             </div>
-            <div className="text-[11px] text-emerald-600 font-semibold">حسابات حقيقية مسجلة بالمنصة</div>
+
+            {/* Section 1: Overview & Students */}
+            <div className="space-y-1">
+              <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                الرئيسية والمتابعة
+              </div>
+              
+              <button
+                onClick={() => { setActiveTab('overview'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'overview'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>نظرة عامة وسريعة</span>
+                </div>
+                <span className="text-[10px] opacity-75">لوحة التحكم</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('all-students'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'all-students'
+                    ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-amber-50/80 dark:hover:bg-amber-950/30'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 text-amber-500" />
+                  <span>سجل وقائمة الطلاب</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono">
+                  {students.filter(s => s.role !== 'teacher').length}
+                </span>
+              </button>
+            </div>
+
+            {/* Section 2: Educational Content */}
+            <div className="space-y-1">
+              <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                المحتوى التعليمي
+              </div>
+
+              <button
+                onClick={() => { setActiveTab('upload-lecture'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'upload-lecture'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4 text-emerald-500" />
+                  <span>رفع محاضرة جديدة</span>
+                </div>
+                <span className="text-[10px] text-teal-400">فيديو + كويز</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('lectures-list'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'lectures-list'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Video className="w-4 h-4 text-sky-500" />
+                  <span>المحاضرات المنشورة</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                  {lectures.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('quizzes-bank'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'quizzes-bank'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Award className="w-4 h-4 text-amber-500" />
+                  <span>بنك الأسئلة والاختبارات</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                  {quizzes.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('files'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'files'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-rose-500" />
+                  <span>الملازم ومساحة التخزين</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                  {attachments.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Section 3: System Administration & Customization */}
+            <div className="space-y-1">
+              <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                إدارة المنصة وهوية الموقع
+              </div>
+
+              <button
+                onClick={() => { setActiveTab('academic-years'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'academic-years'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <GraduationCap className="w-4 h-4 text-indigo-500" />
+                  <span>تخصيص أسماء السنوات</span>
+                </div>
+                <span className="text-[10px] text-teal-400">الرئيسية</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('co-admins'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'co-admins'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Shield className="w-4 h-4 text-teal-500" />
+                  <span>المشرفين والمدراء المساعدين</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-[10px] font-mono font-bold">
+                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('site-customizer'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'site-customizer'
+                    ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Palette className="w-4 h-4 text-purple-500" />
+                  <span>هوية الموقع والفوتر</span>
+                </div>
+                <span className="text-[10px] text-amber-500 font-bold">تعديل</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('cloudinary'); setIsMobileSidebarOpen(false); }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'cloudinary'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Cloud className="w-4 h-4 text-sky-400" />
+                  <span>إعدادات Cloudinary</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">25 GB</span>
+              </button>
+            </div>
+
           </div>
 
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-sans">المسؤول الرئيسي</div>
-            <div className="text-xs sm:text-sm font-bold text-teal-600 dark:text-teal-400 font-mono truncate">mizoo2y2@gmail.com</div>
-            <div className="text-[11px] text-emerald-600 font-semibold">صلاحيات كاملة مفعلة ✓</div>
+          {/* Sidebar Bottom Cloudinary Storage Monitor */}
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5 mt-6">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Cloud className="w-3.5 h-3.5 text-teal-600" />
+                <span>سعة كلاودنري السحابية</span>
+              </span>
+              <span className="font-mono text-teal-600 dark:text-teal-400 font-bold text-[11px]">
+                {remainingGB} GB متبقية
+              </span>
+            </div>
+
+            <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  usedPercentage > 85 ? 'bg-rose-500' : usedPercentage > 60 ? 'bg-amber-400' : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.max(4, usedPercentage)}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+              <span>{totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`} مستخدمة</span>
+              <span>من 25 GB</span>
+            </div>
           </div>
-        </div>
+        </aside>
 
-        {/* Master Admin Navigation Tabs (Unified) */}
-        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-2">
-          
-          <button
-            onClick={() => setActiveTab('upload-lecture')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'upload-lecture'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            <span>رفع محاضرة جديدة</span>
-          </button>
+        {/* Main Content Area */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
 
-          <button
-            onClick={() => setActiveTab('lectures-list')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'lectures-list'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Video className="w-4 h-4" />
-            <span>المحاضرات المنشورة ({lectures.length})</span>
-          </button>
+          {/* ========================================================
+              TAB 0: MODERN DASHBOARD OVERVIEW & QUICK LAUNCHPADS
+          ======================================================== */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              
+              {/* Header Greeting */}
+              <div className="p-6 rounded-3xl bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white shadow-md relative overflow-hidden">
+                <div className="relative z-10 space-y-2 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-mono">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>المنظومة السحابية المحدثة · دفعة 2026</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold font-kufi">
+                    أهلاً بك يا أستاذ {siteConfig.teacherName} ⚗️
+                  </h2>
+                  <p className="text-xs sm:text-sm text-teal-100/90 leading-relaxed font-sans">
+                    لوحة التحكم المركزية تتيح لك إدارة المحاضرات، بنك الأسئلة، الطلاب، المذكرات السحابية عبر Cloudinary، وتخصيص أسماء السنوات الدراسية وإضافة مشرفين بكل سلاسة.
+                  </p>
+                </div>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('quizzes-bank')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'quizzes-bank'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Award className="w-4 h-4 text-amber-400" />
-            <span>بنك الأسئلة والاختبارات ({quizzes.length})</span>
-          </button>
+              {/* KPI Summary Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div 
+                  onClick={() => setActiveTab('lectures-list')}
+                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-teal-500 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
+                    <span>المحاضرات</span>
+                    <Video className="w-4 h-4 text-teal-600" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-teal-600 font-mono tabular-nums">{lectures.length}</div>
+                  <div className="text-[11px] text-teal-700 dark:text-teal-400">محاضرة منشورة ومفعلة</div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('student-reports')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'student-reports'
-                ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
-                : 'text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100'
-            }`}
-          >
-            <Trophy className="w-4 h-4 text-amber-500" />
-            <span>تقارير الطلاب والغياب ولوحة الشرف ({students.filter(s => s.role !== 'teacher').length})</span>
-          </button>
+                <div 
+                  onClick={() => setActiveTab('files')}
+                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-amber-500 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
+                    <span>المذكرات والملفات</span>
+                    <FileText className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-amber-500 font-mono tabular-nums">{attachments.length}</div>
+                  <div className="text-[11px] text-amber-600 dark:text-amber-400">PDF على Cloudinary</div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('files')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'files'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>رفع وإدارة المذكرات PDF ({attachments.length})</span>
-          </button>
+                <div 
+                  onClick={() => setActiveTab('all-students')}
+                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-emerald-500 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
+                    <span>الطلاب المشتركون</span>
+                    <Users className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+                    {students.filter(s => s.role !== 'teacher').length}
+                  </div>
+                  <div className="text-[11px] text-emerald-600 font-semibold">حسابات حقيقية مسجلة</div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('cloudinary')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'cloudinary'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Cloud className="w-4 h-4" />
-            <span>رفع وسائط Cloudinary ☁️</span>
-          </button>
+                <div 
+                  onClick={() => setActiveTab('co-admins')}
+                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-sky-500 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
+                    <span>فريق الإدارة (Admins)</span>
+                    <ShieldCheck className="w-4 h-4 text-sky-500" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-sky-600 font-mono tabular-nums">
+                    {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length}
+                  </div>
+                  <div className="text-[11px] text-sky-600 font-semibold">بكامل الصلاحيات الإدارية</div>
+                </div>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('site-customizer')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-              activeTab === 'site-customizer'
-                ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-300/60'
-                : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100'
-            }`}
-          >
-            <Palette className="w-4 h-4" />
-            <span>تخصيص وهوية الموقع الاحترافية 🎨</span>
-          </button>
+              {/* Cloudinary Live Storage Monitor Card */}
+              <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-950 to-teal-950 text-white border border-teal-800/50 shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-xs font-bold text-teal-300 font-mono">سعة تخزين كلاودنري السحابية (Cloudinary Live Storage)</span>
+                    </div>
+                    <h3 className="text-xl font-bold font-kufi">
+                      المساحة المتبقية: <span className="text-amber-300 font-mono">{remainingGB} GB</span> من إجمالي {CLOUDINARY_TOTAL_QUOTA_GB} GB
+                    </h3>
+                  </div>
 
-        </div>
+                  <div className="text-left sm:text-right font-mono">
+                    <div className="text-xs text-slate-400">المستهلك الفعلي:</div>
+                    <div className="text-lg font-bold text-teal-300">
+                      {totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`}
+                      <span className="text-xs text-slate-400 font-normal mr-1.5">({usedPercentage}%)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Storage Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        usedPercentage > 85 ? 'bg-rose-500' : usedPercentage > 60 ? 'bg-amber-400' : 'bg-emerald-400'
+                      }`}
+                      style={{ width: `${Math.max(3, usedPercentage)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                    <span>0 GB</span>
+                    <span>المستخدم: {totalUsedGB} GB ({lectures.length} فيديو + {attachments.length} ملزمة)</span>
+                    <span>الحد الأقصى المجاني: {CLOUDINARY_TOTAL_QUOTA_GB} GB</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fast Action Launchpads */}
+              <div className="space-y-3">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
+                  روابط التشغيل السريعة:
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <button
+                    onClick={() => setActiveTab('upload-lecture')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <Plus className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">رفع محاضرة</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">فيديو وكويز مباشر</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('all-students')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <Users className="w-6 h-6 text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">سجل الطلاب</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">جميع السنوات</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('files')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <FileText className="w-6 h-6 text-rose-500 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">رفع مذكرة PDF</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">تحديث سعة التخزين</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('academic-years')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <GraduationCap className="w-6 h-6 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">أسماء السنوات</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">تعديل كروت الرئيسية</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('co-admins')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <ShieldCheck className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">إضافة مدير مساعد</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">صلاحيات كاملة فورية</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('site-customizer')}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+                  >
+                    <Palette className="w-6 h-6 text-purple-500 mb-2 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">هوية الموقع والفوتر</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">الروابط ونبذة المعلم</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Preview of Recent Lectures */}
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
+                    آخر المحاضرات المنشورة ({lectures.length}):
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('lectures-list')}
+                    className="text-xs text-teal-600 hover:underline font-bold cursor-pointer"
+                  >
+                    عرض وإدارة جميع المحاضرات ←
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {lectures.slice(0, 3).map(lec => (
+                    <div key={lec.id} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center gap-3">
+                      <img 
+                        src={lec.thumbnailUrl || '/src/assets/images/chemistry_lab_visual_1794141316456.jpg'} 
+                        alt={lec.title} 
+                        className="w-14 h-14 rounded-xl object-cover shrink-0" 
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{lec.title}</div>
+                        <div className="text-[11px] text-teal-600 font-mono mt-0.5">{lec.duration} · حصة {lec.sessionOrder}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ========================================================
+              TAB: CUSTOMIZE ACADEMIC YEARS (Reflecting on Landing Page)
+              Requested by user: "واعدل اسماء السنوات وتبان بره في الرئيسيه"
+          ======================================================== */}
+          {activeTab === 'academic-years' && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="p-1.5 rounded-xl bg-indigo-500 text-white">
+                      <GraduationCap className="w-5 h-5" />
+                    </span>
+                    <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
+                      تخصيص أسماء ووصف السنوات الدراسية 🎓
+                    </h2>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-500">
+                    قم بتعديل عناوين وشارات ووصف كل صف دراسي، وستظهر التعديلات مباشرة وفورياً لجميع زوار المنصة في الصفحة الرئيسية.
+                  </p>
+                </div>
+
+                {siteSaveSuccess && (
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-300">
+                    <Check className="w-4 h-4" />
+                    تم تطبيق الأسماء على الرئيسية فورياً!
+                  </span>
+                )}
+              </div>
+
+              {/* Grades Switcher Sub-tabs */}
+              <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAcademicTab('first')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    selectedAcademicTab === 'first'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  الصف الأول الثانوي (1st Sec)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedAcademicTab('second')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    selectedAcademicTab === 'second'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  الصف الثاني الثانوي (2nd Sec)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedAcademicTab('third')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    selectedAcademicTab === 'third'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  الصف الثالث الثانوي (3rd Sec)
+                </button>
+              </div>
+
+              {/* Grade Customization Form */}
+              <form onSubmit={handleSaveSiteConfigSubmit} className="space-y-6">
+                
+                {selectedAcademicTab === 'first' && (
+                  <div className="p-6 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800 space-y-4">
+                    <div className="font-bold text-sm text-indigo-900 dark:text-indigo-200 font-kufi flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span>بيانات الصف الأول الثانوي:</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeFirstTitleAr || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeFirstTitleAr: e.target.value })}
+                          placeholder="مثال: أولى ثانوي · التأسيس الشامل"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeFirstTitleEn || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeFirstTitleEn: e.target.value })}
+                          placeholder="e.g. 1st Sec · Foundational Chemistry & Science"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
+                      <input
+                        type="text"
+                        value={siteForm.gradeFirstBadgeAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeFirstBadgeAr: e.target.value })}
+                        placeholder="مثال: الصف الأول الثانوي"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
+                      <textarea
+                        rows={3}
+                        value={siteForm.gradeFirstDescAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeFirstDescAr: e.target.value })}
+                        placeholder="اكتب وصف المنهج ومحتويات الصف الأول..."
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedAcademicTab === 'second' && (
+                  <div className="p-6 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 space-y-4">
+                    <div className="font-bold text-sm text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-teal-600" />
+                      <span>بيانات الصف الثاني الثانوي:</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeSecondTitleAr || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeSecondTitleAr: e.target.value })}
+                          placeholder="مثال: تانية ثانوي · فهم الذرة والروابط"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeSecondTitleEn || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeSecondTitleEn: e.target.value })}
+                          placeholder="e.g. 2nd Sec · Atomic Structure & Chemical Bonds"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
+                      <input
+                        type="text"
+                        value={siteForm.gradeSecondBadgeAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeSecondBadgeAr: e.target.value })}
+                        placeholder="مثال: الصف الثاني الثانوي"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
+                      <textarea
+                        rows={3}
+                        value={siteForm.gradeSecondDescAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeSecondDescAr: e.target.value })}
+                        placeholder="اكتب وصف المنهج ومحتويات الصف الثاني..."
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedAcademicTab === 'third' && (
+                  <div className="p-6 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 space-y-4">
+                    <div className="font-bold text-sm text-amber-900 dark:text-amber-200 font-kufi flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      <span>بيانات الصف الثالث الثانوي (الشهادة الثانوية العامة واللغات):</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeThirdTitleAr || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeThirdTitleAr: e.target.value })}
+                          placeholder="مثال: تالتة ثانوي · طريق الدرجة النهائية (60/60)"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
+                        <input
+                          type="text"
+                          value={siteForm.gradeThirdTitleEn || ''}
+                          onChange={(e) => setSiteForm({ ...siteForm, gradeThirdTitleEn: e.target.value })}
+                          placeholder="e.g. 3rd Sec · Road to the Full Mark (60/60)"
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
+                      <input
+                        type="text"
+                        value={siteForm.gradeThirdBadgeAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeThirdBadgeAr: e.target.value })}
+                        placeholder="مثال: الصف الثالث الثانوي (دفعة 2026)"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
+                      <textarea
+                        rows={3}
+                        value={siteForm.gradeThirdDescAr || ''}
+                        onChange={(e) => setSiteForm({ ...siteForm, gradeThirdDescAr: e.target.value })}
+                        placeholder="اكتب وصف المنهج ومحتويات الصف الثالث..."
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <div className="pt-2 flex items-center justify-between">
+                  <button
+                    type="submit"
+                    className="px-8 py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md shadow-indigo-700/20 transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>حفظ وتحديث أسماء السنوات في الرئيسية الآن</span>
+                  </button>
+
+                  {siteSaveSuccess && (
+                    <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                      <Check className="w-4 h-4" />
+                      تم حفظ التعديلات بنجاح!
+                    </span>
+                  )}
+                </div>
+
+              </form>
+            </div>
+          )}
+
+          {/* ========================================================
+              TAB: CO-ADMINS & PERMISSIONS MANAGEMENT
+              Requested by user: "واقدر اخلي في ادمن معايا ليه صلاحيات يرفع ويحذف زي انا بالظبط"
+          ======================================================== */}
+          {activeTab === 'co-admins' && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="p-1.5 rounded-xl bg-teal-600 text-white">
+                      <ShieldCheck className="w-5 h-5" />
+                    </span>
+                    <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
+                      إدارة المشرفين والمدراء المساعدين (Co-Admins) 🛡️
+                    </h2>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-500">
+                    أضف بريد أي مساعد أو مدير ترغب في منحه نفس صلاحياتك بالكامل (رفع المحاضرات، حذف وتعديل الملفات، وإدارة الطلاب).
+                  </p>
+                </div>
+
+                <div className="px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-800 dark:text-teal-300 font-mono">
+                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length} مدراء نشطون
+                </div>
+              </div>
+
+              {/* Notification Notice (No Browser Popups) */}
+              {adminNotice && (
+                <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center gap-2 ${
+                  adminNotice.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                }`}>
+                  {adminNotice.type === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                  <span>{adminNotice.message}</span>
+                </div>
+              )}
+
+              {/* Add New Co-Admin Form */}
+              <form onSubmit={handleAddCoAdmin} className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 font-kufi flex items-center gap-1.5">
+                  <Plus className="w-4 h-4 text-teal-600" />
+                  <span>إضافة بريد إلكتروني لمدير مساعد جديد:</span>
+                </label>
+
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <input
+                    type="email"
+                    required
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="assistant@science.com أو gmail الخاص به"
+                    className="w-full sm:flex-1 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-right"
+                  />
+
+                  <button
+                    type="submit"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>منح صلاحيات الإدارة كاملة</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  بمجرد تسجيل هذا الحساب الدخول عبر Google أو بريده الإلكتروني، سيعامله النظام كأدمن مباشر ويفتح له لوحة التحكم وصلاحيات الرفع والحذف فوراً.
+                </p>
+              </form>
+
+              {/* List of Active Administrators */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white font-kufi">
+                  قائمة المدراء والمشرفين المسجلين في النظام:
+                </h3>
+
+                <div className="space-y-2">
+                  {/* Primary Owner */}
+                  <div className="p-4 rounded-2xl border-2 border-teal-500/50 bg-teal-50/50 dark:bg-teal-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                        👑
+                      </div>
+                      <div>
+                        <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono flex items-center gap-2">
+                          <span>mizoo2y2@gmail.com</span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold font-kufi">
+                            المالك والمؤسس الرئيسي
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-teal-700 dark:text-teal-400">
+                          كافة الصلاحيات السيادية (غير قابل للحذف)
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-1 rounded-lg self-start sm:self-auto">
+                      نشط دائم ✓
+                    </span>
+                  </div>
+
+                  {/* Added Co-Admins */}
+                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com'])
+                    .filter(email => email !== 'mizoo2y2@gmail.com')
+                    .map((email) => (
+                      <div key={email} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-teal-600 flex items-center justify-center font-bold text-xs shrink-0">
+                            <ShieldCheck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono">
+                              {email}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              مدير مساعد · صلاحيات كاملة للرفع والتعديل والحذف وإدارة الطلاب
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          {deleteAdminConfirmEmail === email ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-rose-600 font-bold">تأكيد الحذف؟</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCoAdmin(email)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                              >
+                                نعم، احذف
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteAdminConfirmEmail(null)}
+                                className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] cursor-pointer"
+                              >
+                                إلغاء
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteAdminConfirmEmail(email)}
+                              className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer text-xs flex items-center gap-1"
+                              title="إلغاء صلاحيات هذا المدير"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span className="text-xs font-bold">إزالة</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).filter(e => e !== 'mizoo2y2@gmail.com').length === 0 && (
+                    <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                      لم تتم إضافة أي مدراء مساعدين بعد. أدخل بريد مساعدك في الحقل أعلاه لمنحه صلاحيات كاملة.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ========================================================
+              TAB: ALL STUDENTS DIRECTORY & MANAGEMENT
+              Requested by user: "تالت حاجه عايز قايمه الطلاب لجميع السنوات واقدر اضيف واحذف"
+          ======================================================== */}
+          {activeTab === 'all-students' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-500" />
+                  <span className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 font-kufi">
+                    سجل وقائمة الطلاب الشاملة لجميع السنوات (الأول، الثاني، والثالث الثانوي)
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">
+                  {students.filter(s => s.role !== 'teacher').length} طالب مسجل
+                </span>
+              </div>
+
+              <TeacherReportsManager
+                students={students}
+                lectures={lectures}
+                quizzes={quizzes}
+                onUpdateStudent={onUpdateStudent}
+                onDeleteStudent={onDeleteStudent}
+                onAddStudent={onAddStudent}
+              />
+            </div>
+          )}
 
         {/* ========================================================
             TAB 1: UPLOAD NEW LECTURE
@@ -1223,20 +2098,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         )}
 
         {/* ========================================================
-            TAB: STUDENT REPORTS, ATTENDANCE & LEADERBOARD
-        ======================================================== */}
-        {activeTab === 'student-reports' && (
-          <TeacherReportsManager
-            students={students}
-            lectures={lectures}
-            quizzes={quizzes}
-            onUpdateStudent={onUpdateStudent}
-            onDeleteStudent={onDeleteStudent}
-            onAddStudent={onAddStudent}
-          />
-        )}
-
-        {/* ========================================================
             TAB 3: FILES & HANDOUTS MANAGEMENT (CLOUDINARY POWERED)
         ======================================================== */}
         {activeTab === 'files' && (
@@ -1797,6 +2658,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onClick={() => setCustomizerSubTab('footer')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                  customizerSubTab === 'footer' ? 'bg-amber-400 text-slate-950 shadow-xs font-extrabold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span>الفوتر والروابط والنبذة 🔗</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setCustomizerSubTab('tech')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                   customizerSubTab === 'tech' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -2179,6 +3051,144 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
                       />
                     </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                        رابط حساب المبرمج / البورتفوليو (Developer URL)
+                      </label>
+                      <input
+                        type="text"
+                        value={siteForm.developerUrl}
+                        onChange={(e) => setSiteForm({ ...siteForm, developerUrl: e.target.value })}
+                        placeholder="https://github.com/mazenmohamed"
+                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB: FOOTER CONTENT, BIO & QUICK LINKS */}
+              {customizerSubTab === 'footer' && (
+                <div className="space-y-6">
+                  {/* Bio in Footer */}
+                  <div className="p-5 rounded-2xl bg-teal-50/50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 space-y-3">
+                    <label className="text-xs font-bold text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>نبذة الأستاذ في الفوتر (Footer Bio)</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={siteForm.footerBio || ''}
+                      onChange={(e) => setSiteForm({ ...siteForm, footerBio: e.target.value })}
+                      placeholder="اكتب النبذة التي تظهر لجميع الزوار في أسفل الموقع..."
+                      className="w-full p-3 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 leading-relaxed"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      هذا النص يظهر في أول عمود بالفوتر أسفل اسم الأستاذ مباشرة.
+                    </p>
+                  </div>
+
+                  {/* Quick Links Manager */}
+                  <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-900 dark:text-white font-kufi flex items-center gap-1.5">
+                        <LinkIcon className="w-4 h-4 text-teal-600" />
+                        <span>روابط المنصة السريعة في الفوتر</span>
+                      </label>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        {(siteForm.footerQuickLinks || []).length} روابط
+                      </span>
+                    </div>
+
+                    {/* Existing Links List */}
+                    <div className="space-y-2">
+                      {(siteForm.footerQuickLinks || []).map((link) => (
+                        <div key={link.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{link.title}</span>
+                            <span className="text-slate-400 font-mono text-[10px] truncate dir-ltr">({link.url})</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuickLink(link.id)}
+                            className="p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                            title="حذف هذا الرابط"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add New Link */}
+                    <div className="p-3 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 space-y-2">
+                      <div className="text-[11px] font-bold text-teal-800 dark:text-teal-300">إضافة رابط فوتر جديد:</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={newQuickLinkTitle}
+                          onChange={(e) => setNewQuickLinkTitle(e.target.value)}
+                          placeholder="عنوان الرابط (مثال: شروط الخدمة)"
+                          className="p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                        <input
+                          type="text"
+                          value={newQuickLinkUrl}
+                          onChange={(e) => setNewQuickLinkUrl(e.target.value)}
+                          placeholder="الرابط (مثال: #terms أو https://...)"
+                          className="p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-right"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddQuickLink}
+                        className="px-4 py-1.5 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-700 text-white cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>إضافة الرابط للفوتر</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Designer & Developer Quick Settings */}
+                  <div className="p-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 space-y-3">
+                    <div className="text-xs font-bold text-amber-900 dark:text-amber-200 font-kufi flex items-center gap-1.5">
+                      <User className="w-4 h-4 text-amber-600" />
+                      <span>حقوق المصمم والمبرمج في أسفل الفوتر (Mazen Mohamed @mazenmohamed)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">اسم المبرمج</label>
+                        <input
+                          type="text"
+                          value={siteForm.developerName}
+                          onChange={(e) => setSiteForm({ ...siteForm, developerName: e.target.value })}
+                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">اليوزر / المعرف</label>
+                        <input
+                          type="text"
+                          value={siteForm.developerHandle}
+                          onChange={(e) => setSiteForm({ ...siteForm, developerHandle: e.target.value })}
+                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr text-right"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">رابط الحساب / البورتفوليو</label>
+                        <input
+                          type="text"
+                          value={siteForm.developerUrl}
+                          onChange={(e) => setSiteForm({ ...siteForm, developerUrl: e.target.value })}
+                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr text-right"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2206,6 +3216,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         )}
 
+        </main>
       </div>
     </div>
   );

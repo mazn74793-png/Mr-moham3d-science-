@@ -113,22 +113,28 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Strict route guard: Teacher Dashboard is invisible and inaccessible unless logged in as mizoo2y2@gmail.com
+  // Admin permission evaluator (Primary owner mizoo2y2@gmail.com + any added co-admins)
+  const isUserAdmin = (user: UserProfile | null) => {
+    if (!user) return false;
+    if (user.role === 'teacher') return true;
+    const email = user.email?.toLowerCase().trim();
+    if (email === 'mizoo2y2@gmail.com') return true;
+    return Boolean(email && (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === email));
+  };
+
+  // Strict route guard: accessible to primary teacher and verified co-admins
   useEffect(() => {
-    if (currentView === 'teacher' && currentUser?.email?.toLowerCase().trim() !== 'mizoo2y2@gmail.com') {
+    if (currentView === 'teacher' && !isUserAdmin(currentUser)) {
       setCurrentView('landing');
     }
-  }, [currentView, currentUser]);
+  }, [currentView, currentUser, siteConfig.adminEmails]);
 
   const handleToggleTheme = () => {
     setDarkMode(prev => !prev);
   };
 
   const handleLoginSuccess = (user: UserProfile) => {
-    const isAdmin = 
-      user.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' || 
-      user.role === 'teacher' || 
-      (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === user.email?.toLowerCase().trim());
+    const isAdmin = isUserAdmin(user);
 
     if (isAdmin) {
       const finalAdmin: UserProfile = { ...user, role: 'teacher', profileCompleted: true };
@@ -333,6 +339,7 @@ export default function App() {
 
             {/* 3. Academic Years Section */}
             <AcademicYearsSection
+              siteConfig={siteConfig}
               lectures={lectures}
               attachments={attachments}
               onSelectGrade={handleSelectGrade}

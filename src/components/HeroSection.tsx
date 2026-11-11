@@ -39,7 +39,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
             {/* Heading with Gradient & Accent underline */}
             <div className="space-y-2">
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.25]">
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.35] sm:leading-[1.25]">
                 {lang === 'en' ? (
                   <>
                     <span>With Senior Educator </span>
@@ -56,7 +56,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                   </>
                 )}
               </h1>
-              <p className="text-xl sm:text-2xl text-amber-600 dark:text-amber-400 pt-1 font-bold leading-relaxed">
+              <p className="text-base sm:text-xl lg:text-2xl text-amber-600 dark:text-amber-400 pt-0.5 font-bold leading-normal">
                 {lang === 'en' 
                   ? 'Senior Chemistry & Science Educator · High School 2026' 
                   : siteConfig.tagline}
@@ -64,7 +64,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             </div>
 
             {/* Description */}
-            <p className="text-base sm:text-lg lg:text-xl text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-base lg:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
               {lang === 'en'
                 ? 'The premier educational platform for Chemistry & Science designed specifically for language and experimental school students. Interactive lectures, dynamic watermarked stream, sequential progression, and real-time assessments.'
                 : siteConfig.heroDescription}

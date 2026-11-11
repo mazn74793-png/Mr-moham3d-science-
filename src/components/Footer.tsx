@@ -60,7 +60,7 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
 
             <p className="text-sm text-slate-400 leading-relaxed max-w-md font-sans">
-              {siteConfig.heroDescription}
+              {siteConfig.footerBio || siteConfig.heroDescription}
             </p>
 
             {/* Social channels */}
@@ -108,38 +108,75 @@ export const Footer: React.FC<FooterProps> = ({
           <div className="lg:col-span-3 space-y-3 text-right">
             <h4 className="text-sm font-bold text-white font-kufi">روابط المنصة السريعة</h4>
             <ul className="space-y-2 text-xs sm:text-sm text-slate-400">
-              <li>
-                <button
-                  onClick={() => { onNavigate('landing'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  className="hover:text-teal-400 transition-colors"
-                >
-                  الرئيسية
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onScrollToSection('features')}
-                  className="hover:text-teal-400 transition-colors"
-                >
-                  مميزات المنصة
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onScrollToSection('academic-years')}
-                  className="hover:text-teal-400 transition-colors"
-                >
-                  السنوات الدراسية (دفعة 2026)
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('student')}
-                  className="hover:text-teal-400 transition-colors font-semibold text-teal-400"
-                >
-                  دخول منصة الطالب
-                </button>
-              </li>
+              {siteConfig.footerQuickLinks && siteConfig.footerQuickLinks.length > 0 ? (
+                siteConfig.footerQuickLinks.map((link) => (
+                  <li key={link.id}>
+                    {link.url.startsWith('http') ? (
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:text-teal-400 transition-colors"
+                      >
+                        {link.title}
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (link.url === '#home') {
+                            onNavigate('landing');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          } else if (link.url === '#student') {
+                            onNavigate('student');
+                          } else if (link.url.startsWith('#')) {
+                            onScrollToSection(link.url.replace('#', ''));
+                          } else {
+                            onNavigate('landing');
+                          }
+                        }}
+                        className="hover:text-teal-400 transition-colors cursor-pointer"
+                      >
+                        {link.title}
+                      </button>
+                    )}
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li>
+                    <button
+                      onClick={() => { onNavigate('landing'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                      className="hover:text-teal-400 transition-colors cursor-pointer"
+                    >
+                      الرئيسية
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => onScrollToSection('features')}
+                      className="hover:text-teal-400 transition-colors cursor-pointer"
+                    >
+                      مميزات المنصة
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => onScrollToSection('academic-years')}
+                      className="hover:text-teal-400 transition-colors cursor-pointer"
+                    >
+                      السنوات الدراسية (دفعة 2026)
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => onNavigate('student')}
+                      className="hover:text-teal-400 transition-colors font-semibold text-teal-400 cursor-pointer"
+                    >
+                      دخول منصة الطالب
+                    </button>
+                  </li>
+                </>
+              )}
 
               <li className="pt-2 border-t border-slate-800/80 flex items-center gap-3 text-[11px] text-slate-500">
 
