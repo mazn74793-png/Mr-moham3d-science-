@@ -14,11 +14,29 @@ html, body, button, input, select, textarea, h1, h2, h3, h4, h5, h6 {
   font-family: 'Cairo', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS Safari & iPhone Optimization */
+@supports (-webkit-touch-callout: none) {
+  /* Prevent iOS automatic input zoom */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   overflow-x: hidden;
   scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 .font-cairo {

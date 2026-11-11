@@ -32,6 +32,7 @@ interface TeacherDashboardProps {
   onSaveSiteConfig: (newConfig: SiteConfig) => void;
   onBackToHome: () => void;
   onOpenStudentPortal: () => void;
+  onResetAllData?: () => void;
 }
 
 export type TeacherDashboardTab = 
@@ -67,12 +68,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onSaveSiteConfig,
   onBackToHome,
   onOpenStudentPortal,
+  onResetAllData,
 }) => {
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [adminNotice, setAdminNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [deleteAdminConfirmEmail, setDeleteAdminConfirmEmail] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [selectedAcademicTab, setSelectedAcademicTab] = useState<'first' | 'second' | 'third'>('first');
   const [newQuickLinkTitle, setNewQuickLinkTitle] = useState('');
   const [newQuickLinkUrl, setNewQuickLinkUrl] = useState('');
@@ -1066,6 +1069,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Zero-Out / Reset Data Control */}
+              <div className="bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/80 dark:border-rose-900/50 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-sm">
+                    <Trash2 className="w-4 h-4" />
+                    <span>إدارة وتصفير بيانات المنصة (Clear All Data):</span>
+                  </div>
+                  <p className="text-xs text-rose-600/90 dark:text-rose-400/80 max-w-xl leading-relaxed">
+                    تصفير جميع المحاضرات والاختبارات والمذكرات والطلاب والبدء من 0 بقيم حسابية حقيقية تماماً.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setResetConfirmOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm shadow-rose-700/20 flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  <span>تصفير وإفراغ كل البيانات</span>
+                </button>
               </div>
 
             </div>
@@ -3218,6 +3242,54 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         </main>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in-up">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-rose-200 dark:border-rose-900 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold font-kufi text-base text-slate-900 dark:text-white">
+                  تأكيد تصفير وإفراغ جميع البيانات
+                </h3>
+                <p className="text-xs text-slate-500">
+                  سيتم حذف وتصفير قوائم المحاضرات والامتحانات والملفات لتبدأ المنصة نظيفة تماماً.
+                </p>
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 space-y-1 font-mono">
+              <div>• عدد المحاضرات: {lectures.length}</div>
+              <div>• عدد الامتحانات: {quizzes.length}</div>
+              <div>• عدد المذكرات: {attachments.length}</div>
+              <div>• عدد الطلاب: {students.length}</div>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onResetAllData?.();
+                  setResetConfirmOpen(false);
+                  setAdminNotice({ type: 'success', message: 'تم تصفير وإفراغ جميع بيانات المنصة بنجاح! المنصة الآن جاهزة لإضافة بيانات حقيقية.' });
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                نعم، صفر كل البيانات الآن
+              </button>
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

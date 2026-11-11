@@ -49,13 +49,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const filteredQuizzes = quizzes.filter((q) => q.grade === selectedGrade);
   const filteredAttachments = attachments.filter((a) => a.grade === selectedGrade);
 
-  const [activeLecture, setActiveLecture] = useState<Lecture>(filteredLectures[0] || lectures[0] || null);
+  const [activeLecture, setActiveLecture] = useState<Lecture | null>(filteredLectures[0] || lectures[0] || null);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
 
   // Update activeLecture if grade changes
   useEffect(() => {
     if (filteredLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
       setActiveLecture(filteredLectures[0]);
+    } else if (filteredLectures.length === 0) {
+      setActiveLecture(null);
     }
   }, [selectedGrade, filteredLectures]);
 
@@ -880,6 +882,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     </div>
                   );
                 })}
+
+                {filteredLectures.length === 0 && (
+                  <div className="p-8 text-center text-xs text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+                    <BookOpen className="w-8 h-8 text-teal-600/40 mx-auto" />
+                    <div className="font-bold text-slate-700 dark:text-slate-300">
+                      {lang === 'en' ? 'No lectures published yet' : 'لم يتم نشر محاضرات لهذا الصف حتى الآن'}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {lang === 'en' ? 'Your teacher will add sessions soon.' : 'سيقوم المعلم برفع الحصص قريباً.'}
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -903,60 +917,74 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {filteredQuizzes.map((quiz) => {
-                    const quizScore = currentUser?.quizScores?.[quiz.id];
-                    const isPassed = currentUser?.passedQuizIds?.includes(quiz.id) || (quizScore !== undefined && quizScore >= 60);
+                {filteredQuizzes.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center mx-auto">
+                      <Award className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-base font-bold text-slate-800 dark:text-white">
+                      {lang === 'en' ? 'No quizzes created yet' : 'لا توجد اختبارات إلكترونية مضافة لهذا الصف بعد'}
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      {lang === 'en' ? 'Quizzes will be published here by your teacher after sessions.' : 'سيقوم المعلم بنشر الامتحانات الإلكترونية هنا فور إعدادها.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {filteredQuizzes.map((quiz) => {
+                      const quizScore = currentUser?.quizScores?.[quiz.id];
+                      const isPassed = currentUser?.passedQuizIds?.includes(quiz.id) || (quizScore !== undefined && quizScore >= 60);
 
-                    return (
-                      <div
-                        key={quiz.id}
-                        className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all space-y-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-bold font-mono">
-                            {quiz.chapter}
-                          </span>
-                          <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-amber-500" />
-                            {quiz.durationMinutes} دقيقة
-                          </span>
-                        </div>
-
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white font-kufi">
-                          {quiz.title}
-                        </h3>
-
-                        <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-slate-100 dark:border-slate-800">
-                          <span>{quiz.questions.length} أسئلة اختيار من متعدد</span>
-                          {quizScore !== undefined ? (
-                            <span className={`font-bold px-2 py-0.5 rounded-full ${
-                              isPassed 
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                            }`}>
-                              درجتك: {quizScore}% {isPassed ? '(ناجح)' : '(يحتاج إعادة)'}
-                            </span>
-                          ) : (
-                            <span className="text-amber-600 font-semibold">لم يُحل بعد</span>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={() => handleStartQuiz(quiz)}
-                          className={`w-full py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                            isPassed
-                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-teal-50'
-                              : 'bg-teal-600 hover:bg-teal-700 text-white'
-                          }`}
+                      return (
+                        <div
+                          key={quiz.id}
+                          className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all space-y-4"
                         >
-                          <Award className="w-4 h-4" />
-                          <span>{quizScore !== undefined ? 'إعادة الامتحان للتحسين' : 'ابدأ الامتحان الآن'}</span>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                          <div className="flex items-center justify-between">
+                            <span className="px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-bold font-mono">
+                              {quiz.chapter}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-500" />
+                              {quiz.durationMinutes} دقيقة
+                            </span>
+                          </div>
+
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white font-kufi">
+                            {quiz.title}
+                          </h3>
+
+                          <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-slate-100 dark:border-slate-800">
+                            <span>{quiz.questions.length} أسئلة اختيار من متعدد</span>
+                            {quizScore !== undefined ? (
+                              <span className={`font-bold px-2 py-0.5 rounded-full ${
+                                isPassed 
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                              }`}>
+                                درجتك: {quizScore}% {isPassed ? '(ناجح)' : '(يحتاج إعادة)'}
+                              </span>
+                            ) : (
+                              <span className="text-amber-600 font-semibold">لم يُحل بعد</span>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => handleStartQuiz(quiz)}
+                            className={`w-full py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                              isPassed
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-teal-50'
+                                : 'bg-teal-600 hover:bg-teal-700 text-white'
+                            }`}
+                          >
+                            <Award className="w-4 h-4" />
+                            <span>{quizScore !== undefined ? 'إعادة الامتحان للتحسين' : 'ابدأ الامتحان الآن'}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
               /* ACTIVE QUIZ ENGINE RUNNER */
@@ -1119,42 +1147,56 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredAttachments.map((file) => (
-                <div
-                  key={file.id}
-                  className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all flex flex-col justify-between space-y-4"
-                >
-                  <div className="space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center">
-                      <FileText className="w-6 h-6" />
-                    </div>
-
-                    <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi leading-snug">
-                      {file.title}
-                    </h3>
-
-                    <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
-                      <span>{file.chapter}</span>
-                      <span>·</span>
-                      <span>{file.fileSize}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      if (file.downloadUrl && file.downloadUrl !== '#') {
-                        window.open(file.downloadUrl, '_blank');
-                      }
-                    }}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-600 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>تحميل الآن PDF</span>
-                  </button>
+            {filteredAttachments.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center mx-auto">
+                  <FileText className="w-8 h-8" />
                 </div>
-              ))}
-            </div>
+                <h4 className="text-base font-bold text-slate-800 dark:text-white">
+                  {lang === 'en' ? 'No handouts or files added yet' : 'لا توجد مذكرات أو ملفات مضافة لهذا الصف بعد'}
+                </h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  {lang === 'en' ? 'PDF files and worksheets uploaded by your teacher will appear here.' : 'ستظهر هنا المذكرات والشيتات بصيغة PDF فور رفعها من قبل المعلم.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredAttachments.map((file) => (
+                  <div
+                    key={file.id}
+                    className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                        <FileText className="w-6 h-6" />
+                      </div>
+
+                      <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi leading-snug">
+                        {file.title}
+                      </h3>
+
+                      <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
+                        <span>{file.chapter}</span>
+                        <span>·</span>
+                        <span>{file.fileSize}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (file.downloadUrl && file.downloadUrl !== '#') {
+                          window.open(file.downloadUrl, '_blank');
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-600 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>تحميل الآن PDF</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

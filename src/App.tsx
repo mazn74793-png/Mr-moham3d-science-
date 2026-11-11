@@ -57,25 +57,42 @@ export default function App() {
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [secretAdminOpen, setSecretAdminOpen] = useState(false);
 
-  // Curriculum & Uploads state (persisted in localStorage)
+  // Curriculum & Uploads state (persisted in localStorage, zeroed out for fresh authentic entries)
   const [lectures, setLectures] = useState<Lecture[]>(() => {
+    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+      localStorage.removeItem('mm_lectures');
+      localStorage.removeItem('mm_attachments');
+      localStorage.removeItem('mm_quizzes');
+      localStorage.removeItem('mm_registered_students');
+      localStorage.setItem('mm_zeroed_confirmed_v4', 'true');
+      return [];
+    }
     const saved = localStorage.getItem('mm_lectures');
-    return saved ? JSON.parse(saved) : INITIAL_LECTURES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [attachments, setAttachments] = useState<AttachmentFile[]>(() => {
+    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+      return [];
+    }
     const saved = localStorage.getItem('mm_attachments');
-    return saved ? JSON.parse(saved) : INITIAL_ATTACHMENTS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [quizzes, setQuizzes] = useState<Quiz[]>(() => {
+    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+      return [];
+    }
     const saved = localStorage.getItem('mm_quizzes');
-    return saved ? JSON.parse(saved) : INITIAL_QUIZZES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [students, setStudents] = useState<UserProfile[]>(() => {
+    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+      return [];
+    }
     const saved = localStorage.getItem('mm_registered_students');
-    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(() => {
@@ -270,6 +287,17 @@ export default function App() {
     setStudents(prev => [student, ...prev]);
   };
 
+  const handleResetAllData = () => {
+    setLectures([]);
+    setAttachments([]);
+    setQuizzes([]);
+    setStudents([]);
+    localStorage.setItem('mm_lectures', JSON.stringify([]));
+    localStorage.setItem('mm_attachments', JSON.stringify([]));
+    localStorage.setItem('mm_quizzes', JSON.stringify([]));
+    localStorage.setItem('mm_registered_students', JSON.stringify([]));
+  };
+
   const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
     const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
     setCurrentUser(finalized);
@@ -428,6 +456,7 @@ export default function App() {
             onSaveSiteConfig={handleSaveSiteConfig}
             onBackToHome={() => setCurrentView('landing')}
             onOpenStudentPortal={() => handleNavigate('student')}
+            onResetAllData={handleResetAllData}
           />
         )}
       </main>
