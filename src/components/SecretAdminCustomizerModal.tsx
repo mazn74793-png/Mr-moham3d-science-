@@ -4,6 +4,7 @@ import {
   Type, Palette, Image as ImageIcon, FileText, Phone, User, ExternalLink, Cloud
 } from 'lucide-react';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
+import { uploadMediaFile } from '../utils/uploader';
 
 interface SecretAdminCustomizerModalProps {
   isOpen: boolean;
@@ -63,32 +64,23 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
     setTimeout(() => setSaveSuccess(false), 2500);
   };
 
-  // Device file upload for teacher photo
+  // Device file upload for teacher photo (Guarantees public permanent URL for all browsers & incognito)
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingImage(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', cloudinaryConfig.uploadPreset || 'chemistry_uploads');
-
     try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName || 'chemistry-egypt'}/image/upload`, {
-        method: 'POST',
-        body: fd,
+      const result = await uploadMediaFile(file, {
+        cloudName: cloudinaryConfig.cloudName,
+        uploadPreset: cloudinaryConfig.uploadPreset,
+        resourceType: 'image',
       });
-      if (res.ok) {
-        const data = await res.json();
-        const url = data.secure_url || data.url;
-        handleFieldChange('profileImageUrl', url);
-      } else {
-        const localUrl = URL.createObjectURL(file);
-        handleFieldChange('profileImageUrl', localUrl);
-      }
-    } catch {
-      const localUrl = URL.createObjectURL(file);
-      handleFieldChange('profileImageUrl', localUrl);
+      handleFieldChange('profileImageUrl', result.url);
+      // Immediately push to server database so all other devices & incognito see it
+      onSaveSiteConfig({ ...formData, profileImageUrl: result.url });
+    } catch (err: any) {
+      console.error('Photo upload failed:', err);
     } finally {
       setUploadingImage(false);
     }

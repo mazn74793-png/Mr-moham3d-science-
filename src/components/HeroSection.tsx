@@ -21,7 +21,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   const resolveInitialImage = () => {
     const raw = siteConfig.profileImageUrl;
-    if (raw && (raw.includes('cloudinary') || raw.startsWith('http'))) {
+    if (raw && (raw.includes('cloudinary') || raw.startsWith('http') || raw.startsWith('/uploads/'))) {
       return raw;
     }
     if (!raw || raw.includes('/src/assets/')) {
@@ -37,8 +37,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   }, [siteConfig.profileImageUrl]);
 
   const handleImageError = () => {
-    // If the image is already the default or a valid Cloudinary image, don't flap
-    if (imgSrc !== defaultTeacherPhoto && !siteConfig.profileImageUrl?.includes('cloudinary')) {
+    const isCustom = siteConfig.profileImageUrl?.includes('cloudinary') || siteConfig.profileImageUrl?.startsWith('/uploads/');
+    if (imgSrc !== defaultTeacherPhoto && !isCustom) {
       setImgSrc(defaultTeacherPhoto);
     }
   };

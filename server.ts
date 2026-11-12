@@ -10,9 +10,13 @@ const __dirname = path.dirname(__filename);
 // Data directory & DB file
 const DATA_DIR = path.resolve(__dirname, 'data');
 const DB_FILE = path.resolve(DATA_DIR, 'database.json');
+const UPLOADS_DIR = path.resolve(DATA_DIR, 'uploads');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
 // Initial default configuration
@@ -93,9 +97,12 @@ function loadDB(): DatabaseState {
   return initial;
 }
 
+let dbVersion = Date.now();
+
 function saveDB(state: DatabaseState): void {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    dbVersion = Date.now();
   } catch (err) {
     console.error('Failed to save DB file:', err);
   }
@@ -107,16 +114,64 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Serve uploaded media files publicly to all browsers & incognito sessions
+app.use('/uploads', express.static(UPLOADS_DIR));
+
 // ==========================================
 // API ROUTES
 // ==========================================
 
-// 1. Get entire database state
+// 1. Get entire database state with version
 app.get('/api/db', (_req, res) => {
   res.json({
     success: true,
+    version: dbVersion,
     data: db,
   });
+});
+
+// 1.1 Lightweight live version poll for cross-browser live sync
+app.get('/api/db/version', (_req, res) => {
+  res.json({
+    success: true,
+    version: dbVersion,
+  });
+});
+
+// 1.2 Universal Direct File Upload (Guarantees public persistent URL across all devices)
+app.post('/api/upload', (req, res) => {
+  try {
+    const { filename, dataUrl, base64 } = req.body;
+    let fileBuffer: Buffer;
+    let safeName = filename ? filename.replace(/[^a-zA-Z0-9._-]/g, '_') : `upload_${Date.now()}`;
+
+    if (dataUrl && typeof dataUrl === 'string') {
+      const parts = dataUrl.split(';base64,');
+      const rawBase64 = parts[1] || parts[0];
+      fileBuffer = Buffer.from(rawBase64, 'base64');
+      if (!path.extname(safeName) && parts[0].includes('image/')) {
+        const ext = parts[0].split('image/')[1]?.split(';')[0] || 'jpg';
+        safeName = `${safeName}.${ext}`;
+      }
+    } else if (base64 && typeof base64 === 'string') {
+      fileBuffer = Buffer.from(base64, 'base64');
+    } else {
+      return res.status(400).json({ success: false, error: 'No file data provided' });
+    }
+
+    const uniqueName = `${Date.now()}_${safeName}`;
+    const targetPath = path.resolve(UPLOADS_DIR, uniqueName);
+    fs.writeFileSync(targetPath, fileBuffer);
+
+    const publicUrl = `/uploads/${uniqueName}`;
+    return res.json({
+      success: true,
+      url: publicUrl,
+      filename: uniqueName,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 2. Save / Update student profile (Persists permanently across all devices)

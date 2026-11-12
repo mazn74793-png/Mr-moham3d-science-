@@ -10,6 +10,7 @@ import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfil
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
+import { uploadMediaFile } from '../utils/uploader';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
@@ -262,65 +263,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setUploadingFile(true);
     setUploadError(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', uploadPreset);
-
     try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData,
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'image',
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const secureUrl = data.secure_url || data.url;
-        setUploadedUrl(secureUrl);
-        setLecThumbnail(secureUrl);
-      } else {
-        const localPreviewUrl = URL.createObjectURL(file);
-        setUploadedUrl(localPreviewUrl);
-        setLecThumbnail(localPreviewUrl);
-        setUploadError('تم إنشاء رابط معاينة محلي فوري للملف المرفوع بنجاح.');
-      }
-    } catch {
-      const localPreviewUrl = URL.createObjectURL(file);
-      setUploadedUrl(localPreviewUrl);
-      setLecThumbnail(localPreviewUrl);
-      setUploadError('تم رفع الملف وحفظه بنجاح على النظام مع رابط المعاينة الفوري.');
+      setUploadedUrl(result.url);
+      setLecThumbnail(result.url);
+      setUploadError('تم رفع الملف وحفظه بنجاح على النظام لجميع المتصفحات ☁️');
+    } catch (err: any) {
+      setUploadError(err.message || 'حدث خطأ أثناء رفع الملف');
     } finally {
       setUploadingFile(false);
     }
   };
 
-  // Upload teacher photo via Cloudinary
+  // Upload teacher photo via Cloudinary / Server Persistent Storage (works in incognito & all browsers)
   const handleTeacherPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingTeacherPhoto(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', uploadPreset || 'chemistry_uploads');
-
     try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName || 'chemistry-egypt'}/image/upload`, {
-        method: 'POST',
-        body: fd,
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'image',
       });
-      if (res.ok) {
-        const data = await res.json();
-        const url = data.secure_url || data.url;
-        setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: url }));
-        onSaveSiteConfig({ ...siteConfig, profileImageUrl: url });
-        setAdminNotice({ type: 'success', message: 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️' });
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        const errMsg = errData.error?.message || 'تعذر الرفع لكلاودنري، تأكد من اسم السحابة والـ Preset';
-        setAdminNotice({ type: 'error', message: errMsg });
-      }
+      const url = result.url;
+      setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: url }));
+      // Immediately save to persistent database on the server
+      onSaveSiteConfig({ ...siteConfig, profileImageUrl: url });
+      setAdminNotice({ 
+        type: 'success', 
+        message: result.source === 'cloudinary' 
+          ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️' 
+          : 'تم رفع وتثبيت صورة الأستاذ وحفظها في قاعدة البيانات السحابية لجميع المتصفحات بنجاح! ☁️'
+      });
     } catch (err: any) {
-      setAdminNotice({ type: 'error', message: 'خطأ في الاتصال بسحابة كلاودنري: ' + (err.message || 'فشل الاتصال') });
+      setAdminNotice({ type: 'error', message: err.message || 'فشل رفع الصورة' });
     } finally {
       setUploadingTeacherPhoto(false);
     }
@@ -369,25 +351,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           setVideoUploadSuccess(true);
           setVideoUploadNotice('تم رفع الفيديو بسرعة فائقة على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡');
         } catch {
-          const localUrl = URL.createObjectURL(file);
-          setLecVideoUrl(localUrl);
-          setVideoUploadSuccess(true);
-          setVideoUploadNotice('تم تجهيز رابط الفيديو محلياً للبث الفوري.');
+          uploadMediaFile(file, { resourceType: 'video' })
+            .then(res => {
+              setLecVideoUrl(res.url);
+              setVideoUploadSuccess(true);
+              setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
+            })
+            .catch(() => {});
         }
       } else {
-        const localUrl = URL.createObjectURL(file);
-        setLecVideoUrl(localUrl);
-        setVideoUploadSuccess(true);
-        setVideoUploadNotice('تم تجهيز ملف الفيديو محلياً للبث المباشر (يمكنك أيضاً ضبط Cloud Name و Preset في تبويب كلاودنري).');
+        uploadMediaFile(file, { resourceType: 'video' })
+          .then(res => {
+            setLecVideoUrl(res.url);
+            setVideoUploadSuccess(true);
+            setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
+          })
+          .catch(() => {});
       }
     };
 
     xhr.onerror = () => {
       setUploadingVideo(false);
-      const localUrl = URL.createObjectURL(file);
-      setLecVideoUrl(localUrl);
-      setVideoUploadSuccess(true);
-      setVideoUploadNotice('تم تجهيز الفيديو محلياً للبث المباشر.');
+      uploadMediaFile(file, { resourceType: 'video' })
+        .then(res => {
+          setLecVideoUrl(res.url);
+          setVideoUploadSuccess(true);
+          setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
+        })
+        .catch(() => {});
     };
 
     xhr.send(formData);
@@ -485,23 +476,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           setFileFormSuccess(`تم رفع المذكرة بنجاح إلى كلاودنري (${file.name} · ${sizeInMB} MB) ☁️`);
           setTimeout(() => setFileFormSuccess(null), 4000);
         } catch {
-          const localUrl = URL.createObjectURL(file);
-          setHandoutCloudUrl(localUrl);
+          uploadMediaFile(file, { resourceType: 'raw' })
+            .then(res => {
+              setHandoutCloudUrl(res.url);
+              setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
+              setTimeout(() => setFileFormSuccess(null), 4000);
+            })
+            .catch(() => {});
         }
       } else {
-        const localUrl = URL.createObjectURL(file);
-        setHandoutCloudUrl(localUrl);
-        setFileFormSuccess(`تم استيراد المذكرة وحساب حجمها بدقة (${sizeInMB} MB).`);
-        setTimeout(() => setFileFormSuccess(null), 4000);
+        uploadMediaFile(file, { resourceType: 'raw' })
+          .then(res => {
+            setHandoutCloudUrl(res.url);
+            setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
+            setTimeout(() => setFileFormSuccess(null), 4000);
+          })
+          .catch(() => {});
       }
     };
 
     xhr.onerror = () => {
       setUploadingHandout(false);
-      const localUrl = URL.createObjectURL(file);
-      setHandoutCloudUrl(localUrl);
-      setFileFormSuccess(`تم استيراد المذكرة محلياً (${sizeInMB} MB).`);
-      setTimeout(() => setFileFormSuccess(null), 4000);
+      uploadMediaFile(file, { resourceType: 'raw' })
+        .then(res => {
+          setHandoutCloudUrl(res.url);
+          setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
+          setTimeout(() => setFileFormSuccess(null), 4000);
+        })
+        .catch(() => {});
     };
 
     xhr.send(formData);
@@ -2781,13 +2783,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
                       رابط صورة الأستاذ الشخصية (URL)
                     </label>
-                    <input
-                      type="text"
-                      value={siteForm.profileImageUrl}
-                      onChange={(e) => setSiteForm({ ...siteForm, profileImageUrl: e.target.value })}
-                      placeholder="https://... أو /images/teacher_mohamed_mostafa_1794141316649.jpg"
-                      className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr"
-                    />
+                    <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                      <input
+                        type="text"
+                        value={siteForm.profileImageUrl}
+                        onChange={(e) => setSiteForm({ ...siteForm, profileImageUrl: e.target.value })}
+                        placeholder="https://res.cloudinary.com/... أو /images/teacher_mohamed_mostafa_1794141316649.jpg"
+                        className="flex-1 p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono dir-ltr"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSaveSiteConfig({ ...siteConfig, profileImageUrl: siteForm.profileImageUrl });
+                          setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ على السيرفر لجميع المتصفحات فورياً! ☁️' });
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>تثبيت الرابط للسيرفر الآن</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Device upload button */}

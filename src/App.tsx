@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
@@ -111,41 +111,112 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Initial load: Fetch real persistent database state from backend server
-  useEffect(() => {
-    fetch('/api/db')
-      .then(res => res.json())
-      .then(result => {
-        if (result.success && result.data) {
-          const dbData = result.data;
-          if (dbData.siteConfig) {
-            setSiteConfig((prev: SiteConfig) => ({
+  // Keep track of database version for real-time live sync across all tabs & incognito
+  const lastDbVersionRef = useRef<number>(0);
+
+  // Live Sync Engine: Fetches DB from server and updates all connected browsers immediately
+  const syncFromServer = async (initialCheck = false) => {
+    try {
+      const res = await fetch('/api/db');
+      const result = await res.json();
+      if (result.success && result.data) {
+        if (result.version && result.version === lastDbVersionRef.current && !initialCheck) {
+          return; // Database unchanged, avoid re-rendering
+        }
+        if (result.version) {
+          lastDbVersionRef.current = result.version;
+        }
+
+        const dbData = result.data;
+        if (dbData.siteConfig) {
+          setSiteConfig(prev => {
+            // Check if user previously saved a Cloudinary or custom photo in local storage
+            const localSaved = localStorage.getItem('mm_site_config');
+            let localPhoto: string | undefined;
+            if (localSaved) {
+              try {
+                localPhoto = JSON.parse(localSaved)?.profileImageUrl;
+              } catch (e) {}
+            }
+
+            const isServerDefaultPhoto = 
+              !dbData.siteConfig.profileImageUrl || 
+              dbData.siteConfig.profileImageUrl === '/images/teacher_mohamed_mostafa_1794141316649.jpg';
+
+            const localHasCustomPhoto = 
+              (localPhoto && (localPhoto.includes('cloudinary') || localPhoto.startsWith('http') || localPhoto.startsWith('/uploads/'))) ||
+              (prev.profileImageUrl && (prev.profileImageUrl.includes('cloudinary') || prev.profileImageUrl.startsWith('http') || prev.profileImageUrl.startsWith('/uploads/')));
+
+            // If the server has only default photo, but this browser already has the teacher's Cloudinary/uploaded photo:
+            // Push the custom photo up to the server immediately so incognito & other browsers get it!
+            if (isServerDefaultPhoto && localHasCustomPhoto) {
+              const customPhoto = localPhoto || prev.profileImageUrl;
+              const merged = { ...DEFAULT_SITE_CONFIG, ...dbData.siteConfig, profileImageUrl: customPhoto };
+              fetch('/api/site-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(merged),
+              }).catch(e => console.warn('Sync custom photo to server warning:', e));
+              return merged;
+            }
+
+            return {
               ...DEFAULT_SITE_CONFIG,
-              ...prev,
               ...dbData.siteConfig,
               profileImageUrl: dbData.siteConfig.profileImageUrl || prev.profileImageUrl,
-            }));
-          }
-          if (dbData.cloudinaryConfig) {
-            setCloudinaryConfig(dbData.cloudinaryConfig);
-          }
-          if (Array.isArray(dbData.lectures) && dbData.lectures.length > 0) {
-            setLectures(dbData.lectures);
-          }
-          if (Array.isArray(dbData.attachments) && dbData.attachments.length > 0) {
-            setAttachments(dbData.attachments);
-          }
-          if (Array.isArray(dbData.quizzes) && dbData.quizzes.length > 0) {
-            setQuizzes(dbData.quizzes);
-          }
-          if (Array.isArray(dbData.students) && dbData.students.length > 0) {
-            setStudents(dbData.students);
-          }
+            };
+          });
         }
-      })
-      .catch(err => {
-        console.warn('API DB connection warning:', err);
-      });
+
+        if (dbData.cloudinaryConfig) {
+          setCloudinaryConfig(dbData.cloudinaryConfig);
+        }
+        if (Array.isArray(dbData.lectures)) {
+          setLectures(dbData.lectures);
+        }
+        if (Array.isArray(dbData.attachments)) {
+          setAttachments(dbData.attachments);
+        }
+        if (Array.isArray(dbData.quizzes)) {
+          setQuizzes(dbData.quizzes);
+        }
+        if (Array.isArray(dbData.students)) {
+          setStudents(dbData.students);
+        }
+      }
+    } catch (err) {
+      console.warn('API DB connection warning:', err);
+    }
+  };
+
+  // Initial load and continuous real-time live polling (every 2.5s)
+  useEffect(() => {
+    syncFromServer(true);
+
+    // Live polling: Ensures that any change made in any browser/tab appears instantly in incognito and other devices
+    const interval = setInterval(() => {
+      syncFromServer(false);
+    }, 2500);
+
+    // Cross-tab instantaneous sync
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'mm_site_config' && e.newValue) {
+        try {
+          setSiteConfig(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === 'mm_lectures' && e.newValue) {
+        try {
+          setLectures(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   // Sync siteConfig to localStorage
