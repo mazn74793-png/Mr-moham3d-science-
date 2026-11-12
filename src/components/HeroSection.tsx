@@ -21,6 +21,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   const resolveInitialImage = () => {
     const raw = siteConfig.profileImageUrl;
+    if (raw && (raw.includes('cloudinary') || raw.startsWith('http'))) {
+      return raw;
+    }
     if (!raw || raw.includes('/src/assets/')) {
       return defaultTeacherPhoto;
     }
@@ -34,10 +37,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   }, [siteConfig.profileImageUrl]);
 
   const handleImageError = () => {
-    if (imgSrc !== defaultTeacherPhoto) {
+    // If the image is already the default or a valid Cloudinary image, don't flap
+    if (imgSrc !== defaultTeacherPhoto && !siteConfig.profileImageUrl?.includes('cloudinary')) {
       setImgSrc(defaultTeacherPhoto);
-    } else if (imgSrc !== '/images/teacher_mohamed_mostafa_1794141316649.jpg') {
-      setImgSrc('/images/teacher_mohamed_mostafa_1794141316649.jpg');
     }
   };
 

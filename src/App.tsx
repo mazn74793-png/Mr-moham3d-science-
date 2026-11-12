@@ -111,6 +111,43 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Initial load: Fetch real persistent database state from backend server
+  useEffect(() => {
+    fetch('/api/db')
+      .then(res => res.json())
+      .then(result => {
+        if (result.success && result.data) {
+          const dbData = result.data;
+          if (dbData.siteConfig) {
+            setSiteConfig((prev: SiteConfig) => ({
+              ...DEFAULT_SITE_CONFIG,
+              ...prev,
+              ...dbData.siteConfig,
+              profileImageUrl: dbData.siteConfig.profileImageUrl || prev.profileImageUrl,
+            }));
+          }
+          if (dbData.cloudinaryConfig) {
+            setCloudinaryConfig(dbData.cloudinaryConfig);
+          }
+          if (Array.isArray(dbData.lectures) && dbData.lectures.length > 0) {
+            setLectures(dbData.lectures);
+          }
+          if (Array.isArray(dbData.attachments) && dbData.attachments.length > 0) {
+            setAttachments(dbData.attachments);
+          }
+          if (Array.isArray(dbData.quizzes) && dbData.quizzes.length > 0) {
+            setQuizzes(dbData.quizzes);
+          }
+          if (Array.isArray(dbData.students) && dbData.students.length > 0) {
+            setStudents(dbData.students);
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('API DB connection warning:', err);
+      });
+  }, []);
+
   // Sync siteConfig to localStorage
   useEffect(() => {
     localStorage.setItem('mm_site_config', JSON.stringify(siteConfig));
@@ -186,7 +223,7 @@ export default function App() {
     setDarkMode(prev => !prev);
   };
 
-  const handleLoginSuccess = (user: UserProfile) => {
+  const handleLoginSuccess = async (user: UserProfile) => {
     const isAdmin = isUserAdmin(user);
 
     if (isAdmin) {
@@ -196,21 +233,25 @@ export default function App() {
       return;
     }
 
-    // Check if this student has previously completed their profile
-    const savedStudentsRaw = localStorage.getItem('mm_registered_students');
-    let existingStudents: UserProfile[] = students;
-    if (savedStudentsRaw) {
-      try {
-        const parsed = JSON.parse(savedStudentsRaw);
-        if (Array.isArray(parsed)) existingStudents = parsed;
-      } catch (e) {}
-    }
-
-    const matched = existingStudents.find(s => 
+    // Check if this student has previously completed their profile in DB or local list
+    const query = user.email || user.id || user.phone || '';
+    let matched: UserProfile | undefined = students.find(s => 
       (user.id && s.id === user.id) || 
       (user.email && s.email && s.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
       (user.phone && s.phone && s.phone === user.phone)
     );
+
+    if (!matched && query) {
+      try {
+        const res = await fetch(`/api/students/lookup?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (data && data.found && data.student) {
+          matched = data.student;
+        }
+      } catch (e) {
+        console.warn('Student DB lookup error:', e);
+      }
+    }
 
     const isMarkedDone = 
       Boolean(user.profileCompleted) ||
@@ -231,6 +272,15 @@ export default function App() {
         };
 
     setCurrentUser(finalUser);
+
+    // If profile already done, sync it immediately to server DB
+    if (finalUser.profileCompleted) {
+      fetch('/api/students/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalUser),
+      }).catch(err => console.warn('Save student DB error:', err));
+    }
 
     // Also register/update in student list
     setStudents(prev => {
@@ -253,38 +303,75 @@ export default function App() {
 
   const handleAddLecture = (newLec: Lecture) => {
     setLectures(prev => [newLec, ...prev]);
+    fetch('/api/lectures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLec),
+    }).catch(err => console.warn('Add lecture API error:', err));
   };
 
   const handleDeleteLecture = (id: string) => {
     setLectures(prev => prev.filter(l => l.id !== id));
+    fetch(`/api/lectures/${id}`, {
+      method: 'DELETE',
+    }).catch(err => console.warn('Delete lecture API error:', err));
   };
 
   const handleUpdateLecture = (updated: Lecture) => {
     setLectures(prev => prev.map(l => l.id === updated.id ? updated : l));
+    fetch('/api/lectures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(err => console.warn('Update lecture API error:', err));
   };
 
   const handleAddAttachment = (newFile: AttachmentFile) => {
     setAttachments(prev => [newFile, ...prev]);
+    fetch('/api/attachments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newFile),
+    }).catch(err => console.warn('Add attachment API error:', err));
   };
 
   const handleDeleteAttachment = (id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
+    fetch(`/api/attachments/${id}`, {
+      method: 'DELETE',
+    }).catch(err => console.warn('Delete attachment API error:', err));
   };
 
   const handleAddQuiz = (newQuiz: Quiz) => {
     setQuizzes(prev => [newQuiz, ...prev]);
+    fetch('/api/quizzes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newQuiz),
+    }).catch(err => console.warn('Add quiz API error:', err));
   };
 
   const handleDeleteQuiz = (id: string) => {
     setQuizzes(prev => prev.filter(q => q.id !== id));
+    fetch(`/api/quizzes/${id}`, {
+      method: 'DELETE',
+    }).catch(err => console.warn('Delete quiz API error:', err));
   };
 
   const handleAdminDeleteStudent = (studentId: string) => {
     setStudents(prev => prev.filter(s => s.id !== studentId));
+    fetch(`/api/students/${studentId}`, {
+      method: 'DELETE',
+    }).catch(err => console.warn('Delete student API error:', err));
   };
 
   const handleAdminAddStudent = (student: UserProfile) => {
     setStudents(prev => [student, ...prev]);
+    fetch('/api/students/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(student),
+    }).catch(err => console.warn('Add student API error:', err));
   };
 
   const handleResetAllData = () => {
@@ -296,13 +383,22 @@ export default function App() {
     localStorage.setItem('mm_attachments', JSON.stringify([]));
     localStorage.setItem('mm_quizzes', JSON.stringify([]));
     localStorage.setItem('mm_registered_students', JSON.stringify([]));
+    fetch('/api/reset-data', {
+      method: 'POST',
+    }).catch(err => console.warn('Reset data API error:', err));
   };
 
   const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
     const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
     setCurrentUser(finalized);
 
-    // Permanently remember that this student completed their profile
+    // Permanently remember that this student completed their profile across all devices
+    fetch('/api/students/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalized),
+    }).catch(err => console.warn('Save student profile DB error:', err));
+
     if (finalized.email) {
       localStorage.setItem(`mm_profile_done_${finalized.email.toLowerCase().trim()}`, 'true');
     }
@@ -328,11 +424,21 @@ export default function App() {
   const handleSaveCloudinaryConfig = (config: CloudinaryConfig) => {
     setCloudinaryConfig(config);
     localStorage.setItem('mm_cloudinary', JSON.stringify(config));
+    fetch('/api/cloudinary-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }).catch(err => console.warn('Save cloudinary config API error:', err));
   };
 
   const handleSaveSiteConfig = (newConfig: SiteConfig) => {
     setSiteConfig(newConfig);
     localStorage.setItem('mm_site_config', JSON.stringify(newConfig));
+    fetch('/api/site-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newConfig),
+    }).catch(err => console.warn('Save site config API error:', err));
   };
 
   const handleScrollToSection = (sectionId: string) => {

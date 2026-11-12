@@ -312,13 +312,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const data = await res.json();
         const url = data.secure_url || data.url;
         setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: url }));
+        onSaveSiteConfig({ ...siteConfig, profileImageUrl: url });
+        setAdminNotice({ type: 'success', message: 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️' });
       } else {
-        const localUrl = URL.createObjectURL(file);
-        setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: localUrl }));
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = errData.error?.message || 'تعذر الرفع لكلاودنري، تأكد من اسم السحابة والـ Preset';
+        setAdminNotice({ type: 'error', message: errMsg });
       }
-    } catch {
-      const localUrl = URL.createObjectURL(file);
-      setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: localUrl }));
+    } catch (err: any) {
+      setAdminNotice({ type: 'error', message: 'خطأ في الاتصال بسحابة كلاودنري: ' + (err.message || 'فشل الاتصال') });
     } finally {
       setUploadingTeacherPhoto(false);
     }

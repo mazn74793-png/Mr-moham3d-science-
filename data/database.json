@@ -1,0 +1,43 @@
+{
+  "siteConfig": {
+    "teacherName": "محمد مصطفى",
+    "teacherTitle": "Mr. Mohamed Mostafa",
+    "tagline": "كيمياء ولغات · دفعة 2026",
+    "heroDescription": "المنصة التعليمية الأولى المتخصصة في تدريس الكيمياء والعلوم لمدارس اللغات والتجريبي وفق أحدث معايير الامتحانات الحديثة 2026.",
+    "heroBadge": "دفعة 2026 · مدارس اللغات والتجريبي",
+    "profileImageUrl": "/images/teacher_mohamed_mostafa_1794141316649.jpg",
+    "calligraphyFont": "Cairo",
+    "bodyFont": "Cairo",
+    "primaryColor": "#0d9488",
+    "adminEmails": [
+      "mizoo2y2@gmail.com"
+    ],
+    "phone1": "0100 234 5678",
+    "phone2": "0111 987 6543",
+    "whatsappNumber": "201002345678",
+    "facebookUrl": "https://facebook.com",
+    "youtubeUrl": "https://youtube.com",
+    "telegramUrl": "https://t.me",
+    "centerBranches": "القاهرة (مدينة نصر، المعادي، مصر الجديدة) والجيزة (الدقي، المهندسين، فيصل، الهرم).",
+    "developerName": "Mazen Mohamed",
+    "developerHandle": "@mazenmohamed",
+    "developerUrl": "https://wa.me/201002345678",
+    "footerBio": "مع أ. محمد الكيمستري تبان من منظور تاني. شرح واضح، أمثلة من الواقع، وتجارب عملية تخلّيك واثق في الامتحان ومقفل المادة. انضم للكورسات وابدأ من دلوقتي مع أقوى نظام متابعة وتدريبات شاملة.",
+    "feature1Title": "شرح مبسط وتأسيس عميق",
+    "feature1Desc": "تفكيك أصعب المفاهيم الكيميائية ومسائل المول والمعادلات المعقدة بأسلوب سلس يرسخ المعلومة في ذهنك.",
+    "feature2Title": "نظام امتحانات دوري وتقييم فوري",
+    "feature2Desc": "كويزات بعد كل محاضرة بتصحيح ذكي فوري وتفسير دقيق للإجابات لمعرفة نقاط القوة والضعف ومعالجتها فوراً.",
+    "feature3Title": "متابعة شخصية مستمرة ومذكرات PDF",
+    "feature3Desc": "بنك أسئلة شامل ومذكرات ملونة عالية الجودة مع متابعة مستمرة للواجبات ومستوى الطالب الدراسي دورياً.",
+    "feature4Title": "تجارب تفاعلية ومعمل افتراضي",
+    "feature4Desc": "محاكاة بصرية تفاعلية للتفاعلات الكيميائية ومشاهدة تغيرات الألوان وسلوك الغازات عملياً لربط النظري بالواقع."
+  },
+  "cloudinaryConfig": {
+    "cloudName": "chemistry-egypt",
+    "uploadPreset": "mohamed_mostafa_preset"
+  },
+  "lectures": [],
+  "attachments": [],
+  "quizzes": [],
+  "students": []
+}

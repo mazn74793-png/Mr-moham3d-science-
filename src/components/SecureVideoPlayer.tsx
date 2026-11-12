@@ -71,6 +71,16 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Determine whether video is direct stream (Cloudinary / mp4 / webm) or an iframe embed (YouTube)
+  const isDirectVideo = Boolean(
+    lecture.videoUrl && (
+      lecture.videoUrl.includes('cloudinary.com') ||
+      lecture.videoUrl.match(/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i) ||
+      lecture.videoUrl.startsWith('blob:') ||
+      lecture.videoUrl.startsWith('data:video')
+    )
+  );
+
   // Extract clean embed URL
   const getEmbedUrl = (url: string) => {
     if (!url) return '';
@@ -102,14 +112,27 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
         className="relative rounded-3xl overflow-hidden aspect-video bg-slate-950 shadow-2xl border-2 border-slate-800 select-none group"
         style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
       >
-        {/* Actual Video Iframe / Stream */}
-        <iframe
-          src={getEmbedUrl(lecture.videoUrl)}
-          title={lecture.title}
-          className="w-full h-full relative z-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+        {/* Actual Video Playback: Native HTML5 for Cloudinary & mp4, or Secure Iframe for YouTube */}
+        {isDirectVideo ? (
+          <video
+            key={lecture.videoUrl}
+            src={lecture.videoUrl}
+            controls
+            playsInline
+            controlsList="nodownload"
+            preload="metadata"
+            className="w-full h-full object-contain bg-black relative z-0"
+            onEnded={() => onMarkWatched(lecture.id)}
+          />
+        ) : (
+          <iframe
+            src={getEmbedUrl(lecture.videoUrl)}
+            title={lecture.title}
+            className="w-full h-full relative z-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        )}
 
         {/* Dynamic Animated Semi-Transparent Watermark Overlay */}
         <div

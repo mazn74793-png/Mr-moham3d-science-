@@ -89,11 +89,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           <div className="flex flex-col min-w-0 justify-center">
             <div className="flex items-center gap-1">
-              <span className="font-cairo text-xs xs:text-sm sm:text-base lg:text-lg font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors truncate max-w-[110px] xs:max-w-[150px] sm:max-w-none">
+              <span className="font-cairo text-xs xs:text-sm sm:text-base lg:text-lg font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors whitespace-nowrap">
                 {teacherDisplayName}
               </span>
             </div>
-            <span className="text-[9px] xs:text-[10px] sm:text-xs font-semibold text-teal-600 dark:text-teal-400 tracking-wide font-cairo truncate max-w-[110px] xs:max-w-[150px] sm:max-w-none">
+            {/* Tagline hidden on mobile and tablets so it never crowds or hides action buttons */}
+            <span className="hidden lg:block text-[10px] xl:text-xs font-semibold text-teal-600 dark:text-teal-400 tracking-wide font-cairo truncate max-w-[180px]">
               {teacherDisplayTagline}
             </span>
           </div>
