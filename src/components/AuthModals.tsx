@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, LogIn, UserPlus, Phone, Lock, User, Sparkles, AlertCircle
 } from 'lucide-react';
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
-import { SiteConfig } from '../types/siteConfig';
-import { auth, getStudentFromCloud } from '../firebase';
+import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
+import { auth, googleProvider, getStudentFromCloud, fetchAdminConfigIfAuthorized } from '../firebase';
 
 declare global {
   interface Window {
@@ -45,21 +46,26 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
+  const resolvedGrades = getResolvedGrades(siteConfig);
+
   // Form states for regular registration
   const [regName, setRegName] = useState('');
   const [regIdentifier, setRegIdentifier] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regGrade, setRegGrade] = useState<GradeLevel>('third');
+  const [regGrade, setRegGrade] = useState<GradeLevel>(() => {
+    const popular = resolvedGrades.find((g) => g.isPopular);
+    return popular?.id || resolvedGrades[0]?.id || 'third';
+  });
   const [regParentPhone, setRegParentPhone] = useState('');
 
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Helper to determine if an email is authorized as Admin / Teacher
-  const checkIsAdminEmail = (emailStr?: string) => {
+  const checkIsAdminEmail = (emailStr?: string, extraEmails?: string[]) => {
     if (!emailStr) return false;
     const clean = emailStr.toLowerCase().trim();
     if (clean === 'mizoo2y2@gmail.com') return true;
-    const list = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
+    const list = [...(siteConfig?.adminEmails || ['mizoo2y2@gmail.com']), ...(extraEmails || [])];
     return list.some((e) => e.toLowerCase().trim() === clean);
   };
 
@@ -103,15 +109,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     displayName?: string | null,
     photoURL?: string | null
   ) => {
-    const isAdmin = checkIsAdminEmail(email);
+    const adminCfg = auth.currentUser ? await fetchAdminConfigIfAuthorized() : null;
+    const isAdmin = Boolean(adminCfg) || checkIsAdminEmail(email, adminCfg?.adminEmails);
+    const defaultGrade = resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
 
     if (isAdmin) {
       onLoginSuccess({
-        id: uid,
+        id: auth.currentUser?.uid || uid,
         name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
         email,
         role: 'teacher',
-        grade: 'third',
+        grade: defaultGrade,
         phone: siteConfig?.phone1 || '01002345678',
         parentPhone: '',
         avatarUrl: photoURL || '',
@@ -126,17 +134,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
+    const resolvedUid = auth.currentUser?.uid || uid;
     // Check Firestore (when signed in) or localStorage for permanent profile
-    const cloudRecord = auth.currentUser ? await getStudentFromCloud(uid).catch(() => null) : null;
-    const existingRecord = cloudRecord || getExistingStudentRecord(uid, email);
-    const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(uid, email);
+    const cloudRecord = auth.currentUser ? await getStudentFromCloud(resolvedUid).catch(() => null) : null;
+    const existingRecord = cloudRecord || getExistingStudentRecord(resolvedUid, email);
+    const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(resolvedUid, email);
 
     onLoginSuccess({
-      id: uid,
+      id: resolvedUid,
       name: existingRecord?.name || displayName || email.split('@')[0],
       email,
       role: 'student',
-      grade: existingRecord?.grade || 'third',
+      grade: existingRecord?.grade || defaultGrade,
       phone: existingRecord?.phone || '',
       parentPhone: existingRecord?.parentPhone || '',
       governorate: existingRecord?.governorate || 'القاهرة',
@@ -183,8 +192,28 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 return;
               }
               sessionStorage.setItem('mm_gis_active', 'true');
+
+              // Sign into Firebase Auth in the exact same login flow so Firestore permissions work immediately without a second login
+              const sameEmailSignedIn =
+                auth.currentUser?.email?.toLowerCase().trim() === profile.email.toLowerCase().trim() &&
+                auth.currentUser?.emailVerified;
+
+              if (!sameEmailSignedIn) {
+                try {
+                  const credential = GoogleAuthProvider.credential(null, tokenResponse.access_token);
+                  await signInWithCredential(auth, credential);
+                } catch (credErr) {
+                  console.warn('Credential link fallback:', credErr);
+                  try {
+                    await signInWithPopup(auth, googleProvider);
+                  } catch (popupErr) {
+                    console.warn('Secondary auth popup skipped:', popupErr);
+                  }
+                }
+              }
+
               await completeGoogleLogin(
-                profile.sub || `gis_${Date.now()}`,
+                auth.currentUser?.uid || profile.sub || `gis_${Date.now()}`,
                 profile.email,
                 profile.name,
                 profile.picture
@@ -568,40 +597,23 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
                 الصف الدراسي
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRegGrade('first')}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold font-kufi border transition-all text-center ${
-                    regGrade === 'first'
-                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                  }`}
-                >
-                  أولى ثانوي
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRegGrade('second')}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold font-kufi border transition-all text-center ${
-                    regGrade === 'second'
-                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                  }`}
-                >
-                  تانية ثانوي
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRegGrade('third')}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold font-kufi border transition-all text-center ${
-                    regGrade === 'third'
-                      ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                  }`}
-                >
-                  تالتة ثانوي 🔥
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {resolvedGrades.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setRegGrade(g.id)}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold font-kufi border transition-all text-center cursor-pointer truncate ${
+                      regGrade === g.id
+                        ? g.isPopular
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 shadow-xs'
+                          : 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {g.badgeAr}
+                  </button>
+                ))}
               </div>
             </div>
 

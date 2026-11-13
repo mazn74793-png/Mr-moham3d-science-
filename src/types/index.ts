@@ -1,4 +1,4 @@
-export type GradeLevel = 'first' | 'second' | 'third';
+export type GradeLevel = string;
 
 export interface Lecture {
   id: string;
@@ -22,6 +22,7 @@ export interface Lecture {
 export interface QuizQuestion {
   id: string;
   question: string;
+  imageUrl?: string;
   options: string[];
   correctAnswer: number;
   explanation: string;
@@ -73,4 +74,3 @@ export interface UserProfile {
   quizScores?: Record<string, number>;
   joinedAt?: string;
 }
-

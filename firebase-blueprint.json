@@ -26,6 +26,7 @@
         "developerUrl": { "type": "string", "maxLength": 500 },
         "footerBio": { "type": "string", "maxLength": 2000 },
         "footerQuickLinks": { "type": "array", "description": "Up to 20 footer quick links" },
+        "grades": { "type": "array", "description": "Up to 20 dynamic academic years/grades" },
         "gradeFirstTitleAr": { "type": "string", "maxLength": 200 },
         "gradeFirstTitleEn": { "type": "string", "maxLength": 200 },
         "gradeFirstBadgeAr": { "type": "string", "maxLength": 150 },
@@ -70,7 +71,7 @@
       "properties": {
         "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "maxLength": 300 },
-        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "gradeLabel": { "type": "string", "maxLength": 150 },
         "chapter": { "type": "string", "maxLength": 250 },
         "duration": { "type": "string", "maxLength": 100 },
@@ -96,7 +97,7 @@
       "properties": {
         "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "maxLength": 300 },
-        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "gradeLabel": { "type": "string", "maxLength": 150 },
         "chapter": { "type": "string", "maxLength": 250 },
         "fileSize": { "type": "string", "maxLength": 50 },
@@ -116,7 +117,7 @@
       "properties": {
         "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "maxLength": 300 },
-        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "chapter": { "type": "string", "maxLength": 250 },
         "durationMinutes": { "type": "number" },
         "lectureId": { "type": "string", "maxLength": 128 },
@@ -136,7 +137,7 @@
         "name": { "type": "string", "maxLength": 200 },
         "email": { "type": "string", "maxLength": 200 },
         "role": { "type": "string", "enum": ["student", "teacher"] },
-        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "phone": { "type": "string", "maxLength": 50 },
         "parentPhone": { "type": "string", "maxLength": 50 },
         "governorate": { "type": "string", "maxLength": 150 },

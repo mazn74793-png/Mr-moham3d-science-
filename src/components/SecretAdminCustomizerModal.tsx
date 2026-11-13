@@ -11,7 +11,7 @@ interface SecretAdminCustomizerModalProps {
   isOpen: boolean;
   onClose: () => void;
   siteConfig: SiteConfig;
-  onSaveSiteConfig: (newConfig: SiteConfig) => void;
+  onSaveSiteConfig: (newConfig: SiteConfig) => Promise<boolean> | boolean | void;
   cloudinaryConfig: { cloudName: string; uploadPreset: string };
 }
 
@@ -58,16 +58,22 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
     }));
   };
 
-  const handleSaveAll = (e: React.FormEvent) => {
+  const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveSiteConfig(formData);
+    setUploadError(null);
+    const saved = await onSaveSiteConfig(formData);
+    if (saved === false) {
+      setUploadError('تعذر حفظ التعديلات على السحابة. يرجى التحقق من جلسة المشرف.');
+      return;
+    }
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
 
-  const handleResetDefaults = () => {
+  const handleResetDefaults = async () => {
     setFormData(DEFAULT_SITE_CONFIG);
-    onSaveSiteConfig(DEFAULT_SITE_CONFIG);
+    const saved = await onSaveSiteConfig(DEFAULT_SITE_CONFIG);
+    if (saved === false) return;
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
@@ -95,9 +101,13 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
       });
       handleFieldChange('profileImageUrl', result.url);
       // Immediately push to server database so all other devices & incognito see it
-      onSaveSiteConfig({ ...formData, profileImageUrl: result.url });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
+      const saved = await onSaveSiteConfig({ ...formData, profileImageUrl: result.url });
+      if (saved === false) {
+        setUploadError('تم رفع الصورة ولكن تعذر حفظ الرابط في السحابة.');
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      }
     } catch (err: any) {
       setUploadError(err?.message || 'فشل رفع الصورة، يرجى المحاولة مرة أخرى.');
     } finally {

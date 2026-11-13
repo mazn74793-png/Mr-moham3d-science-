@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import { 
   Award, Plus, Trash2, CheckCircle2, Clock, HelpCircle, 
-  Sparkles, BookOpen, AlertCircle, ChevronDown, Check, X 
+  Sparkles, X, Image as ImageIcon, Upload
 } from 'lucide-react';
-import { Quiz, QuizQuestion, GradeLevel, Lecture } from '../types';
+import { Quiz, QuizQuestion, GradeLevel, Lecture, CloudinaryConfig } from '../types';
+import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
+import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
+import { UploadProgressBar } from './UploadProgressBar';
 
 interface TeacherQuizManagerProps {
   quizzes: Quiz[];
   lectures: Lecture[];
+  cloudinaryConfig?: CloudinaryConfig;
+  grades?: GradeItem[];
   onAddQuiz: (newQuiz: Quiz) => void;
   onDeleteQuiz: (quizId: string) => void;
 }
@@ -15,18 +20,34 @@ interface TeacherQuizManagerProps {
 export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
   quizzes,
   lectures,
+  cloudinaryConfig,
+  grades,
   onAddQuiz,
   onDeleteQuiz,
 }) => {
+  const resolvedGrades = grades && grades.length > 0 ? grades : DEFAULT_GRADES;
+  const getGradeLabel = (gradeId?: string) => {
+    if (!gradeId) return 'غير محدد';
+    const found = resolvedGrades.find((g) => g.id === gradeId);
+    return found?.badgeAr || found?.titleAr || gradeId;
+  };
+
   const [filterGrade, setFilterGrade] = useState<GradeLevel | 'all'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
 
   // New Quiz Meta Form
   const [quizTitle, setQuizTitle] = useState('');
-  const [quizGrade, setQuizGrade] = useState<GradeLevel>('third');
+  const [quizGrade, setQuizGrade] = useState<GradeLevel>(
+    resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
+  );
   const [quizChapter, setQuizChapter] = useState('الباب الأول: العناصر الانتقالية');
   const [quizDuration, setQuizDuration] = useState<number>(15);
   const [selectedLectureId, setSelectedLectureId] = useState<string>('');
+
+  // Question image upload state
+  const [uploadingQuestionIdx, setUploadingQuestionIdx] = useState<number | null>(null);
+  const [questionUploadProgress, setQuestionUploadProgress] = useState<number>(0);
+  const [questionUploadMeta, setQuestionUploadMeta] = useState<UploadProgressInfo | null>(null);
 
   // Questions Builder State
   const [questions, setQuestions] = useState<QuizQuestion[]>([
@@ -91,20 +112,59 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     });
   };
 
+  const handleQuestionImageUpload = async (qIdx: number, file: File) => {
+    setQuizError(null);
+    setUploadingQuestionIdx(qIdx);
+    setQuestionUploadProgress(0);
+    setQuestionUploadMeta(null);
+
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName: cloudinaryConfig?.cloudName || 'chemistry-egypt',
+        uploadPreset: cloudinaryConfig?.uploadPreset || 'chemistry_uploads',
+        resourceType: 'image',
+        onProgress: (percent, info) => {
+          setQuestionUploadProgress(percent);
+          setQuestionUploadMeta(info);
+        },
+      });
+      handleUpdateQuestion(qIdx, 'imageUrl', result.url);
+    } catch (err: any) {
+      setQuizError(err?.message || `فشل رفع صورة السؤال رقم ${qIdx + 1}`);
+    } finally {
+      setUploadingQuestionIdx(null);
+      setQuestionUploadProgress(0);
+      setQuestionUploadMeta(null);
+    }
+  };
+
+  const handleQuickFillOptions = (qIdx: number) => {
+    setQuestions((prev) => {
+      const copy = [...prev];
+      copy[qIdx] = { ...copy[qIdx], options: ['أ', 'ب', 'ج', 'د'] };
+      return copy;
+    });
+  };
+
   const handleSubmitQuiz = (e: React.FormEvent) => {
     e.preventDefault();
     setQuizError(null);
+
+    if (uploadingQuestionIdx !== null) {
+      setQuizError('يرجى الانتظار حتى يكتمل رفع صورة السؤال قبل حفظ الامتحان.');
+      return;
+    }
 
     if (!quizTitle.trim()) {
       setQuizError('يرجى كتابة عنوان الامتحان الإلكتروني.');
       return;
     }
 
-    // Validate questions
+    // Validate questions (text OR image required)
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-      if (!q.question.trim()) {
-        setQuizError(`يرجى كتابة نص السؤال رقم ${i + 1}.`);
+      if (!q.question.trim() && !q.imageUrl?.trim()) {
+        setQuizError(`يرجى كتابة نص السؤال رقم ${i + 1} أو رفع صورة للسؤال.`);
         return;
       }
       for (let j = 0; j < q.options.length; j++) {
@@ -223,9 +283,11 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                 onChange={(e) => setQuizGrade(e.target.value as GradeLevel)}
                 className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
               >
-                <option value="first">الصف الأول الثانوي</option>
-                <option value="second">الصف الثاني الثانوي</option>
-                <option value="third">الصف الثالث الثانوي 2026</option>
+                {resolvedGrades.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.badgeAr}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -319,17 +381,80 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                     )}
                   </div>
 
-                  {/* Question Prompt */}
+                  {/* Question Image Upload (Replaces typing text if desired) */}
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-dashed border-teal-300 dark:border-teal-800 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4" />
+                        <span>صورة السؤال (ارفع صورة السؤال بدلاً من كتابته أو بجانبه):</span>
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor={`question-img-${qIdx}`}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            uploadingQuestionIdx === qIdx
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed'
+                              : 'bg-teal-600 hover:bg-teal-700 text-white'
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{q.imageUrl ? 'تغيير الصورة' : 'رفع صورة السؤال'}</span>
+                        </label>
+                        <input
+                          id={`question-img-${qIdx}`}
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingQuestionIdx !== null}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = '';
+                            if (f) handleQuestionImageUpload(qIdx, f);
+                          }}
+                          className="hidden"
+                        />
+
+                        {q.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuestion(qIdx, 'imageUrl', '')}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 cursor-pointer"
+                          >
+                            حذف الصورة
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {uploadingQuestionIdx === qIdx && (
+                      <UploadProgressBar
+                        label={`جاري رفع صورة السؤال رقم ${qIdx + 1}...`}
+                        progress={questionUploadProgress}
+                        meta={questionUploadMeta}
+                      />
+                    )}
+
+                    {q.imageUrl && (
+                      <div className="pt-1">
+                        <img
+                          src={q.imageUrl}
+                          alt={`معاينة السؤال ${qIdx + 1}`}
+                          className="max-h-56 w-auto rounded-xl border border-slate-200 dark:border-slate-700 object-contain bg-slate-50 dark:bg-slate-950"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Question Prompt (Optional if image uploaded) */}
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      نص السؤال الكيميائي *
+                      نص السؤال الكيميائي (اختياري في حالة رفع صورة)
                     </label>
                     <textarea
-                      required
                       rows={2}
                       value={q.question}
                       onChange={(e) => handleUpdateQuestion(qIdx, 'question', e.target.value)}
-                      placeholder="مثال: أي من المركبات التالية يعطي لوناً أخضر عند تفاعله مع محلول هيدروكسيد الصوديوم؟"
+                      placeholder="اكتب نص السؤال هنا أو اكتفِ برفع صورة السؤال بالأعلى..."
                       className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />
                   </div>
@@ -350,9 +475,18 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
                   {/* 4 Options Grid with Correct Answer Radio Button */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      خيارات الإجابة (اختر الدائرة بجانب الإجابة الصحيحة):
-                    </label>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        خيارات الإجابة (اختر الدائرة بجانب الإجابة الصحيحة):
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickFillOptions(qIdx)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                      >
+                        تعبئة خيارات أ / ب / ج / د تلقائياً
+                      </button>
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {q.options.map((opt, oIdx) => {
@@ -446,7 +580,7 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
           </h3>
 
           {/* Filter Grade */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl self-start sm:self-auto">
             <button
               onClick={() => setFilterGrade('all')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -457,36 +591,19 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
             >
               الكل ({quizzes.length})
             </button>
-            <button
-              onClick={() => setFilterGrade('first')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                filterGrade === 'first'
-                  ? 'bg-white dark:bg-slate-900 text-teal-600 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              أولى ثانوي
-            </button>
-            <button
-              onClick={() => setFilterGrade('second')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                filterGrade === 'second'
-                  ? 'bg-white dark:bg-slate-900 text-teal-600 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              تانية ثانوي
-            </button>
-            <button
-              onClick={() => setFilterGrade('third')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                filterGrade === 'third'
-                  ? 'bg-white dark:bg-slate-900 text-teal-600 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              تالتة ثانوي
-            </button>
+            {resolvedGrades.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setFilterGrade(g.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  filterGrade === g.id
+                    ? 'bg-white dark:bg-slate-900 text-teal-600 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {g.badgeAr}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -502,7 +619,7 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                 <div className="space-y-1.5 text-right">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-bold font-mono">
-                      {quiz.grade === 'first' ? 'أولى ثانوي' : quiz.grade === 'second' ? 'تانية ثانوي' : 'تالتة ثانوي'}
+                      {getGradeLabel(quiz.grade)}
                     </span>
                     <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-amber-500" />

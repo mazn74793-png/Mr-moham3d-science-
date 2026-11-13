@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { User, Phone, GraduationCap, MapPin, CheckCircle2, Sparkles, ShieldCheck } from 'lucide-react';
 import { GradeLevel, UserProfile } from '../types';
+import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 
 interface StudentOnboardingModalProps {
   isOpen: boolean;
   currentUser: UserProfile;
+  siteConfig?: SiteConfig;
   onSaveProfile: (updatedProfile: UserProfile) => void;
 }
 
@@ -41,10 +43,14 @@ const EGYPT_GOVERNORATES = [
 export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
   isOpen,
   currentUser,
+  siteConfig,
   onSaveProfile,
 }) => {
+  const resolvedGrades = getResolvedGrades(siteConfig);
   const [name, setName] = useState(currentUser.name || '');
-  const [grade, setGrade] = useState<GradeLevel>(currentUser.grade || 'third');
+  const [grade, setGrade] = useState<GradeLevel>(
+    currentUser.grade || resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
+  );
   const [phone, setPhone] = useState(currentUser.phone && currentUser.phone !== '010XXXXXXXX' ? currentUser.phone : '');
   const [parentPhone, setParentPhone] = useState(currentUser.parentPhone || '');
   const [governorate, setGovernorate] = useState(currentUser.governorate || 'القاهرة');
@@ -130,44 +136,26 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
             </label>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setGrade('first')}
-                className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer ${
-                  grade === 'first'
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 font-bold shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="text-sm font-bold font-kufi">أولى ثانوي</div>
-                <div className="text-[10px] text-slate-500 font-mono mt-0.5">دفعة 2026</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setGrade('second')}
-                className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer ${
-                  grade === 'second'
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 font-bold shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="text-sm font-bold font-kufi">تانية ثانوي</div>
-                <div className="text-[10px] text-slate-500 font-mono mt-0.5">دفعة 2026</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setGrade('third')}
-                className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer ${
-                  grade === 'third'
-                    ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 hover:border-amber-300 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="text-sm font-bold font-kufi">تالتة ثانوي 🔥</div>
-                <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">الشهادة الثانوية</div>
-              </button>
+              {resolvedGrades.map((g) => {
+                const isSelected = grade === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setGrade(g.id)}
+                    className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer ${
+                      isSelected
+                        ? g.isPopular
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
+                          : 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 font-bold shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="text-sm font-bold font-kufi">{g.badgeAr}</div>
+                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">{g.yearLabelAr || 'دفعة 2026'}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

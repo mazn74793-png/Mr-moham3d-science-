@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Menu, Link as LinkIcon, Compass, Eye
 } from 'lucide-react';
 import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfile } from '../types';
-import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
+import { SiteConfig, DEFAULT_SITE_CONFIG, GradeItem, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
 import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
@@ -15,23 +15,23 @@ import { UploadProgressBar } from './UploadProgressBar';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
-  onAddLecture: (newLecture: Lecture) => void;
-  onDeleteLecture: (id: string) => void;
-  onUpdateLecture?: (updated: Lecture) => void;
+  onAddLecture: (newLecture: Lecture) => Promise<boolean> | boolean | void;
+  onDeleteLecture: (id: string) => Promise<boolean> | boolean | void;
+  onUpdateLecture?: (updated: Lecture) => Promise<boolean> | boolean | void;
   attachments: AttachmentFile[];
-  onAddAttachment: (newFile: AttachmentFile) => void;
-  onDeleteAttachment: (id: string) => void;
+  onAddAttachment: (newFile: AttachmentFile) => Promise<boolean> | boolean | void;
+  onDeleteAttachment: (id: string) => Promise<boolean> | boolean | void;
   quizzes: Quiz[];
-  onAddQuiz: (newQuiz: Quiz) => void;
-  onDeleteQuiz: (quizId: string) => void;
+  onAddQuiz: (newQuiz: Quiz) => Promise<boolean> | boolean | void;
+  onDeleteQuiz: (quizId: string) => Promise<boolean> | boolean | void;
   students: UserProfile[];
-  onUpdateStudent?: (student: UserProfile) => void;
-  onDeleteStudent?: (studentId: string) => void;
-  onAddStudent?: (student: UserProfile) => void;
+  onUpdateStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
+  onDeleteStudent?: (studentId: string) => Promise<boolean> | boolean | void;
+  onAddStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
   cloudinaryConfig: CloudinaryConfig;
-  onSaveCloudinaryConfig: (config: CloudinaryConfig) => void;
+  onSaveCloudinaryConfig: (config: CloudinaryConfig) => Promise<boolean> | boolean | void;
   siteConfig: SiteConfig;
-  onSaveSiteConfig: (newConfig: SiteConfig) => void;
+  onSaveSiteConfig: (newConfig: SiteConfig) => Promise<boolean> | boolean | void;
   onBackToHome: () => void;
   onOpenStudentPortal: () => void;
   onResetAllData?: () => void;
@@ -78,7 +78,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [adminNotice, setAdminNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [deleteAdminConfirmEmail, setDeleteAdminConfirmEmail] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [selectedAcademicTab, setSelectedAcademicTab] = useState<'first' | 'second' | 'third'>('first');
+  const [selectedAcademicTab, setSelectedAcademicTab] = useState<string>('first');
+  const [showAddGradeForm, setShowAddGradeForm] = useState(false);
+  const [newGradeBadgeAr, setNewGradeBadgeAr] = useState('');
+  const [newGradeBadgeEn, setNewGradeBadgeEn] = useState('');
+  const [newGradeTitleAr, setNewGradeTitleAr] = useState('');
+  const [newGradeTitleEn, setNewGradeTitleEn] = useState('');
+  const [newGradeYearLabelAr, setNewGradeYearLabelAr] = useState('دفعة 2026');
+  const [newGradeDescAr, setNewGradeDescAr] = useState('');
+  const [newGradeIsPopular, setNewGradeIsPopular] = useState(false);
+  const [gradeFormNotice, setGradeFormNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [deleteGradeConfirmId, setDeleteGradeConfirmId] = useState<string | null>(null);
   const [newQuickLinkTitle, setNewQuickLinkTitle] = useState('');
   const [newQuickLinkUrl, setNewQuickLinkUrl] = useState('');
   
@@ -199,8 +209,103 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setSiteForm(siteConfig);
   }, [siteConfig]);
 
+  const resolvedGrades = getResolvedGrades(siteForm);
+  const activeAcademicGrade =
+    resolvedGrades.find((g) => g.id === selectedAcademicTab) || resolvedGrades[0];
+
+  const handleUpdateGradeItem = (gradeId: string, patch: Partial<GradeItem>) => {
+    const nextGrades = resolvedGrades.map((g) => (g.id === gradeId ? { ...g, ...patch } : g));
+    const nextConfig: SiteConfig = { ...siteForm, grades: nextGrades };
+
+    if (gradeId === 'first') {
+      if (patch.titleAr !== undefined) nextConfig.gradeFirstTitleAr = patch.titleAr;
+      if (patch.titleEn !== undefined) nextConfig.gradeFirstTitleEn = patch.titleEn;
+      if (patch.badgeAr !== undefined) nextConfig.gradeFirstBadgeAr = patch.badgeAr;
+      if (patch.descAr !== undefined) nextConfig.gradeFirstDescAr = patch.descAr;
+    } else if (gradeId === 'second') {
+      if (patch.titleAr !== undefined) nextConfig.gradeSecondTitleAr = patch.titleAr;
+      if (patch.titleEn !== undefined) nextConfig.gradeSecondTitleEn = patch.titleEn;
+      if (patch.badgeAr !== undefined) nextConfig.gradeSecondBadgeAr = patch.badgeAr;
+      if (patch.descAr !== undefined) nextConfig.gradeSecondDescAr = patch.descAr;
+    } else if (gradeId === 'third') {
+      if (patch.titleAr !== undefined) nextConfig.gradeThirdTitleAr = patch.titleAr;
+      if (patch.titleEn !== undefined) nextConfig.gradeThirdTitleEn = patch.titleEn;
+      if (patch.badgeAr !== undefined) nextConfig.gradeThirdBadgeAr = patch.badgeAr;
+      if (patch.descAr !== undefined) nextConfig.gradeThirdDescAr = patch.descAr;
+    }
+
+    setSiteForm(nextConfig);
+  };
+
+  const handleAddNewGrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGradeFormNotice(null);
+
+    if (!newGradeBadgeAr.trim() || !newGradeTitleAr.trim()) {
+      setGradeFormNotice({ type: 'error', message: 'يرجى إدخال اسم السنة الدراسية والعنوان بالعربية.' });
+      return;
+    }
+
+    const newId = `grade_${Date.now()}`;
+    const newItem: GradeItem = {
+      id: newId,
+      badgeAr: newGradeBadgeAr.trim(),
+      badgeEn: newGradeBadgeEn.trim() || newGradeBadgeAr.trim(),
+      titleAr: newGradeTitleAr.trim(),
+      titleEn: newGradeTitleEn.trim() || newGradeTitleAr.trim(),
+      yearLabelAr: newGradeYearLabelAr.trim() || 'دفعة 2026',
+      yearLabelEn: 'Class of 2026',
+      descAr: newGradeDescAr.trim() || `منهج ${newGradeBadgeAr.trim()} المتكامل للمحاضرات والامتحانات والمذكرات.`,
+      descEn: '',
+      isPopular: newGradeIsPopular,
+    };
+
+    const nextGrades = [...resolvedGrades, newItem];
+    const updatedConfig: SiteConfig = { ...siteForm, grades: nextGrades };
+    setSiteForm(updatedConfig);
+
+    const saved = await onSaveSiteConfig(updatedConfig);
+    if (saved === false) {
+      setGradeFormNotice({ type: 'error', message: 'تعذر حفظ السنة الجديدة في قاعدة البيانات السحابية. تحقق من تسجيل الدخول.' });
+      return;
+    }
+
+    setSelectedAcademicTab(newId);
+    setShowAddGradeForm(false);
+    setNewGradeBadgeAr('');
+    setNewGradeBadgeEn('');
+    setNewGradeTitleAr('');
+    setNewGradeTitleEn('');
+    setNewGradeYearLabelAr('دفعة 2026');
+    setNewGradeDescAr('');
+    setNewGradeIsPopular(false);
+    setGradeFormNotice({ type: 'success', message: `تمت إضافة السنة الدراسية (${newItem.badgeAr}) وحفظها في الرئيسية بنجاح! 🎓` });
+    setTimeout(() => setGradeFormNotice(null), 4000);
+  };
+
+  const handleDeleteCustomGrade = async (gradeId: string) => {
+    if (resolvedGrades.length <= 1) {
+      setGradeFormNotice({ type: 'error', message: 'يجب الإبقاء على سنة دراسية واحدة على الأقل.' });
+      return;
+    }
+    const nextGrades = resolvedGrades.filter((g) => g.id !== gradeId);
+    const updatedConfig: SiteConfig = { ...siteForm, grades: nextGrades };
+    setSiteForm(updatedConfig);
+    setDeleteGradeConfirmId(null);
+
+    const saved = await onSaveSiteConfig(updatedConfig);
+    if (saved === false) {
+      setGradeFormNotice({ type: 'error', message: 'تعذر حذف السنة من قاعدة البيانات السحابية.' });
+      return;
+    }
+
+    setSelectedAcademicTab(nextGrades[0]?.id || 'first');
+    setGradeFormNotice({ type: 'success', message: 'تم حذف السنة الدراسية بنجاح.' });
+    setTimeout(() => setGradeFormNotice(null), 3500);
+  };
+
   // Handle adding new Co-Admin with full permissions
-  const handleAddCoAdmin = (e: React.FormEvent) => {
+  const handleAddCoAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminNotice(null);
     const email = newAdminEmail.trim().toLowerCase();
@@ -216,27 +321,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const updatedAdmins = [...currentAdmins, email];
     const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
     setSiteForm(updatedConfig);
-    onSaveSiteConfig(updatedConfig);
+    const saved = await onSaveSiteConfig(updatedConfig);
+    if (saved === false) {
+      setAdminNotice({ type: 'error', message: 'تعذر حفظ صلاحيات المشرف في السحابة، يرجى التحقق من الاتصال والصلاحيات.' });
+      return;
+    }
     setNewAdminEmail('');
     setAdminNotice({ type: 'success', message: `تمت إضافة المشرف والمدير المساعد (${email}) بنجاح وبكامل الصلاحيات! 🛡️` });
     setTimeout(() => setAdminNotice(null), 4000);
   };
 
   // Handle removing a Co-Admin
-  const handleRemoveCoAdmin = (emailToRemove: string) => {
+  const handleRemoveCoAdmin = async (emailToRemove: string) => {
     if (emailToRemove === 'mizoo2y2@gmail.com') return; // Cannot delete primary owner
     const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
     const updatedAdmins = currentAdmins.filter(em => em !== emailToRemove);
     const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
     setSiteForm(updatedConfig);
-    onSaveSiteConfig(updatedConfig);
+    const saved = await onSaveSiteConfig(updatedConfig);
     setDeleteAdminConfirmEmail(null);
+    if (saved === false) {
+      setAdminNotice({ type: 'error', message: 'تعذر تحديث قائمة المشرفين في قاعدة البيانات.' });
+      return;
+    }
     setAdminNotice({ type: 'success', message: `تم حذف المدير المساعد (${emailToRemove}) بنجاح.` });
     setTimeout(() => setAdminNotice(null), 4000);
   };
 
   // Handle adding new Footer Quick Link
-  const handleAddQuickLink = (e: React.FormEvent) => {
+  const handleAddQuickLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newQuickLinkTitle.trim() || !newQuickLinkUrl.trim()) return;
     const currentLinks = siteForm.footerQuickLinks || [];
@@ -247,17 +360,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
     const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: [...currentLinks, newLink] };
     setSiteForm(updatedConfig);
-    onSaveSiteConfig(updatedConfig);
+    await onSaveSiteConfig(updatedConfig);
     setNewQuickLinkTitle('');
     setNewQuickLinkUrl('');
   };
 
   // Handle removing a Footer Quick Link
-  const handleRemoveQuickLink = (idToRemove: string) => {
+  const handleRemoveQuickLink = async (idToRemove: string) => {
     const currentLinks = siteForm.footerQuickLinks || [];
     const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: currentLinks.filter(l => l.id !== idToRemove) };
     setSiteForm(updatedConfig);
-    onSaveSiteConfig(updatedConfig);
+    await onSaveSiteConfig(updatedConfig);
   };
 
   // Handle Cloudinary settings save
@@ -331,14 +444,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const url = result.url;
       const updatedConfig: SiteConfig = { ...siteConfig, ...siteForm, profileImageUrl: url };
       setSiteForm(updatedConfig);
-      onSaveSiteConfig(updatedConfig);
-      setAdminNotice({
-        type: 'success',
-        message:
-          result.source === 'cloudinary'
-            ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️'
-            : 'تم رفع وتثبيت صورة الأستاذ وحفظها بنجاح! ☁️',
-      });
+      const saved = await onSaveSiteConfig(updatedConfig);
+      if (saved === false) {
+        setAdminNotice({ type: 'error', message: 'تم رفع الصورة ولكن تعذر حفظ التعديل في السحابة.' });
+      } else {
+        setAdminNotice({
+          type: 'success',
+          message:
+            result.source === 'cloudinary'
+              ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️'
+              : 'تم رفع وتثبيت صورة الأستاذ وحفظها بنجاح! ☁️',
+        });
+      }
     } catch (err: any) {
       setAdminNotice({ type: 'error', message: err?.message || 'فشل رفع الصورة' });
     } finally {
@@ -489,7 +606,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   // Submit new PDF file
-  const handleCreateAttachment = (e: React.FormEvent) => {
+  const handleCreateAttachment = async (e: React.FormEvent) => {
     e.preventDefault();
     setFileFormError(null);
     setFileFormSuccess(null);
@@ -508,7 +625,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       id: `att-${Date.now()}`,
       title: fileTitle,
       grade: fileGrade,
-      gradeLabel: fileGrade === 'first' ? 'الصف الأول الثانوي' : fileGrade === 'second' ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي',
+      gradeLabel: getGradeDisplayName(fileGrade, siteForm, 'ar'),
       chapter: fileChapter,
       fileSize: fileSize || '3.0 MB',
       fileType: 'pdf',
@@ -517,7 +634,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       dateAdded: new Date().toISOString().split('T')[0],
     };
 
-    onAddAttachment(newFile);
+    const saved = await onAddAttachment(newFile);
+    if (saved === false) {
+      setFileFormError('تعذر نشر المذكرة في السحابة. يرجى التحقق من جلسة المشرف وصلاحيات الحساب.');
+      return;
+    }
     setFileFormSuccess('تمت إضافة المذكرة بنجاح إلى مكتبة ملفات الطلاب وتم تحديث مساحة التخزين فورياً! 📚');
     setTimeout(() => setFileFormSuccess(null), 4000);
     setFileTitle('');
@@ -526,18 +647,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setHandoutProgress(0);
   };
 
-  // Save Site Configuration
-  const handleSaveSiteConfigSubmit = (e: React.FormEvent) => {
+  // Save Site Configuration (verifies actual cloud persistence before displaying green success)
+  const handleSaveSiteConfigSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveSiteConfig(siteForm);
+    setGradeFormNotice(null);
+    const saved = await onSaveSiteConfig(siteForm);
+    if (saved === false) {
+      setSiteSaveSuccess(false);
+      setGradeFormNotice({
+        type: 'error',
+        message: 'تعذر حفظ التعديلات على السحابة. يرجى التحقق من اتصال الحساب وصلاحيات الإدارة.',
+      });
+      return;
+    }
     setSiteSaveSuccess(true);
-    setTimeout(() => setSiteSaveSuccess(false), 2500);
+    setTimeout(() => setSiteSaveSuccess(false), 3000);
   };
 
   // Reset to original defaults
-  const handleResetSiteDefaults = () => {
+  const handleResetSiteDefaults = async () => {
     setSiteForm(DEFAULT_SITE_CONFIG);
-    onSaveSiteConfig(DEFAULT_SITE_CONFIG);
+    const saved = await onSaveSiteConfig(DEFAULT_SITE_CONFIG);
+    if (saved === false) return;
     setSiteSaveSuccess(true);
     setTimeout(() => setSiteSaveSuccess(false), 2500);
   };
@@ -1096,248 +1227,278 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       <GraduationCap className="w-5 h-5" />
                     </span>
                     <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                      تخصيص أسماء ووصف السنوات الدراسية 🎓
+                      إدارة وتخصيص السنوات الدراسية 🎓
                     </h2>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-500">
-                    قم بتعديل عناوين وشارات ووصف كل صف دراسي، وستظهر التعديلات مباشرة وفورياً لجميع زوار المنصة في الصفحة الرئيسية.
+                    أضف سنوات دراسية جديدة أو عدّل أسماء ووصف وشارات أي سنة، وستنعكس فوراً في الرئيسية وبوابة الطالب.
                   </p>
                 </div>
 
-                {siteSaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-300">
-                    <Check className="w-4 h-4" />
-                    تم تطبيق الأسماء على الرئيسية فورياً!
-                  </span>
-                )}
-              </div>
-
-              {/* Grades Switcher Sub-tabs */}
-              <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedAcademicTab('first')}
-                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    selectedAcademicTab === 'first'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  الصف الأول الثانوي (1st Sec)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedAcademicTab('second')}
-                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    selectedAcademicTab === 'second'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  الصف الثاني الثانوي (2nd Sec)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedAcademicTab('third')}
-                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    selectedAcademicTab === 'third'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  الصف الثالث الثانوي (3rd Sec)
-                </button>
-              </div>
-
-              {/* Grade Customization Form */}
-              <form onSubmit={handleSaveSiteConfigSubmit} className="space-y-6">
-                
-                {selectedAcademicTab === 'first' && (
-                  <div className="p-6 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800 space-y-4">
-                    <div className="font-bold text-sm text-indigo-900 dark:text-indigo-200 font-kufi flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      <span>بيانات الصف الأول الثانوي:</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeFirstTitleAr || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeFirstTitleAr: e.target.value })}
-                          placeholder="مثال: أولى ثانوي · التأسيس الشامل"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeFirstTitleEn || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeFirstTitleEn: e.target.value })}
-                          placeholder="e.g. 1st Sec · Foundational Chemistry & Science"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
-                      <input
-                        type="text"
-                        value={siteForm.gradeFirstBadgeAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeFirstBadgeAr: e.target.value })}
-                        placeholder="مثال: الصف الأول الثانوي"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
-                      <textarea
-                        rows={3}
-                        value={siteForm.gradeFirstDescAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeFirstDescAr: e.target.value })}
-                        placeholder="اكتب وصف المنهج ومحتويات الصف الأول..."
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {selectedAcademicTab === 'second' && (
-                  <div className="p-6 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 space-y-4">
-                    <div className="font-bold text-sm text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-teal-600" />
-                      <span>بيانات الصف الثاني الثانوي:</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeSecondTitleAr || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeSecondTitleAr: e.target.value })}
-                          placeholder="مثال: تانية ثانوي · فهم الذرة والروابط"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeSecondTitleEn || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeSecondTitleEn: e.target.value })}
-                          placeholder="e.g. 2nd Sec · Atomic Structure & Chemical Bonds"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
-                      <input
-                        type="text"
-                        value={siteForm.gradeSecondBadgeAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeSecondBadgeAr: e.target.value })}
-                        placeholder="مثال: الصف الثاني الثانوي"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
-                      <textarea
-                        rows={3}
-                        value={siteForm.gradeSecondDescAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeSecondDescAr: e.target.value })}
-                        placeholder="اكتب وصف المنهج ومحتويات الصف الثاني..."
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {selectedAcademicTab === 'third' && (
-                  <div className="p-6 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 space-y-4">
-                    <div className="font-bold text-sm text-amber-900 dark:text-amber-200 font-kufi flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-600" />
-                      <span>بيانات الصف الثالث الثانوي (الشهادة الثانوية العامة واللغات):</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeThirdTitleAr || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeThirdTitleAr: e.target.value })}
-                          placeholder="مثال: تالتة ثانوي · طريق الدرجة النهائية (60/60)"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
-                        <input
-                          type="text"
-                          value={siteForm.gradeThirdTitleEn || ''}
-                          onChange={(e) => setSiteForm({ ...siteForm, gradeThirdTitleEn: e.target.value })}
-                          placeholder="e.g. 3rd Sec · Road to the Full Mark (60/60)"
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية (Badge)</label>
-                      <input
-                        type="text"
-                        value={siteForm.gradeThirdBadgeAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeThirdBadgeAr: e.target.value })}
-                        placeholder="مثال: الصف الثالث الثانوي (دفعة 2026)"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
-                      <textarea
-                        rows={3}
-                        value={siteForm.gradeThirdDescAr || ''}
-                        onChange={(e) => setSiteForm({ ...siteForm, gradeThirdDescAr: e.target.value })}
-                        placeholder="اكتب وصف المنهج ومحتويات الصف الثالث..."
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Submit Button */}
-                <div className="pt-2 flex items-center justify-between">
-                  <button
-                    type="submit"
-                    className="px-8 py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md shadow-indigo-700/20 transition-all flex items-center gap-2 cursor-pointer"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>حفظ وتحديث أسماء السنوات في الرئيسية الآن</span>
-                  </button>
-
+                <div className="flex items-center gap-2 flex-wrap">
                   {siteSaveSuccess && (
-                    <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                    <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-300">
                       <Check className="w-4 h-4" />
-                      تم حفظ التعديلات بنجاح!
+                      تم تطبيق الأسماء والحفظ في السحابة!
                     </span>
                   )}
-                </div>
 
-              </form>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddGradeForm((prev) => !prev);
+                      setGradeFormNotice(null);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {showAddGradeForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                    <span>{showAddGradeForm ? 'إغلاق نموذج الإضافة' : 'إضافة سنة دراسية جديدة +'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {gradeFormNotice && (
+                <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-2 ${
+                  gradeFormNotice.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 text-rose-800 dark:text-rose-200'
+                }`}>
+                  <span>{gradeFormNotice.message}</span>
+                  <button type="button" onClick={() => setGradeFormNotice(null)} className="text-slate-400 hover:text-slate-700">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Add New Grade Inline Form */}
+              {showAddGradeForm && (
+                <form onSubmit={handleAddNewGrade} className="p-6 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border-2 border-teal-400/50 space-y-4">
+                  <div className="font-bold text-sm text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-teal-600" />
+                    <span>إضافة سنة أو مرحلة دراسية جديدة للمنصة</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">اسم السنة / الشارة بالعربية *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newGradeBadgeAr}
+                        onChange={(e) => setNewGradeBadgeAr(e.target.value)}
+                        placeholder="مثال: الشهادة الإعدادية أو مراجعات الأزهر"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الاسم بالإنجليزية (اختياري)</label>
+                      <input
+                        type="text"
+                        value={newGradeBadgeEn}
+                        onChange={(e) => setNewGradeBadgeEn(e.target.value)}
+                        placeholder="e.g. Prep 3 Science"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">عنوان الكارت الرئيسي بالعربية *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newGradeTitleAr}
+                        onChange={(e) => setNewGradeTitleAr(e.target.value)}
+                        placeholder="مثال: تالتة إعدادي · التأسيس المتكامل في العلوم"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وسم الدفعة (Badge Year Label)</label>
+                      <input
+                        type="text"
+                        value={newGradeYearLabelAr}
+                        onChange={(e) => setNewGradeYearLabelAr(e.target.value)}
+                        placeholder="مثال: دفعة 2026"
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وصف السنة في الصفحة الرئيسية</label>
+                    <textarea
+                      rows={2}
+                      value={newGradeDescAr}
+                      onChange={(e) => setNewGradeDescAr(e.target.value)}
+                      placeholder="وصف مختصر لما يشمله الكورس والمنهج لهذه السنة..."
+                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newGradeIsPopular}
+                        onChange={(e) => setNewGradeIsPopular(e.target.checked)}
+                        className="w-4 h-4 accent-amber-500 rounded"
+                      />
+                      <span>تمييز كسنة رئيسية / شهادة (Popular 🔥)</span>
+                    </label>
+
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>حفظ وإضافة السنة للمنصة</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Dynamic Grades Switcher Sub-tabs */}
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                {resolvedGrades.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setSelectedAcademicTab(g.id)}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activeAcademicGrade?.id === g.id
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{g.badgeAr}</span>
+                    {g.isPopular && <span className="w-2 h-2 rounded-full bg-amber-400" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* Active Grade Customization Form */}
+              {activeAcademicGrade && (
+                <form onSubmit={handleSaveSiteConfigSubmit} className="space-y-6">
+                  <div className="p-6 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-bold text-sm text-indigo-900 dark:text-indigo-200 font-kufi flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                        <span>تعديل بيانات: {activeAcademicGrade.badgeAr}</span>
+                      </div>
+
+                      {resolvedGrades.length > 1 && (
+                        deleteGradeConfirmId === activeAcademicGrade.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-rose-600">تأكيد الحذف؟</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCustomGrade(activeAcademicGrade.id)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              نعم احذف
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteGradeConfirmId(null)}
+                              className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] cursor-pointer"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteGradeConfirmId(activeAcademicGrade.id)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>حذف هذه السنة</span>
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
+                        <input
+                          type="text"
+                          value={activeAcademicGrade.titleAr || ''}
+                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { titleAr: e.target.value })}
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
+                        <input
+                          type="text"
+                          value={activeAcademicGrade.titleEn || ''}
+                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { titleEn: e.target.value })}
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية / اسم الصف (Badge)</label>
+                        <input
+                          type="text"
+                          value={activeAcademicGrade.badgeAr || ''}
+                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { badgeAr: e.target.value })}
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وسم الدفعة (مثل: دفعة 2026)</label>
+                        <input
+                          type="text"
+                          value={activeAcademicGrade.yearLabelAr || ''}
+                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { yearLabelAr: e.target.value })}
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
+                      <textarea
+                        rows={3}
+                        value={activeAcademicGrade.descAr || ''}
+                        onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { descAr: e.target.value })}
+                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(activeAcademicGrade.isPopular)}
+                        onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { isPopular: e.target.checked })}
+                        className="w-4 h-4 accent-amber-500 rounded"
+                      />
+                      <span>تمييز هذه السنة كشهادة رئيسية / مميزة في الواجهة</span>
+                    </label>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="submit"
+                      className="px-8 py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md shadow-indigo-700/20 transition-all flex items-center gap-2 cursor-pointer"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>حفظ وتحديث السنوات الدراسية الآن</span>
+                    </button>
+
+                    {siteSaveSuccess && (
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                        <Check className="w-4 h-4" />
+                        تم حفظ التعديلات بنجاح!
+                      </span>
+                    )}
+                  </div>
+                </form>
+              )}
             </div>
           )}
 
@@ -1513,7 +1674,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <div className="flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-amber-500" />
                   <span className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 font-kufi">
-                    سجل وقائمة الطلاب الشاملة لجميع السنوات (الأول، الثاني، والثالث الثانوي)
+                    سجل وقائمة الطلاب الشاملة لجميع السنوات الدراسية المفعلة
                   </span>
                 </div>
                 <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">
@@ -1525,6 +1686,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 students={students}
                 lectures={lectures}
                 quizzes={quizzes}
+                grades={resolvedGrades}
                 onUpdateStudent={onUpdateStudent}
                 onDeleteStudent={onDeleteStudent}
                 onAddStudent={onAddStudent}
@@ -1590,9 +1752,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     onChange={(e) => setLecGrade(e.target.value as GradeLevel)}
                     className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
-                    <option value="first">الصف الأول الثانوي</option>
-                    <option value="second">الصف الثاني الثانوي</option>
-                    <option value="third">الصف الثالث الثانوي (دفعة 2026)</option>
+                    {resolvedGrades.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.badgeAr}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1964,14 +2128,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             setEditingLecture({
                               ...editingLecture,
                               grade: g,
-                              gradeLabel: g === 'first' ? 'الصف الأول الثانوي' : g === 'second' ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي'
+                              gradeLabel: getGradeDisplayName(g, siteForm, 'ar'),
                             });
                           }}
                           className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
                         >
-                          <option value="first">الصف الأول الثانوي</option>
-                          <option value="second">الصف الثاني الثانوي</option>
-                          <option value="third">الصف الثالث الثانوي</option>
+                          {resolvedGrades.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.badgeAr}
+                            </option>
+                          ))}
                         </select>
                       </div>
 
@@ -2096,6 +2262,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <TeacherQuizManager
             quizzes={quizzes}
             lectures={lectures}
+            cloudinaryConfig={cloudinaryConfig}
+            grades={resolvedGrades}
             onAddQuiz={onAddQuiz}
             onDeleteQuiz={onDeleteQuiz}
           />
@@ -2269,9 +2437,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     onChange={(e) => setFileGrade(e.target.value as GradeLevel)}
                     className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                   >
-                    <option value="first">الصف الأول الثانوي</option>
-                    <option value="second">الصف الثاني الثانوي</option>
-                    <option value="third">الصف الثالث الثانوي</option>
+                    {resolvedGrades.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.badgeAr}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -2778,9 +2948,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          onSaveSiteConfig({ ...siteConfig, profileImageUrl: siteForm.profileImageUrl });
-                          setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ في السحابة لجميع المستخدمين فورياً! ☁️' });
+                        onClick={async () => {
+                          const saved = await onSaveSiteConfig({ ...siteConfig, ...siteForm, profileImageUrl: siteForm.profileImageUrl });
+                          if (saved === false) {
+                            setAdminNotice({ type: 'error', message: 'تعذر حفظ رابط الصورة في السحابة، يرجى التحقق من الاتصال والصلاحيات.' });
+                          } else {
+                            setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ في السحابة لجميع المستخدمين فورياً! ☁️' });
+                          }
                         }}
                         className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
                       >
@@ -2790,10 +2964,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       {siteForm.profileImageUrl && (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             setSiteForm({ ...siteForm, profileImageUrl: '' });
-                            onSaveSiteConfig({ ...siteConfig, profileImageUrl: '' });
-                            setAdminNotice({ type: 'success', message: 'تم مسح صورة الأستاذ القديمة من المنصة بالكامل.' });
+                            const saved = await onSaveSiteConfig({ ...siteConfig, ...siteForm, profileImageUrl: '' });
+                            if (saved === false) {
+                              setAdminNotice({ type: 'error', message: 'تعذر مسح الصورة من السحابة.' });
+                            } else {
+                              setAdminNotice({ type: 'success', message: 'تم مسح صورة الأستاذ القديمة من المنصة بالكامل.' });
+                            }
                           }}
                           className="px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
                         >

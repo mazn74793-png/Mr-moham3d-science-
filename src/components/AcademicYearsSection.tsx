@@ -4,7 +4,7 @@ import {
   Video, FileText
 } from 'lucide-react';
 import { GradeLevel, Lecture, AttachmentFile } from '../types';
-import { SiteConfig } from '../types/siteConfig';
+import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 
 interface AcademicYearsSectionProps {
@@ -30,116 +30,32 @@ interface GradeCardData {
   isPopular?: boolean;
 }
 
-const BASE_GRADES_DATA: GradeCardData[] = [
-  {
-    grade: 'first',
-    badgeAr: 'الصف الأول الثانوي',
-    badgeEn: '1st Secondary Grade',
-    yearLabelAr: 'دفعة 2026',
-    yearLabelEn: 'Class of 2026',
-    titleAr: 'أولى ثانوي · التأسيس الشامل',
-    titleEn: '1st Sec · Foundational Chemistry & Science',
-    descriptionAr: 'مدخلك السلس لعالم الكيمياء وبناء عقلية علمية قوية لحل مسائل المول والمعادلات الأيونية بكل سهولة لمدارس اللغات والتجريبي.',
-    descriptionEn: 'Your gateway to Chemistry & Science. Build strong problem-solving skills for mole concepts, ionic equations, and laboratory sciences.',
-    topicsAr: [
-      'الباب الأول: الكيمياء مركز العلوم وتقنيات النانو (Chemistry & Nanotechnology)',
-      'الباب الثاني: الكيمياء الكمية وحساب المول والمعادلات (Stoichiometry & Mole Calculations)',
-      'الباب الثالث: المحاليل والغرويات والأحماض والقواعد (Solutions, Acids & Bases)',
-    ],
-    topicsEn: [
-      'Unit 1: Chemistry as the Central Science & Nanotechnology',
-      'Unit 2: Quantitative Chemistry, Stoichiometry & The Mole',
-      'Unit 3: Solutions, Colloids, Acids and Bases',
-    ],
-  },
-  {
-    grade: 'second',
-    badgeAr: 'الصف الثاني الثانوي',
-    badgeEn: '2nd Secondary Grade',
-    yearLabelAr: 'دفعة 2026',
-    yearLabelEn: 'Class of 2026',
-    titleAr: 'تانية ثانوي · فهم الذرة والروابط',
-    titleEn: '2nd Sec · Atomic Structure & Chemical Bonds',
-    descriptionAr: 'فهم عميق لأعداد الكم، التوزيع الإلكتروني، وتدرج الخواص في الجدول الدوري الحديث وقواعد لويس والتهجين الجزيئي.',
-    descriptionEn: 'Deep understanding of Quantum Numbers, Electronic Configuration, Periodic Table trends, and Hybridization theories.',
-    topicsAr: [
-      'الباب الأول: بنية الذرة وتجربة رذرفورد ونظرية بور (Atomic Structure & Bohr Theory)',
-      'الباب الثاني: الجدول الدوري ونصف القطر والسالبية والتأين (Periodic Table Trends)',
-      'الباب الثالث: الروابط الكيميائية ونظريات التهجين الجزيئي (Chemical Bonding & Hybridization)',
-    ],
-    topicsEn: [
-      'Unit 1: Atomic Structure, Rutherford & Bohr Models',
-      'Unit 2: The Periodic Table, Atomic Radii, Electronegativity & Ionization',
-      'Unit 3: Chemical Bonding, Lewis Structures & Molecular Orbitals',
-    ],
-  },
-  {
-    grade: 'third',
-    badgeAr: 'الصف الثالث الثانوي',
-    badgeEn: '3rd Secondary Grade',
-    yearLabelAr: 'دفعة 2026 الثانوية العامة 🔥',
-    yearLabelEn: 'General Secondary 2026 🔥',
-    titleAr: 'تالتة ثانوي · طريق الدرجة النهائية (60/60)',
-    titleEn: '3rd Sec · Road to the Full Mark (60/60)',
-    descriptionAr: 'المنهج الكامل مع خريطة طريق الكيمياء العضوية الأسطورية ومعادلات الحديد والاتزان الكيميائي الكهربي لطلاب اللغات والتجريبي.',
-    descriptionEn: 'Comprehensive curriculum: Transition Metals, Iron Reactions roadmap, Chemical Equilibrium, Electrochemistry, and Complete Organic Chemistry.',
-    topicsAr: [
-      'الباب الأول: العناصر الانتقالية والمركبات والخواص المغناطيسية (Transition Elements)',
-      'الباب الثاني: التحليل الكيميائي الكيفي والكمي والمسائل (Chemical Analysis)',
-      'الباب الثالث: الاتزان الكيميائي والأيوني وقانون لوشاتيليه (Chemical Equilibrium)',
-      'الباب الرابع: الكيمياء الكهربية والخلايا الجلفانية وقوانين فاراداي (Electrochemistry)',
-      'الباب الخامس: الكيمياء العضوية الأسطورية الشاملة (Organic Chemistry)',
-    ],
-    topicsEn: [
-      'Chapter 1: Transition Elements, Properties & Catalytic Activity',
-      'Chapter 2: Qualitative and Quantitative Chemical Analysis',
-      'Chapter 3: Chemical & Ionic Equilibrium (Le Chatelier)',
-      'Chapter 4: Electrochemistry, Galvanic Cells & Faraday Laws',
-      'Chapter 5: Comprehensive Organic Chemistry Mastery',
-    ],
-    isPopular: true,
-  },
-];
-
 export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
   siteConfig,
   lectures = [],
   attachments = [],
   onSelectGrade,
 }) => {
-  // Dynamically compute grade data with admin customized names
-  const GRADES_DATA: GradeCardData[] = BASE_GRADES_DATA.map((card) => {
-    if (!siteConfig) return card;
-    if (card.grade === 'first') {
-      return {
-        ...card,
-        titleAr: siteConfig.gradeFirstTitleAr || card.titleAr,
-        titleEn: siteConfig.gradeFirstTitleEn || card.titleEn,
-        badgeAr: siteConfig.gradeFirstBadgeAr || card.badgeAr,
-        descriptionAr: siteConfig.gradeFirstDescAr || card.descriptionAr,
-      };
-    }
-    if (card.grade === 'second') {
-      return {
-        ...card,
-        titleAr: siteConfig.gradeSecondTitleAr || card.titleAr,
-        titleEn: siteConfig.gradeSecondTitleEn || card.titleEn,
-        badgeAr: siteConfig.gradeSecondBadgeAr || card.badgeAr,
-        descriptionAr: siteConfig.gradeSecondDescAr || card.descriptionAr,
-      };
-    }
-    if (card.grade === 'third') {
-      return {
-        ...card,
-        titleAr: siteConfig.gradeThirdTitleAr || card.titleAr,
-        titleEn: siteConfig.gradeThirdTitleEn || card.titleEn,
-        badgeAr: siteConfig.gradeThirdBadgeAr || card.badgeAr,
-        descriptionAr: siteConfig.gradeThirdDescAr || card.descriptionAr,
-      };
-    }
-    return card;
+  const resolvedGrades = getResolvedGrades(siteConfig);
+  const GRADES_DATA: GradeCardData[] = resolvedGrades.map((card) => ({
+    grade: card.id,
+    badgeAr: card.badgeAr,
+    badgeEn: card.badgeEn || card.badgeAr,
+    yearLabelAr: card.yearLabelAr || 'دفعة 2026',
+    yearLabelEn: card.yearLabelEn || 'Class of 2026',
+    titleAr: card.titleAr,
+    titleEn: card.titleEn || card.titleAr,
+    descriptionAr: card.descAr,
+    descriptionEn: card.descEn || card.descAr,
+    topicsAr: card.topicsAr || [],
+    topicsEn: card.topicsEn || [],
+    isPopular: card.isPopular,
+  }));
+
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const popularIdx = GRADES_DATA.findIndex((g) => g.isPopular);
+    return popularIdx >= 0 ? popularIdx : Math.max(0, GRADES_DATA.length - 1);
   });
-  const [currentIndex, setCurrentIndex] = useState(2); // Start on 3rd Secondary (flagship)
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const sliderRef = useRef<HTMLDivElement>(null);
   const isInteractingRef = useRef(false);
@@ -147,31 +63,41 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
 
   const ActionArrow = isRtl ? ArrowLeft : ArrowRight;
 
+  // Keep currentIndex within bounds when custom grades are added/removed
+  useEffect(() => {
+    if (GRADES_DATA.length > 0 && currentIndex >= GRADES_DATA.length) {
+      setCurrentIndex(GRADES_DATA.length - 1);
+    }
+  }, [GRADES_DATA.length, currentIndex]);
+
   // Scroll to index
   const scrollToIndex = (idx: number) => {
-    if (!sliderRef.current) return;
+    if (!sliderRef.current || GRADES_DATA.length === 0) return;
+    const boundedIdx = Math.max(0, Math.min(idx, GRADES_DATA.length - 1));
     const width = sliderRef.current.clientWidth;
     sliderRef.current.scrollTo({
-      left: idx * width,
+      left: boundedIdx * width,
       behavior: 'smooth',
     });
-    setCurrentIndex(idx);
+    setCurrentIndex(boundedIdx);
   };
 
   // Next / Previous navigation
   const handleNext = () => {
+    if (GRADES_DATA.length === 0) return;
     const nextIdx = (currentIndex + 1) % GRADES_DATA.length;
     scrollToIndex(nextIdx);
   };
 
   const handlePrev = () => {
+    if (GRADES_DATA.length === 0) return;
     const prevIdx = (currentIndex - 1 + GRADES_DATA.length) % GRADES_DATA.length;
     scrollToIndex(prevIdx);
   };
 
   // Auto-scroll loop every 4.5 seconds when not interacting
   useEffect(() => {
-    if (!isAutoPlaying) return;
+    if (!isAutoPlaying || GRADES_DATA.length <= 1) return;
 
     const timer = setInterval(() => {
       if (!isInteractingRef.current) {
@@ -190,12 +116,13 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
     }, 4500);
 
     return () => clearInterval(timer);
-  }, [isAutoPlaying]);
+  }, [isAutoPlaying, GRADES_DATA.length]);
 
   // Handle user manual scroll
   const handleScroll = () => {
     if (!sliderRef.current) return;
     const width = sliderRef.current.clientWidth;
+    if (!width) return;
     const newIdx = Math.round(sliderRef.current.scrollLeft / width);
     if (newIdx >= 0 && newIdx < GRADES_DATA.length && newIdx !== currentIndex) {
       setCurrentIndex(newIdx);
@@ -339,13 +266,22 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                             </div>
                           );
                         })
-                      ) : (
+                      ) : (lang === 'en' ? card.topicsEn : card.topicsAr).length > 0 ? (
                         (lang === 'en' ? card.topicsEn : card.topicsAr).map((topic, tIdx) => (
                           <div key={tIdx} className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
                             <Check className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
                             <span>{topic}</span>
                           </div>
                         ))
+                      ) : (
+                        <div className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                          <Check className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                          <span>
+                            {lang === 'en'
+                              ? 'Full interactive curriculum lectures, handouts, and electronic quizzes.'
+                              : 'منهج متكامل يشمل المحاضرات التفاعلية والمذكرات والامتحانات الإلكترونية.'}
+                          </span>
+                        </div>
                       )}
 
                       {/* Real Lecture Titles Highlight Strip */}

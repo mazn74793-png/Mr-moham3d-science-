@@ -138,7 +138,36 @@ app.get('/api/db/version', (_req, res) => {
   });
 });
 
-// 1.2 Universal Direct File Upload (Guarantees public persistent URL across all devices)
+// 1.2a Raw Binary Stream Upload (Smooth byte-by-byte XHR progress without Base64 memory overhead)
+app.post(
+  '/api/upload-raw',
+  express.raw({ type: 'application/octet-stream', limit: '250mb' }),
+  (req, res) => {
+    try {
+      const rawName = typeof req.query.filename === 'string' ? req.query.filename : `upload_${Date.now()}`;
+      const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_') || `upload_${Date.now()}`;
+      const fileBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+
+      if (fileBuffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'لم يتم استلام بيانات الملف' });
+      }
+
+      const uniqueName = `${Date.now()}_${safeName}`;
+      const targetPath = path.resolve(UPLOADS_DIR, uniqueName);
+      fs.writeFileSync(targetPath, fileBuffer);
+
+      return res.json({
+        success: true,
+        url: `/uploads/${uniqueName}`,
+        filename: uniqueName,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'فشل حفظ الملف على السيرفر' });
+    }
+  }
+);
+
+// 1.2 Universal Direct File Upload (Legacy JSON/Base64 support)
 app.post('/api/upload', (req, res) => {
   try {
     const { filename, dataUrl, base64 } = req.body;

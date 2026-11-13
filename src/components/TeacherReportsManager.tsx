@@ -6,11 +6,13 @@ import {
   UserPlus, X, Check, AlertCircle
 } from 'lucide-react';
 import { UserProfile, GradeLevel, Lecture, Quiz } from '../types';
+import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 
 interface TeacherReportsManagerProps {
   students: UserProfile[];
   lectures: Lecture[];
   quizzes: Quiz[];
+  grades?: GradeItem[];
   onUpdateStudent?: (student: UserProfile) => void;
   onDeleteStudent?: (studentId: string) => void;
   onAddStudent?: (student: UserProfile) => void;
@@ -20,10 +22,17 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   students,
   lectures,
   quizzes,
+  grades,
   onUpdateStudent,
   onDeleteStudent,
   onAddStudent,
 }) => {
+  const resolvedGrades = grades && grades.length > 0 ? grades : DEFAULT_GRADES;
+  const getGradeLabel = (gradeId?: string) => {
+    if (!gradeId) return 'غير محدد';
+    const found = resolvedGrades.find((g) => g.id === gradeId);
+    return found?.badgeAr || found?.titleAr || gradeId;
+  };
   const [filterGrade, setFilterGrade] = useState<GradeLevel | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'absent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,7 +53,9 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   const [newStdName, setNewStdName] = useState('');
   const [newStdPhone, setNewStdPhone] = useState('');
   const [newStdParentPhone, setNewStdParentPhone] = useState('');
-  const [newStdGrade, setNewStdGrade] = useState<GradeLevel>('third');
+  const [newStdGrade, setNewStdGrade] = useState<GradeLevel>(
+    resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
+  );
 
   // Deletion confirm tracking
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -92,11 +103,7 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     const avgScore = student.score ?? 0;
     const isAttending = watchedCount > 0;
 
-    const gradeArabic = student.grade === 'third' 
-      ? 'Senior 3 (Third Secondary 2026)' 
-      : student.grade === 'second' 
-      ? 'Senior 2 (Second Secondary)' 
-      : 'Senior 1 (First Secondary)';
+    const gradeArabic = getGradeLabel(student.grade);
 
     const message = `السلام عليكم ورحمة الله وبركاته،
 عناية ولي أمر الطالب/ة (${student.name}) المحترم 🌸
@@ -309,7 +316,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                     {std.name}
                   </h4>
                   <div className="text-xs text-slate-500 font-sans">
-                    {std.grade === 'third' ? 'Senior 3 · تالتة ثانوي' : std.grade === 'second' ? 'Senior 2 · تانية ثانوي' : 'Senior 1 · أولى ثانوي'}
+                    {getGradeLabel(std.grade)}
                   </div>
                 </div>
 
@@ -364,9 +371,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
               className="py-2 px-3 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-hidden font-kufi"
             >
               <option value="all">جميع الصفوف</option>
-              <option value="first">الصف الأول الثانوي</option>
-              <option value="second">الصف الثاني الثانوي</option>
-              <option value="third">الصف الثالث الثانوي</option>
+              {resolvedGrades.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.badgeAr}
+                </option>
+              ))}
             </select>
 
             {/* Status Filter */}
@@ -420,7 +429,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                     {/* Grade */}
                     <td className="py-3.5 px-3">
                       <div className="font-semibold text-teal-700 dark:text-teal-300">
-                        {std.grade === 'third' ? 'تالتة ثانوي' : std.grade === 'second' ? 'تانية ثانوي' : 'أولى ثانوي'}
+                        {getGradeLabel(std.grade)}
                       </div>
                     </td>
 
@@ -625,9 +634,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                   onChange={(e) => setEditingStudent({ ...editingStudent, grade: e.target.value as GradeLevel })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
                 >
-                  <option value="first">الصف الأول الثانوي</option>
-                  <option value="second">الصف الثاني الثانوي</option>
-                  <option value="third">الصف الثالث الثانوي</option>
+                  {resolvedGrades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.badgeAr}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -715,9 +726,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                   onChange={(e) => setNewStdGrade(e.target.value as GradeLevel)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
                 >
-                  <option value="first">الصف الأول الثانوي</option>
-                  <option value="second">الصف الثاني الثانوي</option>
-                  <option value="third">الصف الثالث الثانوي</option>
+                  {resolvedGrades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.badgeAr}
+                    </option>
+                  ))}
                 </select>
               </div>
 

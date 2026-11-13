@@ -14,6 +14,10 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidGradeId(g) {
+      return g is string && g.size() > 0 && g.size() <= 64 && g.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -31,14 +35,17 @@ service cloud.firestore {
     }
 
     function isPrimaryAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'mizoo2y2@gmail.com';
+      return isVerifiedUser() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == 'mizoo2y2@gmail.com';
     }
 
     function isAdmin() {
       return isPrimaryAdmin() || (
         isVerifiedUser() &&
+        request.auth.token.email is string &&
         exists(/databases/$(database)/documents/adminConfig/settings) &&
-        request.auth.token.email in get(/databases/$(database)/documents/adminConfig/settings).data.adminEmails
+        request.auth.token.email.lower() in get(/databases/$(database)/documents/adminConfig/settings).data.adminEmails
       );
     }
 
@@ -52,7 +59,7 @@ service cloud.firestore {
           'profileImageUrl', 'calligraphyFont', 'bodyFont', 'primaryColor', 'googleClientId',
           'phone1', 'phone2', 'whatsappNumber', 'facebookUrl', 'youtubeUrl', 'telegramUrl',
           'centerBranches', 'developerName', 'developerHandle', 'developerUrl', 'footerBio',
-          'footerQuickLinks', 'gradeFirstTitleAr', 'gradeFirstTitleEn', 'gradeFirstBadgeAr',
+          'footerQuickLinks', 'grades', 'gradeFirstTitleAr', 'gradeFirstTitleEn', 'gradeFirstBadgeAr',
           'gradeFirstDescAr', 'gradeSecondTitleAr', 'gradeSecondTitleEn', 'gradeSecondBadgeAr',
           'gradeSecondDescAr', 'gradeThirdTitleAr', 'gradeThirdTitleEn', 'gradeThirdBadgeAr',
           'gradeThirdDescAr', 'feature1Title', 'feature1Desc', 'feature2Title', 'feature2Desc',
@@ -80,6 +87,7 @@ service cloud.firestore {
         (!('developerUrl' in data) || (data.developerUrl is string && data.developerUrl.size() <= 500)) &&
         (!('footerBio' in data) || (data.footerBio is string && data.footerBio.size() <= 2000)) &&
         (!('footerQuickLinks' in data) || (data.footerQuickLinks is list && data.footerQuickLinks.size() <= 20 && (data.footerQuickLinks.size() == 0 || data.footerQuickLinks[0] is map))) &&
+        (!('grades' in data) || (data.grades is list && data.grades.size() > 0 && data.grades.size() <= 20 && data.grades[0] is map)) &&
         (!('gradeFirstTitleAr' in data) || (data.gradeFirstTitleAr is string && data.gradeFirstTitleAr.size() <= 200)) &&
         (!('gradeFirstTitleEn' in data) || (data.gradeFirstTitleEn is string && data.gradeFirstTitleEn.size() <= 200)) &&
         (!('gradeFirstBadgeAr' in data) || (data.gradeFirstBadgeAr is string && data.gradeFirstBadgeAr.size() <= 150)) &&
@@ -116,7 +124,7 @@ service cloud.firestore {
         data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'duration', 'videoUrl', 'thumbnailUrl', 'pdfUrl', 'pdfTitle', 'description', 'isFreePreview', 'viewsCount', 'dateAdded', 'sessionOrder', 'quizId', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
-        data.grade in ['first', 'second', 'third'] &&
+        isValidGradeId(data.grade) &&
         data.gradeLabel is string && data.gradeLabel.size() > 0 && data.gradeLabel.size() <= 150 &&
         data.chapter is string && data.chapter.size() <= 250 &&
         data.duration is string && data.duration.size() <= 100 &&
@@ -137,7 +145,7 @@ service cloud.firestore {
         data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'fileSize', 'fileType', 'downloadUrl', 'pageCount', 'dateAdded', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
-        data.grade in ['first', 'second', 'third'] &&
+        isValidGradeId(data.grade) &&
         data.gradeLabel is string && data.gradeLabel.size() > 0 && data.gradeLabel.size() <= 150 &&
         data.chapter is string && data.chapter.size() <= 250 &&
         data.fileSize is string && data.fileSize.size() <= 50 &&
@@ -152,7 +160,7 @@ service cloud.firestore {
         data.keys().hasOnly(['id', 'title', 'grade', 'chapter', 'durationMinutes', 'lectureId', 'questions', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
-        data.grade in ['first', 'second', 'third'] &&
+        isValidGradeId(data.grade) &&
         data.chapter is string && data.chapter.size() <= 250 &&
         data.durationMinutes is number && data.durationMinutes > 0 && data.durationMinutes <= 600 &&
         (!('lectureId' in data) || (data.lectureId is string && data.lectureId.size() <= 128)) &&
@@ -168,7 +176,7 @@ service cloud.firestore {
         data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
         (!('email' in data) || (data.email is string && data.email.size() <= 200)) &&
         data.role in ['student', 'teacher'] &&
-        (!('grade' in data) || data.grade in ['first', 'second', 'third']) &&
+        (!('grade' in data) || isValidGradeId(data.grade)) &&
         data.phone is string && data.phone.size() <= 50 &&
         (!('parentPhone' in data) || (data.parentPhone is string && data.parentPhone.size() <= 50)) &&
         (!('governorate' in data) || (data.governorate is string && data.governorate.size() <= 150)) &&
@@ -206,7 +214,7 @@ service cloud.firestore {
     // Public course catalog: Lectures
     match /lectures/{lectureId} {
       allow get: if isValidId(lectureId);
-      allow list: if resource.data.grade in ['first', 'second', 'third'];
+      allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(lectureId) && isValidLecture(incoming()) && incoming().id == lectureId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(lectureId) && isValidLecture(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(lectureId);
@@ -215,7 +223,7 @@ service cloud.firestore {
     // Public course catalog: Attachments / Handouts
     match /attachments/{attachmentId} {
       allow get: if isValidId(attachmentId);
-      allow list: if resource.data.grade in ['first', 'second', 'third'];
+      allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(attachmentId) && isValidAttachment(incoming()) && incoming().id == attachmentId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(attachmentId) && isValidAttachment(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(attachmentId);
@@ -224,7 +232,7 @@ service cloud.firestore {
     // Quizzes curriculum bank (readable by grade; writable only by verified admins)
     match /quizzes/{quizId} {
       allow get: if isValidId(quizId);
-      allow list: if resource.data.grade in ['first', 'second', 'third'];
+      allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == quizId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(quizId);
@@ -233,7 +241,7 @@ service cloud.firestore {
     // Private Student Profiles (Strict PII Isolation)
     match /students/{studentId} {
       allow get: if isSignedIn() && isValidId(studentId) && (request.auth.uid == studentId || isAdmin());
-      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isPrimaryAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
         (request.auth.uid == studentId && incoming().id == studentId && incoming().uid == request.auth.uid && incoming().role == 'student')

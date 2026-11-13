@@ -17,8 +17,11 @@ import {
   Trophy,
   Atom,
   LayoutDashboard,
+  ZoomIn,
+  X,
 } from 'lucide-react';
 import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile } from '../types';
+import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -27,6 +30,7 @@ interface StudentPortalProps {
   lectures: Lecture[];
   quizzes: Quiz[];
   attachments: AttachmentFile[];
+  siteConfig?: SiteConfig;
   onBackToHome: () => void;
   onOpenTeacherDashboard: () => void;
   onUpdateStudentProfile?: (updatedUser: UserProfile) => void;
@@ -50,16 +54,25 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   lectures,
   quizzes,
   attachments,
+  siteConfig,
   onBackToHome,
   onOpenTeacherDashboard,
   onUpdateStudentProfile,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const resolvedGrades = getResolvedGrades(siteConfig);
+  const adminEmailList = (siteConfig?.adminEmails || ['mizoo2y2@gmail.com']).map((e) =>
+    e.toLowerCase().trim()
+  );
+  const currentUserEmail = currentUser?.email?.toLowerCase().trim() || '';
   const isTeacher =
-    currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
+    currentUserEmail === 'mizoo2y2@gmail.com' ||
+    (currentUserEmail !== '' && adminEmailList.includes(currentUserEmail)) ||
     currentUser?.role === 'teacher';
 
-  const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(currentUser?.grade || 'third');
+  const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(
+    currentUser?.grade || resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
+  );
 
   useEffect(() => {
     if (!isTeacher && currentUser?.grade) {
@@ -97,6 +110,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [showQuizCelebration, setShowQuizCelebration] = useState<string | null>(null);
+  const [enlargedQuizImage, setEnlargedQuizImage] = useState<string | null>(null);
 
   // Per-lecture persistent quick notes
   const [studentNotes, setStudentNotes] = useState<string>('');
@@ -228,14 +242,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const studentCumulativeScore = currentUser?.score ?? 0;
 
   const getGradeTitle = (g: GradeLevel) => {
-    switch (g) {
-      case 'first':
-        return lang === 'en' ? '1st Secondary' : 'الصف الأول الثانوي';
-      case 'second':
-        return lang === 'en' ? '2nd Secondary' : 'الصف الثاني الثانوي';
-      default:
-        return lang === 'en' ? '3rd Secondary 2026' : 'الصف الثالث الثانوي';
-    }
+    return getGradeDisplayName(g, siteConfig, lang === 'en' ? 'en' : 'ar');
   };
 
   const completedLecturesCount = filteredLectures.filter((l) =>
@@ -442,39 +449,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           {/* Teacher Grade Preview Switcher */}
           {isTeacher && (
             <div className="flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl self-start sm:self-auto overflow-x-auto max-w-full">
-              <button
-                type="button"
-                onClick={() => setSelectedGrade('first')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
-                  selectedGrade === 'first'
-                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                أولى ثانوي
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGrade('second')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
-                  selectedGrade === 'second'
-                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                تانية ثانوي
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGrade('third')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
-                  selectedGrade === 'third'
-                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                تالتة ثانوي
-              </button>
+              {resolvedGrades.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setSelectedGrade(g.id)}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    selectedGrade === g.id
+                      ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {lang === 'en' ? g.badgeEn || g.badgeAr : g.badgeAr}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -992,9 +980,41 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                     {activeQuiz.questions[currentQuestionIndex] && (
                       <div className="p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
-                        <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
-                          {activeQuiz.questions[currentQuestionIndex].question}
-                        </h4>
+                        {activeQuiz.questions[currentQuestionIndex].imageUrl && (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEnlargedQuizImage(
+                                  activeQuiz.questions[currentQuestionIndex].imageUrl || null
+                                )
+                              }
+                              className="group relative w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden cursor-zoom-in block"
+                            >
+                              <img
+                                src={activeQuiz.questions[currentQuestionIndex].imageUrl}
+                                alt={`صورة السؤال ${currentQuestionIndex + 1}`}
+                                className="w-full max-h-[420px] object-contain mx-auto"
+                              />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/75 text-white text-[11px] font-bold absolute bottom-2.5 left-2.5 group-hover:bg-teal-600 transition-colors">
+                                <ZoomIn className="w-3.5 h-3.5" />
+                                <span>اضغط لتكبير الصورة</span>
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        {activeQuiz.questions[currentQuestionIndex].question?.trim() && (
+                          <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
+                            {activeQuiz.questions[currentQuestionIndex].question}
+                          </h4>
+                        )}
+
+                        {!quizSubmitted && activeQuiz.questions[currentQuestionIndex].formula?.trim() && (
+                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-mono text-teal-800 dark:text-teal-300 dir-ltr text-center font-bold">
+                            {activeQuiz.questions[currentQuestionIndex].formula}
+                          </div>
+                        )}
 
                         <div className="space-y-2.5">
                           {activeQuiz.questions[currentQuestionIndex].options.map((opt, oIdx) => {
@@ -1054,9 +1074,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                           <button
                             type="button"
-                            onClick={() =>
-                              setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))
-                            }
+                            onClick={() => {
+                              setEnlargedQuizImage(null);
+                              setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1));
+                            }}
                             disabled={currentQuestionIndex === 0}
                             className="min-h-[44px] px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 cursor-pointer"
                           >
@@ -1075,14 +1096,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             ) : (
                               <button
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
+                                  setEnlargedQuizImage(null);
                                   setCurrentQuestionIndex(
                                     Math.min(
                                       activeQuiz.questions.length - 1,
                                       currentQuestionIndex + 1
                                     )
-                                  )
-                                }
+                                  );
+                                }}
                                 className="min-h-[44px] px-5 py-2 text-xs sm:text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl cursor-pointer"
                               >
                                 التالي
@@ -1101,6 +1123,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
+                                  setEnlargedQuizImage(null);
                                   setActiveQuiz(null);
                                   setActiveTab('lectures');
                                 }}
@@ -1326,6 +1349,31 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </button>
         </div>
       </nav>
+
+      {/* Enlarged Quiz Question Image Lightbox */}
+      {enlargedQuizImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setEnlargedQuizImage(null)}
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <button
+            type="button"
+            onClick={() => setEnlargedQuizImage(null)}
+            aria-label="إغلاق معاينة الصورة"
+            className="absolute top-4 left-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={enlargedQuizImage}
+            alt="صورة السؤال مكبرة"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[88vh] rounded-2xl object-contain shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 };

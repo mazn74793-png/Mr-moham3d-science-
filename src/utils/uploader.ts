@@ -1,5 +1,5 @@
 // Unified XHR media uploader with real-time progress tracking for videos, images, and files.
-// Uploads directly to the user's configured Cloudinary account (persistent across all browsers & devices).
+// Streams File directly via XHR (without Base64 memory buffering) for smooth 1% -> 100% progress.
 
 export interface UploadProgressInfo {
   percent: number;
@@ -37,18 +37,9 @@ export function isCloudinaryConfigured(cloudName?: string, uploadPreset?: string
   return !isPlaceholder;
 }
 
-export function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('تعذر قراءة الملف من الجهاز'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function uploadViaXhr(
   url: string,
-  body: FormData | string,
+  body: FormData | File | string,
   headers: Record<string, string>,
   totalFileSize: number,
   onProgress?: (percent: number, info: UploadProgressInfo) => void
@@ -61,15 +52,21 @@ function uploadViaXhr(
       xhr.setRequestHeader(key, val);
     });
 
+    let lastReportedPercent = 0;
+
     xhr.upload.onprogress = (evt) => {
       const total = evt.lengthComputable && evt.total > 0 ? evt.total : totalFileSize;
       if (total > 0 && onProgress) {
-        const percent = Math.min(99, Math.max(1, Math.round((evt.loaded / total) * 100)));
-        onProgress(percent, {
-          percent,
-          loadedMB: formatMB(evt.loaded),
-          totalMB: formatMB(total),
-        });
+        const rawPercent = Math.round((evt.loaded / total) * 100);
+        const percent = Math.min(99, Math.max(1, rawPercent));
+        if (percent !== lastReportedPercent || evt.loaded === total) {
+          lastReportedPercent = percent;
+          onProgress(percent, {
+            percent,
+            loadedMB: formatMB(Math.min(evt.loaded, total)),
+            totalMB: formatMB(total),
+          });
+        }
       }
     };
 
@@ -127,7 +124,7 @@ export async function uploadMediaFile(
     });
   }
 
-  // 1. Upload directly to Cloudinary whenever configured
+  // 1. Direct FormData XHR upload to Cloudinary when configured
   if (isCloudinaryConfigured(cleanCloud, cleanPreset)) {
     const fd = new FormData();
     fd.append('file', file);
@@ -143,7 +140,7 @@ export async function uploadMediaFile(
 
     try {
       const data = await uploadViaXhr(
-        `https://api.cloudinary.com/v1_1/${cleanCloud}/${endpoint}/upload`,
+        `https://api.cloudinary.com/v1_1/${encodeURIComponent(cleanCloud)}/${endpoint}/upload`,
         fd,
         {},
         file.size,
@@ -166,17 +163,12 @@ export async function uploadMediaFile(
     }
   }
 
-  // 2. Fallback to Server Storage if user hasn't entered their Cloudinary credentials yet
+  // 2. Direct binary stream upload to /api/upload-raw (smooth real-time XHR progress without Base64 stall)
   try {
-    const dataUrl = await fileToDataUrl(file);
-    const payload = JSON.stringify({
-      filename: file.name,
-      dataUrl,
-    });
     const data = await uploadViaXhr(
-      '/api/upload',
-      payload,
-      { 'Content-Type': 'application/json' },
+      `/api/upload-raw?filename=${encodeURIComponent(file.name)}`,
+      file,
+      { 'Content-Type': 'application/octet-stream' },
       file.size,
       onProgress
     );
@@ -187,11 +179,11 @@ export async function uploadMediaFile(
         bytes: file.size,
       };
     }
-  } catch (err) {
-    console.warn('Server upload fallback error:', err);
+  } catch (err: any) {
+    console.warn('Server raw upload error:', err?.message || err);
   }
 
   throw new Error(
-    'يرجى إدخال Cloud Name و Upload Preset لحساب Cloudinary الخاص بك في تبويب إعدادات كلاودنري.'
+    'تعذر رفع الملف: يرجى إدخال Cloud Name و Upload Preset لحساب Cloudinary الخاص بك في تبويب إعدادات كلاودنري لرفع الملفات والصور سحابياً.'
   );
 }

@@ -29,6 +29,7 @@ import {
   saveStudentToCloud,
   deleteStudentFromCloud,
   getStudentFromCloud,
+  fetchAdminConfigIfAuthorized,
 } from './firebase';
 
 function sanitizeProfileImageUrl(url?: string): string {
@@ -203,9 +204,35 @@ export default function App() {
       }
 
       const email = fbUser.email || '';
-      const isAdmin = isEmailAdmin(email);
+      const adminCfg = await fetchAdminConfigIfAuthorized();
+      if (adminCfg) {
+        const mergedEmails = Array.from(
+          new Set(
+            ['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])]
+              .map((e) => e.toLowerCase().trim())
+              .filter(Boolean)
+          )
+        );
+        adminEmailsRef.current = mergedEmails;
+        setSiteConfig((prev) => ({
+          ...prev,
+          adminEmails: mergedEmails,
+          googleClientId: adminCfg.googleClientId || prev.googleClientId,
+        }));
+        if (adminCfg.cloudName && adminCfg.uploadPreset) {
+          const nextCloud: CloudinaryConfig = {
+            cloudName: adminCfg.cloudName,
+            uploadPreset: adminCfg.uploadPreset,
+          };
+          setCloudinaryConfig(nextCloud);
+          localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
+        }
+      }
+
+      const isAdmin = Boolean(adminCfg) || isEmailAdmin(email);
 
       if (isAdmin) {
+        setSyncNotice((prev) => (prev?.type === 'auth_needed' ? null : prev));
         setCurrentUser((prev) => ({
           id: fbUser.uid,
           name: siteConfig.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
@@ -222,6 +249,12 @@ export default function App() {
           quizScores: {},
           joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
         }));
+
+        if (pendingAdminActionRef.current) {
+          const pending = pendingAdminActionRef.current;
+          pendingAdminActionRef.current = null;
+          pending().catch((err) => console.warn('Pending admin action warning:', err));
+        }
 
         // Bootstrap publicConfig/site & adminConfig/settings in Firestore once if they don't exist yet
         if (!adminBootstrappedRef.current) {
@@ -314,7 +347,7 @@ export default function App() {
 
     const lecturesQuery = query(
       collection(db, 'lectures'),
-      where('grade', 'in', ['first', 'second', 'third'])
+      where('grade', '!=', '')
     );
     const unsubLectures = onSnapshot(
       lecturesQuery,
@@ -330,7 +363,7 @@ export default function App() {
 
     const attachmentsQuery = query(
       collection(db, 'attachments'),
-      where('grade', 'in', ['first', 'second', 'third'])
+      where('grade', '!=', '')
     );
     const unsubAttachments = onSnapshot(
       attachmentsQuery,
@@ -346,7 +379,7 @@ export default function App() {
 
     const quizzesQuery = query(
       collection(db, 'quizzes'),
-      where('grade', 'in', ['first', 'second', 'third'])
+      where('grade', '!=', '')
     );
     const unsubQuizzes = onSnapshot(
       quizzesQuery,
@@ -373,8 +406,7 @@ export default function App() {
 
     const unsubscribers: Array<() => void> = [];
 
-    const userIsAdmin = isEmailAdmin(firebaseUser.email);
-    const isPrimary = firebaseUser.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com';
+    const userIsAdmin = isEmailAdmin(firebaseUser.email) || currentUser?.role === 'teacher';
 
     if (userIsAdmin) {
       unsubscribers.push(
@@ -397,9 +429,15 @@ export default function App() {
                 localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
               }
               if (Array.isArray(data.adminEmails) || data.googleClientId) {
+                const cleanEmails = Array.isArray(data.adminEmails) && data.adminEmails.length > 0
+                  ? Array.from(new Set(['mizoo2y2@gmail.com', ...data.adminEmails].map((e) => e.toLowerCase().trim()).filter(Boolean)))
+                  : undefined;
+                if (cleanEmails) {
+                  adminEmailsRef.current = cleanEmails;
+                }
                 setSiteConfig((prev) => ({
                   ...prev,
-                  adminEmails: Array.isArray(data.adminEmails) && data.adminEmails.length > 0 ? data.adminEmails : prev.adminEmails,
+                  adminEmails: cleanEmails || prev.adminEmails,
                   googleClientId: data.googleClientId || prev.googleClientId,
                 }));
               }
@@ -411,20 +449,18 @@ export default function App() {
         )
       );
 
-      if (isPrimary) {
-        unsubscribers.push(
-          onSnapshot(
-            collection(db, 'students'),
-            (snap) => {
-              const list = snap.docs.map((d) => d.data() as UserProfile);
-              setStudents(list);
-            },
-            (error) => {
-              console.warn('Students admin listener error:', error.message);
-            }
-          )
-        );
-      }
+      unsubscribers.push(
+        onSnapshot(
+          collection(db, 'students'),
+          (snap) => {
+            const list = snap.docs.map((d) => d.data() as UserProfile);
+            setStudents(list);
+          },
+          (error) => {
+            console.warn('Students admin listener error:', error.message);
+          }
+        )
+      );
     } else {
       const ownStudentQuery = query(
         collection(db, 'students'),
@@ -453,7 +489,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [firebaseUser, isEmailAdmin]);
+  }, [firebaseUser, isEmailAdmin, siteConfig.adminEmails, currentUser?.role]);
 
   // Persist local cache
   useEffect(() => {
@@ -528,15 +564,37 @@ export default function App() {
   };
 
   // Run an admin cloud operation safely
-  const executeAdminCloudWrite = async (action: () => Promise<void>, successMsg?: string) => {
-    if (!auth.currentUser || !isEmailAdmin(auth.currentUser.email)) {
+  const executeAdminCloudWrite = async (action: () => Promise<void>, successMsg?: string): Promise<boolean> => {
+    if (!auth.currentUser) {
       pendingAdminActionRef.current = action;
       showNotice(
         'auth_needed',
-        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، اضغط على الزر بالأسفل لتأكيد حساب المشرف.'
+        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، اضغط لتأكيد جلسة المشرف.'
       );
       return false;
     }
+
+    let authorized = isEmailAdmin(auth.currentUser.email);
+    if (!authorized) {
+      const adminCfg = await fetchAdminConfigIfAuthorized();
+      if (adminCfg) {
+        authorized = true;
+        const merged = Array.from(
+          new Set(['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])].map((e) => e.toLowerCase().trim()).filter(Boolean))
+        );
+        adminEmailsRef.current = merged;
+      }
+    }
+
+    if (!authorized) {
+      pendingAdminActionRef.current = action;
+      showNotice(
+        'auth_needed',
+        'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين ثم أعد تسجيل الدخول.'
+      );
+      return false;
+    }
+
     try {
       await action();
       if (successMsg) {
@@ -576,7 +634,22 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    const isAdmin = isUserAdmin(user);
+    let isAdmin = isUserAdmin(user);
+    if (!isAdmin && auth.currentUser) {
+      const adminCfg = await fetchAdminConfigIfAuthorized();
+      if (adminCfg) {
+        isAdmin = true;
+        const mergedEmails = Array.from(
+          new Set(['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])].map((e) => e.toLowerCase().trim()).filter(Boolean))
+        );
+        adminEmailsRef.current = mergedEmails;
+        setSiteConfig((prev) => ({
+          ...prev,
+          adminEmails: mergedEmails,
+          googleClientId: adminCfg.googleClientId || prev.googleClientId,
+        }));
+      }
+    }
 
     if (isAdmin) {
       const finalAdmin: UserProfile = { ...user, role: 'teacher', profileCompleted: true };
@@ -652,47 +725,47 @@ export default function App() {
 
   const handleAddLecture = (newLec: Lecture) => {
     setLectures((prev) => [newLec, ...prev]);
-    executeAdminCloudWrite(() => saveLectureToCloud(newLec));
+    return executeAdminCloudWrite(() => saveLectureToCloud(newLec), 'تم نشر المحاضرة وحفظها في السحابة!');
   };
 
   const handleDeleteLecture = (id: string) => {
     setLectures((prev) => prev.filter((l) => l.id !== id));
-    executeAdminCloudWrite(() => deleteLectureFromCloud(id));
+    return executeAdminCloudWrite(() => deleteLectureFromCloud(id));
   };
 
   const handleUpdateLecture = (updated: Lecture) => {
     setLectures((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-    executeAdminCloudWrite(() => saveLectureToCloud(updated));
+    return executeAdminCloudWrite(() => saveLectureToCloud(updated), 'تم تحديث المحاضرة وحفظها في السحابة!');
   };
 
   const handleAddAttachment = (newFile: AttachmentFile) => {
     setAttachments((prev) => [newFile, ...prev]);
-    executeAdminCloudWrite(() => saveAttachmentToCloud(newFile));
+    return executeAdminCloudWrite(() => saveAttachmentToCloud(newFile), 'تم نشر المذكرة وحفظها في السحابة!');
   };
 
   const handleDeleteAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
-    executeAdminCloudWrite(() => deleteAttachmentFromCloud(id));
+    return executeAdminCloudWrite(() => deleteAttachmentFromCloud(id));
   };
 
   const handleAddQuiz = (newQuiz: Quiz) => {
     setQuizzes((prev) => [newQuiz, ...prev]);
-    executeAdminCloudWrite(() => saveQuizToCloud(newQuiz));
+    return executeAdminCloudWrite(() => saveQuizToCloud(newQuiz), 'تم حفظ ونشر الامتحان في السحابة!');
   };
 
   const handleDeleteQuiz = (id: string) => {
     setQuizzes((prev) => prev.filter((q) => q.id !== id));
-    executeAdminCloudWrite(() => deleteQuizFromCloud(id));
+    return executeAdminCloudWrite(() => deleteQuizFromCloud(id));
   };
 
   const handleAdminDeleteStudent = (studentId: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
-    executeAdminCloudWrite(() => deleteStudentFromCloud(studentId));
+    return executeAdminCloudWrite(() => deleteStudentFromCloud(studentId));
   };
 
   const handleAdminAddStudent = (student: UserProfile) => {
     setStudents((prev) => [student, ...prev]);
-    executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    return executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
   };
 
   const handleAdminUpdateStudent = (student: UserProfile) => {
@@ -705,7 +778,7 @@ export default function App() {
       }
       return [student, ...prev];
     });
-    executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    return executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
   };
 
   const handleResetAllData = () => {
@@ -723,7 +796,7 @@ export default function App() {
     localStorage.setItem('mm_quizzes', JSON.stringify([]));
     localStorage.setItem('mm_registered_students', JSON.stringify([]));
 
-    executeAdminCloudWrite(async () => {
+    return executeAdminCloudWrite(async () => {
       await Promise.all([
         ...lecIds.map((id) => deleteLectureFromCloud(id)),
         ...attIds.map((id) => deleteAttachmentFromCloud(id)),
@@ -775,27 +848,36 @@ export default function App() {
   const handleSaveCloudinaryConfig = (config: CloudinaryConfig) => {
     setCloudinaryConfig(config);
     localStorage.setItem('mm_cloudinary', JSON.stringify(config));
-    executeAdminCloudWrite(
+    return executeAdminCloudWrite(
       () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config, siteConfig.googleClientId),
       'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
     );
   };
 
   const handleSaveSiteConfig = (newConfig: SiteConfig) => {
+    const cleanEmails = Array.from(
+      new Set(
+        ['mizoo2y2@gmail.com', ...(newConfig.adminEmails || [])]
+          .map((e) => e.toLowerCase().trim())
+          .filter(Boolean)
+      )
+    );
     const sanitized: SiteConfig = {
       ...newConfig,
+      adminEmails: cleanEmails,
       profileImageUrl: sanitizeProfileImageUrl(newConfig.profileImageUrl),
     };
+    adminEmailsRef.current = cleanEmails;
     setSiteConfig(sanitized);
     localStorage.setItem('mm_site_config', JSON.stringify(sanitized));
-    executeAdminCloudWrite(async () => {
+    return executeAdminCloudWrite(async () => {
       await savePublicSiteConfigToCloud(sanitized);
       await saveAdminConfigToCloud(
-        sanitized.adminEmails || ['mizoo2y2@gmail.com'],
+        cleanEmails,
         cloudinaryConfig,
         sanitized.googleClientId
       );
-    }, 'تم نشر التعديلات مباشرة للجميع.');
+    }, 'تم حفظ ونشر التعديلات مباشرة للجميع.');
   };
 
   const handleScrollToSection = (sectionId: string) => {
@@ -928,6 +1010,7 @@ export default function App() {
         {currentView === 'student' && currentUser && (
           <StudentPortal
             currentUser={currentUser}
+            siteConfig={siteConfig}
             lectures={lectures}
             quizzes={quizzes}
             attachments={attachments}
@@ -1001,6 +1084,7 @@ export default function App() {
         <StudentOnboardingModal
           isOpen={shouldShowOnboarding}
           currentUser={currentUser}
+          siteConfig={siteConfig}
           onSaveProfile={handleUpdateStudentProfile}
         />
       )}

@@ -84,15 +84,23 @@ async function testConnection() {
 }
 testConnection();
 
-// Strip undefined properties recursively so Firestore payloads stay clean
-function stripUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
-  const out: Record<string, any> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) {
-      out[k] = v;
-    }
+// Strip undefined properties recursively (including nested arrays and maps) so Firestore never rejects payloads
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefinedDeep(item)) as unknown as T;
   }
-  return out as Partial<T>;
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value as Record<string, any>)) {
+      if (v !== undefined) {
+        out[k] = stripUndefinedDeep(v);
+      }
+    }
+    return out as T;
+  }
+  return value;
 }
 
 const ALLOWED_SITE_CONFIG_KEYS: (keyof SiteConfig)[] = [
@@ -100,12 +108,37 @@ const ALLOWED_SITE_CONFIG_KEYS: (keyof SiteConfig)[] = [
   'profileImageUrl', 'calligraphyFont', 'bodyFont', 'primaryColor', 'googleClientId',
   'phone1', 'phone2', 'whatsappNumber', 'facebookUrl', 'youtubeUrl', 'telegramUrl',
   'centerBranches', 'developerName', 'developerHandle', 'developerUrl', 'footerBio',
-  'footerQuickLinks', 'gradeFirstTitleAr', 'gradeFirstTitleEn', 'gradeFirstBadgeAr',
+  'footerQuickLinks', 'grades', 'gradeFirstTitleAr', 'gradeFirstTitleEn', 'gradeFirstBadgeAr',
   'gradeFirstDescAr', 'gradeSecondTitleAr', 'gradeSecondTitleEn', 'gradeSecondBadgeAr',
   'gradeSecondDescAr', 'gradeThirdTitleAr', 'gradeThirdTitleEn', 'gradeThirdBadgeAr',
   'gradeThirdDescAr', 'feature1Title', 'feature1Desc', 'feature2Title', 'feature2Desc',
   'feature3Title', 'feature3Desc', 'feature4Title', 'feature4Desc',
 ];
+
+export interface AdminCloudConfig {
+  adminEmails?: string[];
+  cloudName?: string;
+  uploadPreset?: string;
+  googleClientId?: string;
+}
+
+/**
+ * Queries protected adminConfig/settings inside try/catch.
+ * Returns the config if the signed-in user is Primary Admin OR an authorized Co-Admin,
+ * or null silently for students / unauthenticated users.
+ */
+export async function fetchAdminConfigIfAuthorized(): Promise<AdminCloudConfig | null> {
+  if (!auth.currentUser) return null;
+  try {
+    const snap = await getDoc(doc(db, 'adminConfig', 'settings'));
+    if (snap.exists()) {
+      return snap.data() as AdminCloudConfig;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export async function savePublicSiteConfigToCloud(config: SiteConfig): Promise<void> {
   const path = 'publicConfig/site';
@@ -114,7 +147,7 @@ export async function savePublicSiteConfigToCloud(config: SiteConfig): Promise<v
     for (const key of ALLOWED_SITE_CONFIG_KEYS) {
       const val = config[key];
       if (val !== undefined) {
-        cleanPayload[key] = val;
+        cleanPayload[key] = stripUndefinedDeep(val);
       }
     }
     if (!cleanPayload.teacherName) cleanPayload.teacherName = DEFAULT_SITE_CONFIG.teacherName;
@@ -165,11 +198,11 @@ export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
   const path = `lectures/${lecture.id}`;
   try {
     const ref = doc(db, 'lectures', lecture.id);
-    const clean = stripUndefined({
+    const clean = stripUndefinedDeep({
       id: lecture.id,
       title: lecture.title,
       grade: lecture.grade,
-      gradeLabel: lecture.gradeLabel,
+      gradeLabel: lecture.gradeLabel || lecture.grade,
       chapter: lecture.chapter || '',
       duration: lecture.duration || '45 دقيقة',
       videoUrl: lecture.videoUrl || '',
@@ -215,11 +248,11 @@ export async function saveAttachmentToCloud(file: AttachmentFile): Promise<void>
   const path = `attachments/${file.id}`;
   try {
     const ref = doc(db, 'attachments', file.id);
-    const clean = stripUndefined({
+    const clean = stripUndefinedDeep({
       id: file.id,
       title: file.title,
       grade: file.grade,
-      gradeLabel: file.gradeLabel,
+      gradeLabel: file.gradeLabel || file.grade,
       chapter: file.chapter || '',
       fileSize: file.fileSize || '1.0 MB',
       fileType: file.fileType || 'pdf',
@@ -259,7 +292,7 @@ export async function saveQuizToCloud(quiz: Quiz): Promise<void> {
   const path = `quizzes/${quiz.id}`;
   try {
     const ref = doc(db, 'quizzes', quiz.id);
-    const clean = stripUndefined({
+    const clean = stripUndefinedDeep({
       id: quiz.id,
       title: quiz.title,
       grade: quiz.grade,
@@ -302,7 +335,7 @@ export async function saveStudentToCloud(student: UserProfile, authUid?: string)
   try {
     const ref = doc(db, 'students', docId);
     const uid = authUid || auth.currentUser?.uid || docId;
-    const clean = stripUndefined({
+    const clean = stripUndefinedDeep({
       id: docId,
       uid,
       name: student.name || 'طالب منصة',
