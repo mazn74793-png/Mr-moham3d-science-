@@ -1,16 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  X, LogIn, UserPlus, Phone, Lock, User, Sparkles, AlertCircle, 
-  GraduationCap, Check, ArrowRight
+  X, LogIn, UserPlus, Phone, Lock, User, Sparkles, AlertCircle
 } from 'lucide-react';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig } from '../types/siteConfig';
-
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider, getStudentFromCloud } from '../firebase';
 
 interface AuthModalsProps {
   loginOpen: boolean;
@@ -54,11 +49,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Client ID state
-  const [clientIdInput] = useState(() => {
-    return siteConfig?.googleClientId || localStorage.getItem('mm_google_client_id') || '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com';
-  });
-
   // Helper to determine if an email is authorized as Admin / Teacher
   const checkIsAdminEmail = (emailStr?: string) => {
     if (!emailStr) return false;
@@ -98,162 +88,75 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     return Boolean(record?.profileCompleted);
   };
 
-  // Handle Google Credential Response from Official Google Identity Services
-  const handleGoogleCredentialResponse = (response: any) => {
-    if (!response?.credential) return;
+  // Trigger Real Firebase Google Popup (Primary Secure Auth)
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleTriggerRealGooglePopup = async () => {
+    setAuthError(null);
+    setGoogleLoading(true);
+
     try {
-      // Decode JWT token from Google
-      const base64Url = response.credential.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      const payload = JSON.parse(jsonPayload);
-      const email = payload.email || '';
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+      const email = fbUser.email || '';
       const isAdmin = checkIsAdminEmail(email);
 
-      const existingRecord = getExistingStudentRecord(payload.sub, email);
-      const isCompleted = isAdmin || isProfileMarkedCompleted(payload.sub, email);
+      if (isAdmin) {
+        onLoginSuccess({
+          id: fbUser.uid,
+          name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+          email,
+          role: 'teacher',
+          grade: 'third',
+          phone: siteConfig?.phone1 || '01002345678',
+          parentPhone: '',
+          avatarUrl: fbUser.photoURL || '',
+          score: 0,
+          profileCompleted: true,
+          watchedLectureIds: [],
+          passedQuizIds: [],
+          quizScores: {},
+          joinedAt: new Date().toISOString().split('T')[0],
+        });
+        onClose();
+        return;
+      }
 
-      // Construct verified real user profile, preserving existing completed data
-      const verifiedUser: UserProfile = {
-        id: existingRecord?.id || payload.sub || `google-${Date.now()}`,
-        name: isAdmin 
-          ? (siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى') 
-          : (existingRecord?.name || payload.name || email.split('@')[0]),
-        email: email,
-        role: isAdmin ? 'teacher' : 'student',
+      // Check Firestore first for permanent cross-device profile
+      const cloudRecord = await getStudentFromCloud(fbUser.uid).catch(() => null);
+      const existingRecord = cloudRecord || getExistingStudentRecord(fbUser.uid, email);
+      const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(fbUser.uid, email);
+
+      onLoginSuccess({
+        id: fbUser.uid,
+        name: existingRecord?.name || fbUser.displayName || email.split('@')[0],
+        email,
+        role: 'student',
         grade: existingRecord?.grade || 'third',
-        phone: isAdmin ? (siteConfig?.phone1 || '01002345678') : (existingRecord?.phone || ''),
+        phone: existingRecord?.phone || '',
         parentPhone: existingRecord?.parentPhone || '',
         governorate: existingRecord?.governorate || 'القاهرة',
-        avatarUrl: payload.picture || existingRecord?.avatarUrl,
+        avatarUrl: fbUser.photoURL || existingRecord?.avatarUrl || '',
         score: existingRecord?.score || 0,
         profileCompleted: isCompleted,
         watchedLectureIds: existingRecord?.watchedLectureIds || [],
         passedQuizIds: existingRecord?.passedQuizIds || [],
         quizScores: existingRecord?.quizScores || {},
         joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
-      };
-
-      onLoginSuccess(verifiedUser);
+      });
       onClose();
-    } catch (err) {
-      console.error('Failed to parse Google JWT credential', err);
-      setAuthError('تعذر معالجة استجابة تسجيل الدخول بجوجل.');
-    }
-  };
-
-  // Initialize official Google Identity Services whenever modal opens
-  useEffect(() => {
-    if (!loginOpen && !registerOpen) return;
-
-    const currentClientId = clientIdInput || siteConfig?.googleClientId || localStorage.getItem('mm_google_client_id') || '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com';
-
-    const initGoogleGSI = () => {
-      if (window.google?.accounts?.id && currentClientId) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: currentClientId,
-            callback: handleGoogleCredentialResponse,
-            auto_select: false,
-            cancel_on_tap_outside: true,
-          });
-
-          // Render official Google button into container if present
-          const btnElem = document.getElementById('official-google-btn-container');
-          if (btnElem) {
-            btnElem.innerHTML = '';
-            window.google.accounts.id.renderButton(btnElem, {
-              type: 'standard',
-              theme: 'outline',
-              size: 'large',
-              text: 'continue_with',
-              shape: 'pill',
-              logo_alignment: 'left',
-              width: 320,
-              locale: 'ar',
-            });
-          }
-        } catch (e: any) {
-          console.warn('GIS initialize notice:', e);
-        }
+    } catch (err: any) {
+      console.error('Firebase Google Sign-In Error:', err);
+      const code = err?.code || '';
+      if (code === 'auth/popup-closed-by-user') {
+        setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.');
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError('المتصفح حجب النافذة المنبثقة، يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.');
+      } else {
+        setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
       }
-    };
-
-    const timer = setTimeout(initGoogleGSI, 250);
-    return () => clearTimeout(timer);
-  }, [loginOpen, registerOpen, clientIdInput, siteConfig?.googleClientId, activeTab]);
-
-  // Trigger Real Google Popup
-  const handleTriggerRealGooglePopup = () => {
-    setAuthError(null);
-    const activeClientId = clientIdInput || siteConfig?.googleClientId || localStorage.getItem('mm_google_client_id') || '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com';
-
-    // Try Google OAuth2 Token Client (opens real browser popup window to pick account)
-    if (window.google?.accounts?.oauth2) {
-      try {
-        const tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: activeClientId,
-          scope: 'email profile openid',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.access_token) {
-              try {
-                // Fetch real user profile from Google API
-                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                const googleProfile = await res.json();
-                if (googleProfile?.email) {
-                  const email = googleProfile.email;
-                  const isAdmin = checkIsAdminEmail(email);
-
-                  const existingRecord = getExistingStudentRecord(googleProfile.sub, email);
-                  const isCompleted = isAdmin || isProfileMarkedCompleted(googleProfile.sub, email);
-
-                  onLoginSuccess({
-                    id: existingRecord?.id || googleProfile.sub || `google-${Date.now()}`,
-                    name: isAdmin 
-                      ? (siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى') 
-                      : (existingRecord?.name || googleProfile.name || email.split('@')[0]),
-                    email: email,
-                    role: isAdmin ? 'teacher' : 'student',
-                    grade: existingRecord?.grade || 'third',
-                    phone: isAdmin ? (siteConfig?.phone1 || '01002345678') : (existingRecord?.phone || ''),
-                    parentPhone: existingRecord?.parentPhone || '',
-                    governorate: existingRecord?.governorate || 'القاهرة',
-                    avatarUrl: googleProfile.picture || existingRecord?.avatarUrl,
-                    score: existingRecord?.score || 0,
-                    profileCompleted: isCompleted,
-                    watchedLectureIds: existingRecord?.watchedLectureIds || [],
-                    passedQuizIds: existingRecord?.passedQuizIds || [],
-                    quizScores: existingRecord?.quizScores || {},
-                    joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
-                  });
-                  onClose();
-                  return;
-                }
-              } catch (err) {
-                console.error('Error fetching Google userinfo:', err);
-                setAuthError('حدث خطأ أثناء جلب بيانات الحساب من Google.');
-              }
-            }
-          },
-        });
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (e) {
-        console.warn('OAuth2 popup error, trying One Tap prompt:', e);
-      }
-    }
-
-    // If accounts.id is available, prompt
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt();
-      return;
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -267,29 +170,16 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       setAuthError('يرجى كتابة رقم الهاتف أو البريد الإلكتروني.');
       return;
     }
-    if (!loginPassword.trim()) {
-      setAuthError('يرجى كتابة كلمة المرور.');
-      return;
-    }
 
     const isAdmin = checkIsAdminEmail(cleanId);
     if (isAdmin) {
-      onLoginSuccess({
-        id: 'admin-teacher-1',
-        name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
-        email: cleanId,
-        role: 'teacher',
-        grade: 'third',
-        phone: siteConfig?.phone1 || '01002345678',
-        parentPhone: '',
-        score: 0,
-        profileCompleted: true,
-        watchedLectureIds: [],
-        passedQuizIds: [],
-        quizScores: {},
-        joinedAt: new Date().toISOString().split('T')[0],
-      });
-      onClose();
+      // Admin must sign in via Firebase Google Auth to receive real cloud write permissions
+      handleTriggerRealGooglePopup();
+      return;
+    }
+
+    if (!loginPassword.trim()) {
+      setAuthError('يرجى كتابة كلمة المرور.');
       return;
     }
 
@@ -363,14 +253,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
 
     const isAdmin = checkIsAdminEmail(idClean);
+    if (isAdmin) {
+      handleTriggerRealGooglePopup();
+      return;
+    }
 
     const createdUser: UserProfile = {
       id: `usr_${Date.now()}`,
-      name: isAdmin ? (siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى') : nameClean,
+      name: nameClean,
       email: idClean.includes('@') ? idClean : '',
       phone: !idClean.includes('@') ? idClean : '',
       parentPhone: parentPhoneClean,
-      role: isAdmin ? 'teacher' : 'student',
+      role: 'student',
       grade: regGrade,
       score: 0,
       profileCompleted: true, // Data already provided!
@@ -473,8 +367,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         <div className="space-y-3 mb-5">
           <button
             type="button"
+            disabled={googleLoading}
             onClick={handleTriggerRealGooglePopup}
-            className="w-full py-3.5 px-4 rounded-2xl border-2 border-teal-500/30 hover:border-teal-500 bg-white dark:bg-slate-800/90 hover:bg-teal-50/50 dark:hover:bg-slate-700/60 shadow-xs transition-all flex items-center justify-center gap-3 cursor-pointer group active:scale-98 min-h-[48px]"
+            className="w-full py-3.5 px-4 rounded-2xl border-2 border-teal-500/30 hover:border-teal-500 bg-white dark:bg-slate-800/90 hover:bg-teal-50/50 dark:hover:bg-slate-700/60 shadow-xs transition-all flex items-center justify-center gap-3 cursor-pointer group active:scale-98 min-h-[48px] disabled:opacity-60"
           >
             <svg className="w-5 h-5 group-hover:scale-110 transition-transform shrink-0" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -483,11 +378,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
             <span className="text-sm font-bold text-slate-800 dark:text-slate-100 font-sans">
-              المتابعة السريعة بحساب Google
+              {googleLoading ? 'جاري تسجيل الدخول بحساب Google...' : 'المتابعة السريعة بحساب Google'}
             </span>
           </button>
-          
-          <div id="official-google-btn-container" className="flex justify-center" />
         </div>
 
         {/* Divider */}

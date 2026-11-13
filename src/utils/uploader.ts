@@ -1,6 +1,6 @@
 // Universal persistent media file uploader
-// Tries Cloudinary first; if Cloudinary fails or is unconfigured, uploads to /api/upload
-// NEVER returns a local blob: URL so uploads work seamlessly in incognito and across all browsers
+// Uploads directly to the user's configured Cloudinary account (works across ALL browsers, incognito, & Shared App URL).
+// Falls back to server /api/upload only if Cloudinary is not yet configured.
 
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -23,31 +23,38 @@ export async function uploadMediaFile(
   options?: UploadOptions
 ): Promise<{ url: string; source: 'cloudinary' | 'server' }> {
   const { cloudName, uploadPreset, resourceType = 'auto' } = options || {};
+  const cleanCloud = (cloudName || '').trim();
+  const cleanPreset = (uploadPreset || '').trim();
 
-  // 1. Try Cloudinary if cloudName and uploadPreset look valid
-  if (cloudName && uploadPreset && cloudName !== 'chemistry-egypt' && uploadPreset !== 'chemistry_uploads') {
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('upload_preset', uploadPreset);
-      const endpoint = resourceType === 'video' ? 'video' : 'image';
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${endpoint}/upload`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const finalUrl = data.secure_url || data.url;
-        if (finalUrl && typeof finalUrl === 'string') {
-          return { url: finalUrl, source: 'cloudinary' };
-        }
+  const isPlaceholder =
+    !cleanCloud ||
+    !cleanPreset ||
+    (cleanCloud === 'chemistry-egypt' && (cleanPreset === 'mohamed_mostafa_preset' || cleanPreset === 'chemistry_uploads'));
+
+  // 1. Upload directly to Cloudinary whenever configured
+  if (cleanCloud && cleanPreset && !isPlaceholder) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', cleanPreset);
+    const endpoint = resourceType === 'video' ? 'video' : resourceType === 'raw' ? 'raw' : 'image';
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cleanCloud}/${endpoint}/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const finalUrl = data.secure_url || data.url;
+      if (finalUrl && typeof finalUrl === 'string') {
+        return { url: finalUrl, source: 'cloudinary' };
       }
-    } catch (err) {
-      console.warn('Cloudinary upload attempt encountered an issue, switching to direct server upload:', err);
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData?.error?.message || 'تأكد من تفعيل Unsigned Upload Preset في حساب Cloudinary الخاص بك';
+      throw new Error(`فشل الرفع إلى Cloudinary: ${msg}`);
     }
   }
 
-  // 2. Direct Server Persistent Storage (Works across incognito, all browsers & mobile devices)
+  // 2. Fallback to Server Storage if user hasn't entered their Cloudinary credentials yet
   try {
     const dataUrl = await fileToDataUrl(file);
     const res = await fetch('/api/upload', {
@@ -66,28 +73,8 @@ export async function uploadMediaFile(
       }
     }
   } catch (err) {
-    console.warn('Server upload error:', err);
+    console.warn('Server upload fallback error:', err);
   }
 
-  // 3. Fallback: Last attempt to Cloudinary with general preset if not attempted
-  if (cloudName) {
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('upload_preset', uploadPreset || 'chemistry_uploads');
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const finalUrl = data.secure_url || data.url;
-        if (finalUrl) return { url: finalUrl, source: 'cloudinary' };
-      }
-    } catch (e) {
-      // Ignore
-    }
-  }
-
-  throw new Error('تعذر رفع الملف، يرجى المحاولة مرة أخرى.');
+  throw new Error('يرجى إدخال Cloud Name و Upload Preset لحساب Cloudinary الخاص بك في تبويب إعدادات كلاودنري.');
 }

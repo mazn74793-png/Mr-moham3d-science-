@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { onAuthStateChanged, signOut, signInWithPopup, User as FirebaseUser } from 'firebase/auth';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
@@ -6,19 +8,34 @@ import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { StudentPortal } from './components/StudentPortal';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentOnboardingModal } from './components/StudentOnboardingModal';
-
 import { AuthModals } from './components/AuthModals';
 import { SecretAdminCustomizerModal } from './components/SecretAdminCustomizerModal';
 import { Footer } from './components/Footer';
-import { 
-  INITIAL_LECTURES, 
-  INITIAL_ATTACHMENTS, 
-  INITIAL_QUIZZES, 
-  INITIAL_CLOUDINARY_CONFIG,
-  INITIAL_STUDENTS
-} from './data/initialData';
+import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
 import { Lecture, AttachmentFile, Quiz, CloudinaryConfig, UserProfile, GradeLevel } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
+import {
+  auth,
+  db,
+  googleProvider,
+  savePublicSiteConfigToCloud,
+  saveAdminConfigToCloud,
+  saveLectureToCloud,
+  deleteLectureFromCloud,
+  saveAttachmentToCloud,
+  deleteAttachmentFromCloud,
+  saveQuizToCloud,
+  deleteQuizFromCloud,
+  saveStudentToCloud,
+  deleteStudentFromCloud,
+  getStudentFromCloud,
+} from './firebase';
+
+function sanitizeProfileImageUrl(url?: string): string {
+  if (!url) return '';
+  if (url.includes('teacher_mohamed_mostafa_1794141316649')) return '';
+  return url;
+}
 
 export default function App() {
   // Theme state
@@ -26,28 +43,46 @@ export default function App() {
     return localStorage.getItem('mm_theme') === 'dark';
   });
 
-  // Master Site Configuration state (Customizable via © + PIN 2825)
+  // Master Site Configuration state
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('mm_site_config');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed.profileImageUrl === 'string' && parsed.profileImageUrl.includes('/src/assets/')) {
-          parsed.profileImageUrl = parsed.profileImageUrl.replace('/src/assets/images/', '/images/');
-        }
-        return { ...DEFAULT_SITE_CONFIG, ...parsed };
-      } catch (e) {
+        return {
+          ...DEFAULT_SITE_CONFIG,
+          ...parsed,
+          profileImageUrl: sanitizeProfileImageUrl(parsed?.profileImageUrl),
+        };
+      } catch {
         return DEFAULT_SITE_CONFIG;
       }
     }
     return DEFAULT_SITE_CONFIG;
   });
 
+  // Firebase Auth user state
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
   // Current logged in user
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('mm_user');
-    return saved ? JSON.parse(saved) : null;
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
   });
+
+  // Non-blocking sync/auth banner for admin writes
+  const [syncNotice, setSyncNotice] = useState<{
+    type: 'success' | 'error' | 'auth_needed';
+    message: string;
+  } | null>(null);
 
   // View state: 'landing' | 'student' | 'teacher'
   const [currentView, setCurrentView] = useState<'landing' | 'student' | 'teacher'>('landing');
@@ -57,48 +92,74 @@ export default function App() {
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [secretAdminOpen, setSecretAdminOpen] = useState(false);
 
-  // Curriculum & Uploads state (persisted in localStorage, zeroed out for fresh authentic entries)
+  // Curriculum & Uploads state (hydrated live from Firestore onSnapshot)
   const [lectures, setLectures] = useState<Lecture[]>(() => {
-    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
-      localStorage.removeItem('mm_lectures');
-      localStorage.removeItem('mm_attachments');
-      localStorage.removeItem('mm_quizzes');
-      localStorage.removeItem('mm_registered_students');
-      localStorage.setItem('mm_zeroed_confirmed_v4', 'true');
+    const saved = localStorage.getItem('mm_lectures');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
       return [];
     }
-    const saved = localStorage.getItem('mm_lectures');
-    return saved ? JSON.parse(saved) : [];
   });
 
   const [attachments, setAttachments] = useState<AttachmentFile[]>(() => {
-    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+    const saved = localStorage.getItem('mm_attachments');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
       return [];
     }
-    const saved = localStorage.getItem('mm_attachments');
-    return saved ? JSON.parse(saved) : [];
   });
 
   const [quizzes, setQuizzes] = useState<Quiz[]>(() => {
-    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+    const saved = localStorage.getItem('mm_quizzes');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
       return [];
     }
-    const saved = localStorage.getItem('mm_quizzes');
-    return saved ? JSON.parse(saved) : [];
   });
 
   const [students, setStudents] = useState<UserProfile[]>(() => {
-    if (!localStorage.getItem('mm_zeroed_confirmed_v4')) {
+    const saved = localStorage.getItem('mm_registered_students');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
       return [];
     }
-    const saved = localStorage.getItem('mm_registered_students');
-    return saved ? JSON.parse(saved) : [];
   });
 
   const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(() => {
     const saved = localStorage.getItem('mm_cloudinary');
-    return saved ? JSON.parse(saved) : INITIAL_CLOUDINARY_CONFIG;
+    try {
+      return saved ? JSON.parse(saved) : INITIAL_CLOUDINARY_CONFIG;
+    } catch {
+      return INITIAL_CLOUDINARY_CONFIG;
+    }
   });
+
+  const adminBootstrappedRef = useRef(false);
+  const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
+  useEffect(() => {
+    adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
+  }, [siteConfig.adminEmails]);
+
+  const isEmailAdmin = useCallback((email?: string | null, extraEmails?: string[]) => {
+    if (!email) return false;
+    const clean = email.toLowerCase().trim();
+    if (clean === 'mizoo2y2@gmail.com') return true;
+    const list = extraEmails || adminEmailsRef.current || [];
+    return list.some((e) => e.toLowerCase().trim() === clean);
+  }, []);
+
+  const isUserAdmin = useCallback(
+    (user: UserProfile | null) => {
+      if (!user) return false;
+      if (user.role === 'teacher') return true;
+      return isEmailAdmin(user.email);
+    },
+    [isEmailAdmin]
+  );
 
   // Sync theme to <html> tag
   useEffect(() => {
@@ -111,120 +172,287 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Keep track of database version for real-time live sync across all tabs & incognito
-  const lastDbVersionRef = useRef<number>(0);
+  // Helper to show transient sync notice
+  const showNotice = useCallback((type: 'success' | 'error' | 'auth_needed', message: string) => {
+    setSyncNotice({ type, message });
+  }, []);
 
-  // Live Sync Engine: Fetches DB from server and updates all connected browsers immediately
-  const syncFromServer = async (initialCheck = false) => {
-    try {
-      const res = await fetch('/api/db');
-      const result = await res.json();
-      if (result.success && result.data) {
-        if (result.version && result.version === lastDbVersionRef.current && !initialCheck) {
-          return; // Database unchanged, avoid re-rendering
-        }
-        if (result.version) {
-          lastDbVersionRef.current = result.version;
-        }
-
-        const dbData = result.data;
-        if (dbData.siteConfig) {
-          setSiteConfig(prev => {
-            // Check if user previously saved a Cloudinary or custom photo in local storage
-            const localSaved = localStorage.getItem('mm_site_config');
-            let localPhoto: string | undefined;
-            if (localSaved) {
-              try {
-                localPhoto = JSON.parse(localSaved)?.profileImageUrl;
-              } catch (e) {}
-            }
-
-            const isServerDefaultPhoto = 
-              !dbData.siteConfig.profileImageUrl || 
-              dbData.siteConfig.profileImageUrl === '/images/teacher_mohamed_mostafa_1794141316649.jpg';
-
-            const localHasCustomPhoto = 
-              (localPhoto && (localPhoto.includes('cloudinary') || localPhoto.startsWith('http') || localPhoto.startsWith('/uploads/'))) ||
-              (prev.profileImageUrl && (prev.profileImageUrl.includes('cloudinary') || prev.profileImageUrl.startsWith('http') || prev.profileImageUrl.startsWith('/uploads/')));
-
-            // If the server has only default photo, but this browser already has the teacher's Cloudinary/uploaded photo:
-            // Push the custom photo up to the server immediately so incognito & other browsers get it!
-            if (isServerDefaultPhoto && localHasCustomPhoto) {
-              const customPhoto = localPhoto || prev.profileImageUrl;
-              const merged = { ...DEFAULT_SITE_CONFIG, ...dbData.siteConfig, profileImageUrl: customPhoto };
-              fetch('/api/site-config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(merged),
-              }).catch(e => console.warn('Sync custom photo to server warning:', e));
-              return merged;
-            }
-
-            return {
-              ...DEFAULT_SITE_CONFIG,
-              ...dbData.siteConfig,
-              profileImageUrl: dbData.siteConfig.profileImageUrl || prev.profileImageUrl,
-            };
-          });
-        }
-
-        if (dbData.cloudinaryConfig) {
-          setCloudinaryConfig(dbData.cloudinaryConfig);
-        }
-        if (Array.isArray(dbData.lectures)) {
-          setLectures(dbData.lectures);
-        }
-        if (Array.isArray(dbData.attachments)) {
-          setAttachments(dbData.attachments);
-        }
-        if (Array.isArray(dbData.quizzes)) {
-          setQuizzes(dbData.quizzes);
-        }
-        if (Array.isArray(dbData.students)) {
-          setStudents(dbData.students);
-        }
-      }
-    } catch (err) {
-      console.warn('API DB connection warning:', err);
-    }
-  };
-
-  // Initial load and continuous real-time live polling (every 2.5s)
   useEffect(() => {
-    syncFromServer(true);
+    if (!syncNotice || syncNotice.type === 'auth_needed') return;
+    const t = setTimeout(() => setSyncNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [syncNotice]);
 
-    // Live polling: Ensures that any change made in any browser/tab appears instantly in incognito and other devices
-    const interval = setInterval(() => {
-      syncFromServer(false);
-    }, 2500);
+  // 1. Firebase Auth Listener: keeps session verified & bootstraps cloud config on first admin login
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      setAuthReady(true);
 
-    // Cross-tab instantaneous sync
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'mm_site_config' && e.newValue) {
-        try {
-          setSiteConfig(JSON.parse(e.newValue));
-        } catch {}
+      if (!fbUser) {
+        setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
+        return;
       }
-      if (e.key === 'mm_lectures' && e.newValue) {
+
+      const email = fbUser.email || '';
+      const isAdmin = isEmailAdmin(email);
+
+      if (isAdmin) {
+        setCurrentUser((prev) => ({
+          id: fbUser.uid,
+          name: siteConfig.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+          email,
+          role: 'teacher',
+          grade: 'third',
+          phone: siteConfig.phone1 || '01002345678',
+          parentPhone: '',
+          avatarUrl: fbUser.photoURL || prev?.avatarUrl || '',
+          score: 0,
+          profileCompleted: true,
+          watchedLectureIds: [],
+          passedQuizIds: [],
+          quizScores: {},
+          joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
+        }));
+
+        // Bootstrap publicConfig/site & adminConfig/settings in Firestore once if they don't exist yet
+        if (!adminBootstrappedRef.current) {
+          adminBootstrappedRef.current = true;
+          try {
+            const [siteSnap, adminSnap] = await Promise.all([
+              getDoc(doc(db, 'publicConfig', 'site')),
+              getDoc(doc(db, 'adminConfig', 'settings')),
+            ]);
+
+            if (!siteSnap.exists()) {
+              await savePublicSiteConfigToCloud({
+                ...siteConfig,
+                profileImageUrl: sanitizeProfileImageUrl(siteConfig.profileImageUrl),
+              });
+            }
+            if (!adminSnap.exists()) {
+              await saveAdminConfigToCloud(
+                siteConfig.adminEmails || ['mizoo2y2@gmail.com'],
+                cloudinaryConfig,
+                siteConfig.googleClientId
+              );
+            }
+          } catch (err) {
+            console.warn('Admin bootstrap warning:', err);
+          }
+        }
+      } else {
+        // Hydrate student profile from Firestore so onboarding & progress persist across all devices
         try {
-          setLectures(JSON.parse(e.newValue));
-        } catch {}
+          const cloudStudent = await getStudentFromCloud(fbUser.uid);
+          if (cloudStudent) {
+            setCurrentUser({
+              ...cloudStudent,
+              avatarUrl: fbUser.photoURL || cloudStudent.avatarUrl || '',
+              profileCompleted: Boolean(cloudStudent.profileCompleted),
+            });
+          } else {
+            setCurrentUser((prev) => {
+              if (prev && prev.id === fbUser.uid) return prev;
+              return {
+                id: fbUser.uid,
+                name: fbUser.displayName || email.split('@')[0] || 'طالب منصة',
+                email,
+                role: 'student',
+                grade: 'third',
+                phone: '',
+                parentPhone: '',
+                governorate: 'القاهرة',
+                avatarUrl: fbUser.photoURL || '',
+                score: 0,
+                profileCompleted: false,
+                watchedLectureIds: [],
+                passedQuizIds: [],
+                quizScores: {},
+                joinedAt: new Date().toISOString().split('T')[0],
+              };
+            });
+          }
+        } catch (err) {
+          console.warn('Student cloud fetch warning:', err);
+        }
       }
-    };
-    window.addEventListener('storage', handleStorage);
+    });
+
+    return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEmailAdmin]);
+
+  // 2. Public Real-Time Firestore Listeners (Active for ALL visitors, logged in or not, incognito, mobile, shared URL)
+  useEffect(() => {
+    const unsubSite = onSnapshot(
+      doc(db, 'publicConfig', 'site'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<SiteConfig>;
+          setSiteConfig((prev) => ({
+            ...DEFAULT_SITE_CONFIG,
+            ...prev,
+            ...data,
+            profileImageUrl: sanitizeProfileImageUrl(data.profileImageUrl ?? ''),
+            adminEmails: prev.adminEmails || DEFAULT_SITE_CONFIG.adminEmails,
+          }));
+        }
+      },
+      (error) => {
+        console.warn('Public siteConfig listener error:', error.message);
+      }
+    );
+
+    const lecturesQuery = query(
+      collection(db, 'lectures'),
+      where('grade', 'in', ['first', 'second', 'third'])
+    );
+    const unsubLectures = onSnapshot(
+      lecturesQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as Lecture);
+        list.sort((a, b) => (a.sessionOrder ?? 9999) - (b.sessionOrder ?? 9999) || (b.dateAdded || '').localeCompare(a.dateAdded || ''));
+        setLectures(list);
+      },
+      (error) => {
+        console.warn('Lectures listener error:', error.message);
+      }
+    );
+
+    const attachmentsQuery = query(
+      collection(db, 'attachments'),
+      where('grade', 'in', ['first', 'second', 'third'])
+    );
+    const unsubAttachments = onSnapshot(
+      attachmentsQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as AttachmentFile);
+        list.sort((a, b) => (b.dateAdded || '').localeCompare(a.dateAdded || ''));
+        setAttachments(list);
+      },
+      (error) => {
+        console.warn('Attachments listener error:', error.message);
+      }
+    );
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', handleStorage);
+      unsubSite();
+      unsubLectures();
+      unsubAttachments();
     };
   }, []);
 
-  // Sync siteConfig to localStorage
+  // 3. Authenticated Real-Time Firestore Listeners (Quizzes, Admin Config, Student Records)
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const unsubscribers: Array<() => void> = [];
+
+    const quizzesQuery = query(
+      collection(db, 'quizzes'),
+      where('grade', 'in', ['first', 'second', 'third'])
+    );
+    unsubscribers.push(
+      onSnapshot(
+        quizzesQuery,
+        (snap) => {
+          const list = snap.docs.map((d) => d.data() as Quiz);
+          setQuizzes(list);
+        },
+        (error) => {
+          console.warn('Quizzes listener error:', error.message);
+        }
+      )
+    );
+
+    const userIsAdmin = isEmailAdmin(firebaseUser.email);
+    const isPrimary = firebaseUser.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com';
+
+    if (userIsAdmin) {
+      unsubscribers.push(
+        onSnapshot(
+          doc(db, 'adminConfig', 'settings'),
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data() as {
+                adminEmails?: string[];
+                cloudName?: string;
+                uploadPreset?: string;
+                googleClientId?: string;
+              };
+              if (data.cloudName && data.uploadPreset) {
+                const nextCloud: CloudinaryConfig = {
+                  cloudName: data.cloudName,
+                  uploadPreset: data.uploadPreset,
+                };
+                setCloudinaryConfig(nextCloud);
+                localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
+              }
+              if (Array.isArray(data.adminEmails) || data.googleClientId) {
+                setSiteConfig((prev) => ({
+                  ...prev,
+                  adminEmails: Array.isArray(data.adminEmails) && data.adminEmails.length > 0 ? data.adminEmails : prev.adminEmails,
+                  googleClientId: data.googleClientId || prev.googleClientId,
+                }));
+              }
+            }
+          },
+          (error) => {
+            console.warn('AdminConfig listener error:', error.message);
+          }
+        )
+      );
+
+      if (isPrimary) {
+        unsubscribers.push(
+          onSnapshot(
+            collection(db, 'students'),
+            (snap) => {
+              const list = snap.docs.map((d) => d.data() as UserProfile);
+              setStudents(list);
+            },
+            (error) => {
+              console.warn('Students admin listener error:', error.message);
+            }
+          )
+        );
+      }
+    } else {
+      const ownStudentQuery = query(
+        collection(db, 'students'),
+        where('uid', '==', firebaseUser.uid)
+      );
+      unsubscribers.push(
+        onSnapshot(
+          ownStudentQuery,
+          (snap) => {
+            if (!snap.empty) {
+              const docData = snap.docs[0].data() as UserProfile;
+              setCurrentUser((prev) => ({
+                ...docData,
+                avatarUrl: prev?.avatarUrl || docData.avatarUrl || '',
+                profileCompleted: Boolean(docData.profileCompleted),
+              }));
+            }
+          },
+          (error) => {
+            console.warn('Own student listener error:', error.message);
+          }
+        )
+      );
+    }
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [firebaseUser, isEmailAdmin]);
+
+  // Persist local cache
   useEffect(() => {
     localStorage.setItem('mm_site_config', JSON.stringify(siteConfig));
   }, [siteConfig]);
 
-  // Sync state to localStorage
   useEffect(() => {
     localStorage.setItem('mm_lectures', JSON.stringify(lectures));
   }, [lectures]);
@@ -249,16 +477,7 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Admin permission evaluator (Primary owner mizoo2y2@gmail.com + any added co-admins)
-  const isUserAdmin = (user: UserProfile | null) => {
-    if (!user) return false;
-    if (user.role === 'teacher') return true;
-    const email = user.email?.toLowerCase().trim();
-    if (email === 'mizoo2y2@gmail.com') return true;
-    return Boolean(email && (siteConfig.adminEmails || []).some(e => e.toLowerCase().trim() === email));
-  };
-
-  // Strict route guard: strictly lock student and teacher portals without login
+  // Strict route guard: lock student & teacher portals without login
   useEffect(() => {
     if (currentView === 'teacher' && !isUserAdmin(currentUser)) {
       setCurrentView('landing');
@@ -267,12 +486,50 @@ export default function App() {
       setCurrentView('landing');
       setLoginModalOpen(true);
     }
-  }, [currentView, currentUser, siteConfig.adminEmails]);
+  }, [currentView, currentUser, isUserAdmin]);
+
+  // Prompt Google sign-in if teacher session lacks live Firebase Auth token
+  const handleQuickAdminGoogleSignIn = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const email = result.user.email || '';
+      if (isEmailAdmin(email)) {
+        setSyncNotice(null);
+        showNotice('success', 'تم تفعيل الاتصال السحابي بنجاح! يمكنك الآن الحفظ وسيرى التعديل جميع المستخدمين فوراً.');
+      } else {
+        showNotice('error', 'هذا البريد غير مسجل كمشرف في المنصة.');
+      }
+    } catch {
+      showNotice('error', 'تعذر تسجيل الدخول بحساب Google، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
+    }
+  };
+
+  // Run an admin cloud operation safely
+  const executeAdminCloudWrite = async (action: () => Promise<void>, successMsg?: string) => {
+    if (!auth.currentUser || !isEmailAdmin(auth.currentUser.email)) {
+      showNotice(
+        'auth_needed',
+        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، يرجى تأكيد الدخول بحساب المشرف (Google).'
+      );
+      return false;
+    }
+    try {
+      await action();
+      if (successMsg) {
+        showNotice('success', successMsg);
+      }
+      return true;
+    } catch (err) {
+      console.error('Cloud write error:', err);
+      showNotice('error', 'حدث خطأ أثناء الحفظ في السحابة، يرجى التحقق من الاتصال والصلاحيات.');
+      return false;
+    }
+  };
 
   // Centralized navigation guard
   const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
     if (view === 'teacher') {
-      if (!isUserAdmin(currentUser)) {
+      if (!isUserAdmin(currentUser) || (authReady && !firebaseUser)) {
         setLoginModalOpen(true);
         return;
       }
@@ -291,7 +548,7 @@ export default function App() {
   };
 
   const handleToggleTheme = () => {
-    setDarkMode(prev => !prev);
+    setDarkMode((prev) => !prev);
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
@@ -304,27 +561,24 @@ export default function App() {
       return;
     }
 
-    // Check if this student has previously completed their profile in DB or local list
-    const query = user.email || user.id || user.phone || '';
-    let matched: UserProfile | undefined = students.find(s => 
-      (user.id && s.id === user.id) || 
-      (user.email && s.email && s.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
-      (user.phone && s.phone && s.phone === user.phone)
+    // Lookup existing student record (Firestore if Firebase signed in, else local)
+    let matched: UserProfile | undefined = students.find(
+      (s) =>
+        (user.id && s.id === user.id) ||
+        (user.email && s.email && s.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
+        (user.phone && s.phone && s.phone === user.phone)
     );
 
-    if (!matched && query) {
+    if (!matched && auth.currentUser) {
       try {
-        const res = await fetch(`/api/students/lookup?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        if (data && data.found && data.student) {
-          matched = data.student;
-        }
+        const cloudStudent = await getStudentFromCloud(auth.currentUser.uid);
+        if (cloudStudent) matched = cloudStudent;
       } catch (e) {
-        console.warn('Student DB lookup error:', e);
+        console.warn('Cloud student lookup error:', e);
       }
     }
 
-    const isMarkedDone = 
+    const isMarkedDone =
       Boolean(user.profileCompleted) ||
       Boolean(matched?.profileCompleted) ||
       Boolean(user.email && localStorage.getItem(`mm_profile_done_${user.email.toLowerCase().trim()}`) === 'true') ||
@@ -344,18 +598,16 @@ export default function App() {
 
     setCurrentUser(finalUser);
 
-    // If profile already done, sync it immediately to server DB
-    if (finalUser.profileCompleted) {
-      fetch('/api/students/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalUser),
-      }).catch(err => console.warn('Save student DB error:', err));
+    if (finalUser.profileCompleted && auth.currentUser && auth.currentUser.emailVerified) {
+      saveStudentToCloud(finalUser, auth.currentUser.uid).catch((err) =>
+        console.warn('Cloud student save warning:', err)
+      );
     }
 
-    // Also register/update in student list
-    setStudents(prev => {
-      const existsIdx = prev.findIndex(s => s.id === finalUser.id || (finalUser.email && s.email === finalUser.email));
+    setStudents((prev) => {
+      const existsIdx = prev.findIndex(
+        (s) => s.id === finalUser.id || (finalUser.email && s.email === finalUser.email)
+      );
       if (existsIdx >= 0) {
         const copy = [...prev];
         copy[existsIdx] = finalUser;
@@ -368,84 +620,75 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    signOut(auth).catch((e) => console.warn('Sign out warning:', e));
     setCurrentUser(null);
     setCurrentView('landing');
   };
 
   const handleAddLecture = (newLec: Lecture) => {
-    setLectures(prev => [newLec, ...prev]);
-    fetch('/api/lectures', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLec),
-    }).catch(err => console.warn('Add lecture API error:', err));
+    setLectures((prev) => [newLec, ...prev]);
+    executeAdminCloudWrite(() => saveLectureToCloud(newLec));
   };
 
   const handleDeleteLecture = (id: string) => {
-    setLectures(prev => prev.filter(l => l.id !== id));
-    fetch(`/api/lectures/${id}`, {
-      method: 'DELETE',
-    }).catch(err => console.warn('Delete lecture API error:', err));
+    setLectures((prev) => prev.filter((l) => l.id !== id));
+    executeAdminCloudWrite(() => deleteLectureFromCloud(id));
   };
 
   const handleUpdateLecture = (updated: Lecture) => {
-    setLectures(prev => prev.map(l => l.id === updated.id ? updated : l));
-    fetch('/api/lectures', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).catch(err => console.warn('Update lecture API error:', err));
+    setLectures((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    executeAdminCloudWrite(() => saveLectureToCloud(updated));
   };
 
   const handleAddAttachment = (newFile: AttachmentFile) => {
-    setAttachments(prev => [newFile, ...prev]);
-    fetch('/api/attachments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newFile),
-    }).catch(err => console.warn('Add attachment API error:', err));
+    setAttachments((prev) => [newFile, ...prev]);
+    executeAdminCloudWrite(() => saveAttachmentToCloud(newFile));
   };
 
   const handleDeleteAttachment = (id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id));
-    fetch(`/api/attachments/${id}`, {
-      method: 'DELETE',
-    }).catch(err => console.warn('Delete attachment API error:', err));
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    executeAdminCloudWrite(() => deleteAttachmentFromCloud(id));
   };
 
   const handleAddQuiz = (newQuiz: Quiz) => {
-    setQuizzes(prev => [newQuiz, ...prev]);
-    fetch('/api/quizzes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newQuiz),
-    }).catch(err => console.warn('Add quiz API error:', err));
+    setQuizzes((prev) => [newQuiz, ...prev]);
+    executeAdminCloudWrite(() => saveQuizToCloud(newQuiz));
   };
 
   const handleDeleteQuiz = (id: string) => {
-    setQuizzes(prev => prev.filter(q => q.id !== id));
-    fetch(`/api/quizzes/${id}`, {
-      method: 'DELETE',
-    }).catch(err => console.warn('Delete quiz API error:', err));
+    setQuizzes((prev) => prev.filter((q) => q.id !== id));
+    executeAdminCloudWrite(() => deleteQuizFromCloud(id));
   };
 
   const handleAdminDeleteStudent = (studentId: string) => {
-    setStudents(prev => prev.filter(s => s.id !== studentId));
-    fetch(`/api/students/${studentId}`, {
-      method: 'DELETE',
-    }).catch(err => console.warn('Delete student API error:', err));
+    setStudents((prev) => prev.filter((s) => s.id !== studentId));
+    executeAdminCloudWrite(() => deleteStudentFromCloud(studentId));
   };
 
   const handleAdminAddStudent = (student: UserProfile) => {
-    setStudents(prev => [student, ...prev]);
-    fetch('/api/students/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(student),
-    }).catch(err => console.warn('Add student API error:', err));
+    setStudents((prev) => [student, ...prev]);
+    executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+  };
+
+  const handleAdminUpdateStudent = (student: UserProfile) => {
+    setStudents((prev) => {
+      const idx = prev.findIndex((s) => s.id === student.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = student;
+        return copy;
+      }
+      return [student, ...prev];
+    });
+    executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
   };
 
   const handleResetAllData = () => {
+    const lecIds = lectures.map((l) => l.id);
+    const attIds = attachments.map((a) => a.id);
+    const quizIds = quizzes.map((q) => q.id);
+    const stuIds = students.map((s) => s.id);
+
     setLectures([]);
     setAttachments([]);
     setQuizzes([]);
@@ -454,21 +697,26 @@ export default function App() {
     localStorage.setItem('mm_attachments', JSON.stringify([]));
     localStorage.setItem('mm_quizzes', JSON.stringify([]));
     localStorage.setItem('mm_registered_students', JSON.stringify([]));
-    fetch('/api/reset-data', {
-      method: 'POST',
-    }).catch(err => console.warn('Reset data API error:', err));
+
+    executeAdminCloudWrite(async () => {
+      await Promise.all([
+        ...lecIds.map((id) => deleteLectureFromCloud(id)),
+        ...attIds.map((id) => deleteAttachmentFromCloud(id)),
+        ...quizIds.map((id) => deleteQuizFromCloud(id)),
+        ...stuIds.map((id) => deleteStudentFromCloud(id)),
+      ]);
+    }, 'تم تصفير كافة الدروس والملفات والامتحانات في السحابة بنجاح.');
   };
 
   const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
     const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
     setCurrentUser(finalized);
 
-    // Permanently remember that this student completed their profile across all devices
-    fetch('/api/students/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(finalized),
-    }).catch(err => console.warn('Save student profile DB error:', err));
+    if (auth.currentUser && auth.currentUser.emailVerified && (auth.currentUser.uid === finalized.id || isUserAdmin(currentUser))) {
+      saveStudentToCloud(finalized, auth.currentUser.uid).catch((err) =>
+        console.warn('Cloud student profile save warning:', err)
+      );
+    }
 
     if (finalized.email) {
       localStorage.setItem(`mm_profile_done_${finalized.email.toLowerCase().trim()}`, 'true');
@@ -480,36 +728,43 @@ export default function App() {
       localStorage.setItem(`mm_profile_done_${finalized.phone.trim()}`, 'true');
     }
 
-    setStudents(prev => {
-      const idx = prev.findIndex(s => s.id === finalized.id || (finalized.email && s.email === finalized.email));
+    setStudents((prev) => {
+      const idx = prev.findIndex(
+        (s) => s.id === finalized.id || (finalized.email && s.email === finalized.email)
+      );
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = finalized;
         return copy;
-      } else {
-        return [finalized, ...prev];
       }
+      return [finalized, ...prev];
     });
   };
 
   const handleSaveCloudinaryConfig = (config: CloudinaryConfig) => {
     setCloudinaryConfig(config);
     localStorage.setItem('mm_cloudinary', JSON.stringify(config));
-    fetch('/api/cloudinary-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    }).catch(err => console.warn('Save cloudinary config API error:', err));
+    executeAdminCloudWrite(
+      () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config, siteConfig.googleClientId),
+      'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
+    );
   };
 
   const handleSaveSiteConfig = (newConfig: SiteConfig) => {
-    setSiteConfig(newConfig);
-    localStorage.setItem('mm_site_config', JSON.stringify(newConfig));
-    fetch('/api/site-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newConfig),
-    }).catch(err => console.warn('Save site config API error:', err));
+    const sanitized: SiteConfig = {
+      ...newConfig,
+      profileImageUrl: sanitizeProfileImageUrl(newConfig.profileImageUrl),
+    };
+    setSiteConfig(sanitized);
+    localStorage.setItem('mm_site_config', JSON.stringify(sanitized));
+    executeAdminCloudWrite(async () => {
+      await savePublicSiteConfigToCloud(sanitized);
+      await saveAdminConfigToCloud(
+        sanitized.adminEmails || ['mizoo2y2@gmail.com'],
+        cloudinaryConfig,
+        sanitized.googleClientId
+      );
+    }, 'تم نشر التعديلات مباشرة للجميع.');
   };
 
   const handleScrollToSection = (sectionId: string) => {
@@ -530,28 +785,68 @@ export default function App() {
       setLoginModalOpen(true);
       return;
     }
-    handleUpdateStudentProfile({
-      ...currentUser,
-      grade: grade,
-    });
+    if (currentUser.profileCompleted) {
+      handleUpdateStudentProfile({
+        ...currentUser,
+        grade,
+      });
+    } else {
+      setCurrentUser({
+        ...currentUser,
+        grade,
+      });
+    }
     setCurrentView('student');
   };
 
   // Check if onboarding is needed
   const shouldShowOnboarding = Boolean(
-    currentUser && 
-    currentUser.role !== 'teacher' && 
-    !currentUser.profileCompleted
+    currentUser &&
+      currentUser.role !== 'teacher' &&
+      !currentUser.profileCompleted
   );
 
-  // Dynamic body font class
   const getBodyFontClass = () => {
+    if (siteConfig.bodyFont === 'Tajawal') return 'font-sans';
     return 'font-cairo';
   };
 
   return (
     <div className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}>
-      
+      {/* Non-blocking Cloud Sync / Admin Verification Notice */}
+      {syncNotice && (
+        <div
+          dir="rtl"
+          className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[100] p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex flex-col gap-2.5 animate-fade-in ${
+            syncNotice.type === 'success'
+              ? 'bg-emerald-900/95 border-emerald-500/40 text-white'
+              : syncNotice.type === 'auth_needed'
+              ? 'bg-amber-950/95 border-amber-500/50 text-amber-50'
+              : 'bg-rose-950/95 border-rose-500/50 text-rose-50'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs sm:text-sm font-bold leading-relaxed font-sans">{syncNotice.message}</p>
+            <button
+              type="button"
+              onClick={() => setSyncNotice(null)}
+              className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 shrink-0 cursor-pointer"
+            >
+              إغلاق
+            </button>
+          </div>
+          {syncNotice.type === 'auth_needed' && (
+            <button
+              type="button"
+              onClick={handleQuickAdminGoogleSignIn}
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-kufi transition-colors cursor-pointer"
+            >
+              تسجيل الدخول بحساب Google للمشرف الآن
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Top Navbar */}
       <Navbar
         siteConfig={siteConfig}
@@ -624,7 +919,7 @@ export default function App() {
             onAddQuiz={handleAddQuiz}
             onDeleteQuiz={handleDeleteQuiz}
             students={students}
-            onUpdateStudent={handleUpdateStudentProfile}
+            onUpdateStudent={handleAdminUpdateStudent}
             onDeleteStudent={handleAdminDeleteStudent}
             onAddStudent={handleAdminAddStudent}
             cloudinaryConfig={cloudinaryConfig}
@@ -668,7 +963,7 @@ export default function App() {
         onUpdateGoogleClientId={(id) => handleSaveSiteConfig({ ...siteConfig, googleClientId: id })}
       />
 
-      {/* Student Onboarding & Data Completion Modal (Mandatory on student login with zero mock data) */}
+      {/* Student Onboarding & Data Completion Modal */}
       {currentUser && (
         <StudentOnboardingModal
           isOpen={shouldShowOnboarding}
@@ -685,7 +980,7 @@ export default function App() {
         onSaveSiteConfig={handleSaveSiteConfig}
         cloudinaryConfig={cloudinaryConfig}
       />
-
     </div>
   );
 }
+

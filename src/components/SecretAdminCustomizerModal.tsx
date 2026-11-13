@@ -31,6 +31,10 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  React.useEffect(() => {
+    setFormData(siteConfig);
+  }, [siteConfig]);
+
   if (!isOpen) return null;
 
   const handlePinSubmit = (e: React.FormEvent) => {
@@ -338,11 +342,11 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                   {/* Preview container */}
                   <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-[#fafffb] dark:bg-slate-800/60">
                     <img
-                      src={formData.profileImageUrl}
+                      src={formData.profileImageUrl || '/images/teacher_placeholder.svg'}
                       alt="معاينة الصورة"
                       className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
                       onError={(e) => {
-                        e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg';
+                        e.currentTarget.src = '/images/teacher_placeholder.svg';
                       }}
                     />
                     <div className="space-y-1">

@@ -86,6 +86,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [uploadPreset, setUploadPreset] = useState(cloudinaryConfig.uploadPreset || 'chemistry_uploads');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
+  React.useEffect(() => {
+    setCloudName(cloudinaryConfig.cloudName || 'chemistry-egypt');
+    setUploadPreset(cloudinaryConfig.uploadPreset || 'chemistry_uploads');
+  }, [cloudinaryConfig]);
+
   // Cloudinary device video upload state
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
@@ -635,10 +640,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="p-3 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/60 dark:border-teal-900/40 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-teal-600 shrink-0 border border-teal-400/40">
                 <img
-                  src={siteForm.profileImageUrl?.replace('/src/assets/images/', '/images/') || '/images/teacher_mohamed_mostafa_1794141316649.jpg'}
+                  src={siteForm.profileImageUrl || '/images/teacher_placeholder.svg'}
                   alt={siteForm.teacherName}
                   className="w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg'; }}
+                  onError={(e) => { e.currentTarget.src = '/images/teacher_placeholder.svg'; }}
                 />
               </div>
               <div className="min-w-0">
@@ -2788,20 +2793,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         type="text"
                         value={siteForm.profileImageUrl}
                         onChange={(e) => setSiteForm({ ...siteForm, profileImageUrl: e.target.value })}
-                        placeholder="https://res.cloudinary.com/... أو /images/teacher_mohamed_mostafa_1794141316649.jpg"
+                        placeholder="https://res.cloudinary.com/..."
                         className="flex-1 p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono dir-ltr"
                       />
                       <button
                         type="button"
                         onClick={() => {
                           onSaveSiteConfig({ ...siteConfig, profileImageUrl: siteForm.profileImageUrl });
-                          setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ على السيرفر لجميع المتصفحات فورياً! ☁️' });
+                          setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ في السحابة لجميع المستخدمين فورياً! ☁️' });
                         }}
-                        className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm"
+                        className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
                       >
                         <Check className="w-4 h-4" />
-                        <span>تثبيت الرابط للسيرفر الآن</span>
+                        <span>حفظ وتثبيت للجميع الآن</span>
                       </button>
+                      {siteForm.profileImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSiteForm({ ...siteForm, profileImageUrl: '' });
+                            onSaveSiteConfig({ ...siteConfig, profileImageUrl: '' });
+                            setAdminNotice({ type: 'success', message: 'تم مسح صورة الأستاذ القديمة من المنصة بالكامل.' });
+                          }}
+                          className="px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>مسح الصورة</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2826,11 +2845,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {/* Preview container */}
                   <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-[#fafffb] dark:bg-slate-800/60">
                     <img
-                      src={siteForm.profileImageUrl}
+                      src={siteForm.profileImageUrl || '/images/teacher_placeholder.svg'}
                       alt="معاينة الصورة"
                       className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
                       onError={(e) => {
-                        e.currentTarget.src = '/images/teacher_mohamed_mostafa_1794141316649.jpg';
+                        e.currentTarget.src = '/images/teacher_placeholder.svg';
                       }}
                     />
                     <div className="space-y-1">

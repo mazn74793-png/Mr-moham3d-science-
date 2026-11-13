@@ -61,7 +61,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   tagline: 'Senior Chemistry & Science Educator · خبير الكيمياء والعلوم لمدارس اللغات والتجريبي',
   heroDescription: 'مع مستر محمد مصطفى دراسة الـ Chemistry & Science بأسلوب تفاعلي حديث يجمع بين الفهم الدقيق والتدريب المستمر على نمط الامتحانات لطلاب مدارس اللغات والتجريبي دفعة 2026.',
   heroBadge: 'Chemistry & Science · Experimental & Language Schools 2026',
-  profileImageUrl: '/images/teacher_placeholder.svg',
+  profileImageUrl: '',
   calligraphyFont: 'Cairo',
   bodyFont: 'Cairo',
   primaryColor: '#0d9488',

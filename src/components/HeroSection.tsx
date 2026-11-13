@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom, Camera } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
-import defaultTeacherPhoto from '../assets/images/teacher_mohamed_mostafa_1794141316649.jpg';
 
 interface HeroSectionProps {
   siteConfig: SiteConfig;
@@ -19,28 +18,26 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   const ActionArrow = isRtl ? ArrowLeft : ArrowRight;
 
-  const resolveInitialImage = () => {
-    const raw = siteConfig.profileImageUrl;
-    if (raw && (raw.includes('cloudinary') || raw.startsWith('http') || raw.startsWith('/uploads/'))) {
-      return raw;
+  const isValidCustomImage = (raw?: string) => {
+    if (!raw) return false;
+    const trimmed = raw.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes('teacher_mohamed_mostafa') || trimmed.includes('teacher_placeholder') || trimmed.includes('/src/assets/')) {
+      return false;
     }
-    if (!raw || raw.includes('/src/assets/')) {
-      return defaultTeacherPhoto;
-    }
-    return raw;
+    return trimmed.startsWith('http') || trimmed.startsWith('/uploads/') || trimmed.startsWith('data:');
   };
 
-  const [imgSrc, setImgSrc] = useState<string>(resolveInitialImage);
+  const [imgSrc, setImgSrc] = useState<string>(() => (isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : ''));
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
-    setImgSrc(resolveInitialImage());
+    setImgError(false);
+    setImgSrc(isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : '');
   }, [siteConfig.profileImageUrl]);
 
   const handleImageError = () => {
-    const isCustom = siteConfig.profileImageUrl?.includes('cloudinary') || siteConfig.profileImageUrl?.startsWith('/uploads/');
-    if (imgSrc !== defaultTeacherPhoto && !isCustom) {
-      setImgSrc(defaultTeacherPhoto);
-    }
+    setImgError(true);
   };
 
   return (
@@ -147,27 +144,48 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
           </div>
 
-          {/* Cutout Photo Column (Completely transparent background) */}
+          {/* Teacher Photo Column */}
           <div className="lg:col-span-5 flex justify-center lg:justify-end animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             <div className="relative w-full max-w-sm sm:max-w-md flex flex-col items-center">
               
-              {/* Soft atmospheric radial glow behind the transparent cutout image */}
+              {/* Soft atmospheric radial glow */}
               <div className="absolute inset-0 bg-gradient-to-t from-teal-500/25 via-teal-400/10 to-amber-400/10 rounded-full blur-3xl pointer-events-none animate-glow-pulse -z-10" />
 
-              {/* Floating Orbit Atom Ring in the background */}
+              {/* Floating Orbit Atom Ring */}
               <div className="absolute -top-6 -right-6 w-20 h-20 text-teal-500/20 dark:text-teal-400/20 pointer-events-none animate-float-slow">
                 <Atom className="w-full h-full animate-orbit" />
               </div>
 
-              {/* Pure Transparent Image Wrapper (Zero border, zero solid box) */}
+              {/* Image or Clean Educator Crest Placeholder */}
               <div className="relative w-full flex items-center justify-center group">
-                <img
-                  src={imgSrc}
-                  alt={siteConfig.teacherName}
-                  className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer"
-                  referrerPolicy="no-referrer"
-                  onError={handleImageError}
-                />
+                {imgSrc && !imgError ? (
+                  <img
+                    src={imgSrc}
+                    alt={siteConfig.teacherName}
+                    className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer rounded-3xl"
+                    referrerPolicy="no-referrer"
+                    onError={handleImageError}
+                  />
+                ) : (
+                  <div className="w-full aspect-[3/4] max-h-[460px] rounded-3xl bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 border-2 border-teal-500/30 shadow-2xl flex flex-col items-center justify-center p-8 text-center space-y-5 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(20,184,166,0.22),transparent_65%)]" />
+                    <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center font-extrabold text-3xl font-mono shadow-xl border border-teal-300/40 relative z-10">
+                      M.M
+                    </div>
+                    <div className="space-y-1.5 relative z-10">
+                      <div className="text-xl font-extrabold text-white">
+                        {lang === 'en' ? 'Mr. Mohamed Mostafa' : `أ/ ${siteConfig.teacherName}`}
+                      </div>
+                      <div className="text-xs text-teal-300 font-semibold">
+                        Senior Chemistry & Science Educator
+                      </div>
+                    </div>
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-teal-100 text-xs font-semibold relative z-10">
+                      <Camera className="w-4 h-4 text-amber-400" />
+                      <span>{lang === 'en' ? 'Upload Educator Photo via Cloudinary' : 'في انتظار رفع صورة الأستاذ من Cloudinary'}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Elegant Glass Floating Badge for the Teacher */}
                 <div className="absolute bottom-4 backdrop-blur-md bg-white/90 dark:bg-slate-900/90 border border-teal-200/60 dark:border-teal-700/50 rounded-2xl px-4 py-2.5 shadow-xl shadow-teal-900/10 flex items-center gap-3 transition-transform duration-300 group-hover:-translate-y-1">

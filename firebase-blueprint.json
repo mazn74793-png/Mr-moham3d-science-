@@ -1,0 +1,182 @@
+{
+  "entities": {
+    "SiteConfig": {
+      "title": "SiteConfig",
+      "description": "Public platform settings, branding, teacher Cloudinary photo URL, hero text, academic years, features, and footer details synced in real time to all visitors.",
+      "type": "object",
+      "properties": {
+        "teacherName": { "type": "string", "maxLength": 150 },
+        "teacherTitle": { "type": "string", "maxLength": 150 },
+        "tagline": { "type": "string", "maxLength": 300 },
+        "heroDescription": { "type": "string", "maxLength": 2000 },
+        "heroBadge": { "type": "string", "maxLength": 200 },
+        "profileImageUrl": { "type": "string", "maxLength": 2000 },
+        "calligraphyFont": { "type": "string", "enum": ["Reem Kufi", "Aref Ruqaa", "Amiri", "Cairo"] },
+        "bodyFont": { "type": "string", "enum": ["Cairo", "Tajawal", "Almarai"] },
+        "primaryColor": { "type": "string", "maxLength": 30 },
+        "phone1": { "type": "string", "maxLength": 50 },
+        "phone2": { "type": "string", "maxLength": 50 },
+        "whatsappNumber": { "type": "string", "maxLength": 50 },
+        "facebookUrl": { "type": "string", "maxLength": 500 },
+        "youtubeUrl": { "type": "string", "maxLength": 500 },
+        "telegramUrl": { "type": "string", "maxLength": 500 },
+        "centerBranches": { "type": "string", "maxLength": 1000 },
+        "developerName": { "type": "string", "maxLength": 150 },
+        "developerHandle": { "type": "string", "maxLength": 150 },
+        "developerUrl": { "type": "string", "maxLength": 500 },
+        "footerBio": { "type": "string", "maxLength": 2000 },
+        "footerQuickLinks": { "type": "array", "description": "Up to 20 footer quick links" },
+        "gradeFirstTitleAr": { "type": "string", "maxLength": 200 },
+        "gradeFirstTitleEn": { "type": "string", "maxLength": 200 },
+        "gradeFirstBadgeAr": { "type": "string", "maxLength": 150 },
+        "gradeFirstDescAr": { "type": "string", "maxLength": 1000 },
+        "gradeSecondTitleAr": { "type": "string", "maxLength": 200 },
+        "gradeSecondTitleEn": { "type": "string", "maxLength": 200 },
+        "gradeSecondBadgeAr": { "type": "string", "maxLength": 150 },
+        "gradeSecondDescAr": { "type": "string", "maxLength": 1000 },
+        "gradeThirdTitleAr": { "type": "string", "maxLength": 200 },
+        "gradeThirdTitleEn": { "type": "string", "maxLength": 200 },
+        "gradeThirdBadgeAr": { "type": "string", "maxLength": 150 },
+        "gradeThirdDescAr": { "type": "string", "maxLength": 1000 },
+        "feature1Title": { "type": "string", "maxLength": 200 },
+        "feature1Desc": { "type": "string", "maxLength": 1000 },
+        "feature2Title": { "type": "string", "maxLength": 200 },
+        "feature2Desc": { "type": "string", "maxLength": 1000 },
+        "feature3Title": { "type": "string", "maxLength": 200 },
+        "feature3Desc": { "type": "string", "maxLength": 1000 },
+        "feature4Title": { "type": "string", "maxLength": 200 },
+        "feature4Desc": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["teacherName", "teacherTitle", "profileImageUrl", "updatedAt"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Protected admin access list and Cloudinary upload configuration.",
+      "type": "object",
+      "properties": {
+        "adminEmails": { "type": "array", "description": "Up to 25 authorized admin emails" },
+        "cloudName": { "type": "string", "maxLength": 150 },
+        "uploadPreset": { "type": "string", "maxLength": 150 },
+        "googleClientId": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminEmails", "cloudName", "uploadPreset", "updatedAt"]
+    },
+    "Lecture": {
+      "title": "Lecture",
+      "description": "Course lecture session with video URL, thumbnail, grade level, and chapter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 300 },
+        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "gradeLabel": { "type": "string", "maxLength": 150 },
+        "chapter": { "type": "string", "maxLength": 250 },
+        "duration": { "type": "string", "maxLength": 100 },
+        "videoUrl": { "type": "string", "maxLength": 2000 },
+        "thumbnailUrl": { "type": "string", "maxLength": 2000 },
+        "pdfUrl": { "type": "string", "maxLength": 2000 },
+        "pdfTitle": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "isFreePreview": { "type": "boolean" },
+        "viewsCount": { "type": "number" },
+        "dateAdded": { "type": "string", "maxLength": 50 },
+        "sessionOrder": { "type": "number" },
+        "quizId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "grade", "gradeLabel", "chapter", "duration", "videoUrl", "thumbnailUrl", "description", "isFreePreview", "viewsCount", "dateAdded", "createdAt", "updatedAt"]
+    },
+    "AttachmentFile": {
+      "title": "AttachmentFile",
+      "description": "PDF handout, notes, or image attachment uploaded by admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 300 },
+        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "gradeLabel": { "type": "string", "maxLength": 150 },
+        "chapter": { "type": "string", "maxLength": 250 },
+        "fileSize": { "type": "string", "maxLength": 50 },
+        "fileType": { "type": "string", "enum": ["pdf", "doc", "image"] },
+        "downloadUrl": { "type": "string", "maxLength": 2000 },
+        "pageCount": { "type": "number" },
+        "dateAdded": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "grade", "gradeLabel", "chapter", "fileSize", "fileType", "downloadUrl", "dateAdded", "createdAt", "updatedAt"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Interactive chemistry quiz linked to grade/lecture.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 300 },
+        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "chapter": { "type": "string", "maxLength": 250 },
+        "durationMinutes": { "type": "number" },
+        "lectureId": { "type": "string", "maxLength": 128 },
+        "questions": { "type": "array", "description": "Up to 200 quiz questions" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "grade", "chapter", "durationMinutes", "questions", "createdAt", "updatedAt"]
+    },
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Private student profile containing PII (phone, parentPhone, email) and academic progress.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "enum": ["student", "teacher"] },
+        "grade": { "type": "string", "enum": ["first", "second", "third"] },
+        "phone": { "type": "string", "maxLength": 50 },
+        "parentPhone": { "type": "string", "maxLength": 50 },
+        "governorate": { "type": "string", "maxLength": 150 },
+        "avatarUrl": { "type": "string", "maxLength": 2000 },
+        "score": { "type": "number" },
+        "profileCompleted": { "type": "boolean" },
+        "watchedLectureIds": { "type": "array", "description": "Up to 500 watched lecture IDs" },
+        "passedQuizIds": { "type": "array", "description": "Up to 500 passed quiz IDs" },
+        "quizScores": { "type": "object" },
+        "joinedAt": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "name", "role", "phone", "profileCompleted", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/publicConfig/{docId}": {
+      "schema": { "$ref": "#/entities/SiteConfig" },
+      "description": "Public site configuration document (docId='site') readable by all visitors for live updates."
+    },
+    "/adminConfig/{docId}": {
+      "schema": { "$ref": "#/entities/AdminConfig" },
+      "description": "Admin access & Cloudinary settings (docId='settings')."
+    },
+    "/lectures/{lectureId}": {
+      "schema": { "$ref": "#/entities/Lecture" },
+      "description": "Lectures catalog readable by all users and managed by admins."
+    },
+    "/attachments/{attachmentId}": {
+      "schema": { "$ref": "#/entities/AttachmentFile" },
+      "description": "PDF handouts & files catalog."
+    },
+    "/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Quizzes bank."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Private student profiles strictly isolated by owner UID or admin."
+    }
+  }
+}

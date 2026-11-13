@@ -26,7 +26,7 @@ const DEFAULT_SITE_CONFIG = {
   tagline: 'كيمياء ولغات · دفعة 2026',
   heroDescription: 'المنصة التعليمية الأولى المتخصصة في تدريس الكيمياء والعلوم لمدارس اللغات والتجريبي وفق أحدث معايير الامتحانات الحديثة 2026.',
   heroBadge: 'دفعة 2026 · مدارس اللغات والتجريبي',
-  profileImageUrl: '/images/teacher_mohamed_mostafa_1794141316649.jpg',
+  profileImageUrl: '',
   calligraphyFont: 'Cairo',
   bodyFont: 'Cairo',
   primaryColor: '#0d9488',
