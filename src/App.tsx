@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { onAuthStateChanged, signOut, signInWithPopup, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signOut, signInWithPopup, signInWithRedirect, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
@@ -138,6 +138,7 @@ export default function App() {
   });
 
   const adminBootstrappedRef = useRef(false);
+  const pendingAdminActionRef = useRef<(() => Promise<void>) | null>(null);
   const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
   useEffect(() => {
     adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
@@ -500,22 +501,39 @@ export default function App() {
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email || '';
       if (isEmailAdmin(email)) {
-        setSyncNotice(null);
-        showNotice('success', 'تم تفعيل الاتصال السحابي بنجاح! يمكنك الآن الحفظ وسيرى التعديل جميع المستخدمين فوراً.');
+        if (pendingAdminActionRef.current) {
+          const pending = pendingAdminActionRef.current;
+          pendingAdminActionRef.current = null;
+          await pending();
+        }
+        showNotice('success', 'تم تفعيل الاتصال السحابي وحفظ التعديلات للجميع بنجاح!');
       } else {
         showNotice('error', 'هذا البريد غير مسجل كمشرف في المنصة.');
       }
-    } catch {
-      showNotice('error', 'تعذر تسجيل الدخول بحساب Google، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch {}
+      }
+      showNotice(
+        'error',
+        code === 'auth/unauthorized-domain'
+          ? `النطاق (${window.location.hostname}) غير مضاف في Authorized domains بمشروع Firebase.`
+          : `تعذر تأكيد دخول المشرف (${code || 'popup'}). يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.`
+      );
     }
   };
 
   // Run an admin cloud operation safely
   const executeAdminCloudWrite = async (action: () => Promise<void>, successMsg?: string) => {
     if (!auth.currentUser || !isEmailAdmin(auth.currentUser.email)) {
+      pendingAdminActionRef.current = action;
       showNotice(
         'auth_needed',
-        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، يرجى تأكيد الدخول بحساب المشرف (Google).'
+        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، اضغط على الزر بالأسفل لتأكيد حساب المشرف.'
       );
       return false;
     }
@@ -723,6 +741,12 @@ export default function App() {
       saveStudentToCloud(finalized, auth.currentUser.uid).catch((err) =>
         console.warn('Cloud student profile save warning:', err)
       );
+    } else {
+      fetch('/api/students/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalized),
+      }).catch(() => {});
     }
 
     if (finalized.email) {
