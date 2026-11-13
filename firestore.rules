@@ -221,10 +221,10 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(attachmentId);
     }
 
-    // Quizzes bank (Authenticated students and admins)
+    // Quizzes curriculum bank (readable by grade; writable only by verified admins)
     match /quizzes/{quizId} {
-      allow get: if isSignedIn() && isValidId(quizId);
-      allow list: if isSignedIn() && resource.data.grade in ['first', 'second', 'third'];
+      allow get: if isValidId(quizId);
+      allow list: if resource.data.grade in ['first', 'second', 'third'];
       allow create: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == quizId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(quizId);

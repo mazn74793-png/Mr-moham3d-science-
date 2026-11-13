@@ -4,8 +4,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig } from '../types/siteConfig';
-import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
-import { auth, googleProvider, getStudentFromCloud } from '../firebase';
+import { auth, getStudentFromCloud } from '../firebase';
 
 declare global {
   interface Window {
@@ -94,9 +93,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     return Boolean(record?.profileCompleted);
   };
 
-  // Google Auth loading & fallback state
+  // Google Auth loading state
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [showGoogleFallback, setShowGoogleFallback] = useState(false);
 
   // Shared user resolution after Google verifies email
   const completeGoogleLogin = async (
@@ -128,7 +126,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
-    // Check Firestore (when Firebase Auth active) or localStorage for permanent profile
+    // Check Firestore (when signed in) or localStorage for permanent profile
     const cloudRecord = auth.currentUser ? await getStudentFromCloud(uid).catch(() => null) : null;
     const existingRecord = cloudRecord || getExistingStudentRecord(uid, email);
     const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(uid, email);
@@ -153,53 +151,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     onClose();
   };
 
-  // Primary: Firebase Google Auth Popup
-  const handleTriggerRealGooglePopup = async () => {
-    setAuthError(null);
-    setGoogleLoading(true);
-
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const fbUser = result.user;
-      sessionStorage.removeItem('mm_gis_active');
-      await completeGoogleLogin(
-        fbUser.uid,
-        fbUser.email || '',
-        fbUser.displayName,
-        fbUser.photoURL
-      );
-    } catch (err: any) {
-      console.error('Firebase Google Sign-In Error:', err);
-      const code = err?.code || '';
-      setShowGoogleFallback(true);
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية. يمكنك المحاولة مرة أخرى أو استخدام الدخول بـ Client ID القديم أدناه.');
-      } else if (code === 'auth/popup-blocked') {
-        setAuthError('المتصفح حجب النافذة المنبثقة. استخدم زر "الدخول عبر إعادة التوجيه" أو "حساب Google القديم (Client ID)" بالأسفل.');
-      } else if (code === 'auth/unauthorized-domain') {
-        setAuthError(`النطاق الحالي (${window.location.hostname}) غير مضاف بعد في نطاقات Firebase المصرح لها. يمكنك استخدام "تسجيل جوجل القديم (Client ID)" بالأسفل فوراً.`);
-      } else {
-        setAuthError(`تعذر تسجيل الدخول السريع (${code || 'unknown'}). يمكنك استخدام زر "تسجيل جوجل القديم (Client ID)" بالأسفل.`);
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
-  // Fallback 1: Redirect-based Firebase Auth (useful for iOS Safari / popup-blocked browsers)
-  const handleGoogleRedirectLogin = async () => {
-    setAuthError(null);
-    setGoogleLoading(true);
-    try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (err: any) {
-      setGoogleLoading(false);
-      setAuthError(`تعذر إعادة التوجيه (${err?.code || 'error'}). جرب الدخول بـ Client ID المخصص.`);
-    }
-  };
-
-  // Fallback / Restored Old Flow: Google Identity Services OAuth using siteConfig.googleClientId
-  const handleLegacyGoogleOAuth = () => {
+  // Primary Google Sign-In using configured Google OAuth Client ID (silently handled)
+  const handlePrimaryGoogleLogin = () => {
     setAuthError(null);
 
     const activeClientId =
@@ -214,14 +167,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           client_id: activeClientId,
           scope: 'email profile openid',
           callback: async (tokenResponse: any) => {
-            if (tokenResponse?.error) {
+            if (tokenResponse?.error || !tokenResponse?.access_token) {
               setGoogleLoading(false);
-              setAuthError(`خطأ في تسجيل جوجل (${tokenResponse.error}).`);
-              return;
-            }
-            if (!tokenResponse?.access_token) {
-              setGoogleLoading(false);
-              setAuthError('لم يتم استلام رمز الدخول من Google.');
+              setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
               return;
             }
             try {
@@ -242,7 +190,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 profile.picture
               );
             } catch {
-              setAuthError('فشل جلب بيانات الحساب من Google.');
+              setAuthError('حدث خطأ أثناء استلام بيانات الحساب من Google.');
             } finally {
               setGoogleLoading(false);
             }
@@ -250,18 +198,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           error_callback: (err: any) => {
             setGoogleLoading(false);
             if (err?.type === 'popup_closed') {
-              setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل.');
+              setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.');
             } else if (err?.type === 'popup_failed_to_open') {
-              setAuthError('حجب المتصفح نافذة Google، يرجى السماح بالنوافذ المنبثقة.');
+              setAuthError('حجب المتصفح النافذة المنبثقة، يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.');
             } else {
-              setAuthError('تعذر فتح نافذة Google Client ID، تأكد من صلاحية النطاق في Google Cloud Console.');
+              setAuthError('تعذر إتمام تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
             }
           },
         });
         tokenClient.requestAccessToken({ prompt: 'select_account' });
       } catch {
         setGoogleLoading(false);
-        setAuthError('مكتبة Google غير جاهزة بعد، حاول مرة أخرى بعد ثانية.');
+        setAuthError('جاري تجهيز خدمة Google، يرجى المحاولة مرة أخرى بعد لحظة.');
       }
     };
 
@@ -270,7 +218,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
-    // Dynamically load GIS script if blocked or still loading
+    // Dynamically load GIS script if not yet ready
     setGoogleLoading(true);
     const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]') as HTMLScriptElement | null;
     if (existingScript) {
@@ -284,7 +232,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         clearInterval(waitInterval);
         if (!window.google?.accounts?.oauth2) {
           setGoogleLoading(false);
-          setAuthError('تعذر تحميل خدمة Google Identity Services.');
+          setAuthError('تعذر تحميل نافذة Google، يرجى التحقق من اتصال الإنترنت.');
         }
       }, 4000);
       return;
@@ -297,7 +245,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     script.onload = () => startOAuth();
     script.onerror = () => {
       setGoogleLoading(false);
-      setAuthError('تعذر الاتصال بخدمة Google.');
+      setAuthError('تعذر الاتصال بخدمة Google، يرجى المحاولة مرة أخرى.');
     };
     document.head.appendChild(script);
   };
@@ -315,8 +263,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     const isAdmin = checkIsAdminEmail(cleanId);
     if (isAdmin) {
-      // Admin must sign in via Firebase Google Auth to receive real cloud write permissions
-      handleTriggerRealGooglePopup();
+      handlePrimaryGoogleLogin();
       return;
     }
 
@@ -396,7 +343,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     const isAdmin = checkIsAdminEmail(idClean);
     if (isAdmin) {
-      handleTriggerRealGooglePopup();
+      handlePrimaryGoogleLogin();
       return;
     }
 
@@ -505,12 +452,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           </div>
         )}
 
-        {/* 1. Quick Google Buttons (Firebase Primary + Custom Client ID Legacy Option) */}
-        <div className="space-y-2.5 mb-5">
+        {/* 1. Quick Google Button (Available in both tabs) */}
+        <div className="space-y-3 mb-5">
           <button
             type="button"
             disabled={googleLoading}
-            onClick={handleTriggerRealGooglePopup}
+            onClick={handlePrimaryGoogleLogin}
             className="w-full py-3.5 px-4 rounded-2xl border-2 border-teal-500/30 hover:border-teal-500 bg-white dark:bg-slate-800/90 hover:bg-teal-50/50 dark:hover:bg-slate-700/60 shadow-xs transition-all flex items-center justify-center gap-3 cursor-pointer group active:scale-98 min-h-[48px] disabled:opacity-60"
           >
             <svg className="w-5 h-5 group-hover:scale-110 transition-transform shrink-0" viewBox="0 0 24 24">
@@ -523,26 +470,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               {googleLoading ? 'جاري تسجيل الدخول بحساب Google...' : 'المتابعة السريعة بحساب Google'}
             </span>
           </button>
-
-          <button
-            type="button"
-            disabled={googleLoading}
-            onClick={handleLegacyGoogleOAuth}
-            className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 transition-all cursor-pointer font-sans disabled:opacity-60"
-          >
-            تسجيل الدخول بحساب Google المخصص (Client ID الخاص بك)
-          </button>
-
-          {showGoogleFallback && (
-            <button
-              type="button"
-              disabled={googleLoading}
-              onClick={handleGoogleRedirectLogin}
-              className="w-full py-2.5 px-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-bold text-amber-800 dark:text-amber-300 transition-all cursor-pointer font-sans disabled:opacity-60"
-            >
-              الدخول عبر إعادة توجيه الصفحة (بديل للآيفون عند حجب النوافذ)
-            </button>
-          )}
         </div>
 
         {/* Divider */}

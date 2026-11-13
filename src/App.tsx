@@ -343,35 +343,34 @@ export default function App() {
       }
     );
 
-    return () => {
-      unsubSite();
-      unsubLectures();
-      unsubAttachments();
-    };
-  }, []);
-
-  // 3. Authenticated Real-Time Firestore Listeners (Quizzes, Admin Config, Student Records)
-  useEffect(() => {
-    if (!firebaseUser) return;
-
-    const unsubscribers: Array<() => void> = [];
-
     const quizzesQuery = query(
       collection(db, 'quizzes'),
       where('grade', 'in', ['first', 'second', 'third'])
     );
-    unsubscribers.push(
-      onSnapshot(
-        quizzesQuery,
-        (snap) => {
-          const list = snap.docs.map((d) => d.data() as Quiz);
-          setQuizzes(list);
-        },
-        (error) => {
-          console.warn('Quizzes listener error:', error.message);
-        }
-      )
+    const unsubQuizzes = onSnapshot(
+      quizzesQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as Quiz);
+        setQuizzes(list);
+      },
+      (error) => {
+        console.warn('Quizzes listener error:', error.message);
+      }
     );
+
+    return () => {
+      unsubSite();
+      unsubLectures();
+      unsubAttachments();
+      unsubQuizzes();
+    };
+  }, []);
+
+  // 3. Authenticated Real-Time Firestore Listeners (Admin Config, Student Records)
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const unsubscribers: Array<() => void> = [];
 
     const userIsAdmin = isEmailAdmin(firebaseUser.email);
     const isPrimary = firebaseUser.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com';
