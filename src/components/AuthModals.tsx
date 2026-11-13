@@ -4,8 +4,14 @@ import {
 } from 'lucide-react';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig } from '../types/siteConfig';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { auth, googleProvider, getStudentFromCloud } from '../firebase';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 interface AuthModalsProps {
   loginOpen: boolean;
@@ -88,9 +94,66 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     return Boolean(record?.profileCompleted);
   };
 
-  // Trigger Real Firebase Google Popup (Primary Secure Auth)
+  // Google Auth loading & fallback state
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [showGoogleFallback, setShowGoogleFallback] = useState(false);
 
+  // Shared user resolution after Google verifies email
+  const completeGoogleLogin = async (
+    uid: string,
+    email: string,
+    displayName?: string | null,
+    photoURL?: string | null
+  ) => {
+    const isAdmin = checkIsAdminEmail(email);
+
+    if (isAdmin) {
+      onLoginSuccess({
+        id: uid,
+        name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+        email,
+        role: 'teacher',
+        grade: 'third',
+        phone: siteConfig?.phone1 || '01002345678',
+        parentPhone: '',
+        avatarUrl: photoURL || '',
+        score: 0,
+        profileCompleted: true,
+        watchedLectureIds: [],
+        passedQuizIds: [],
+        quizScores: {},
+        joinedAt: new Date().toISOString().split('T')[0],
+      });
+      onClose();
+      return;
+    }
+
+    // Check Firestore (when Firebase Auth active) or localStorage for permanent profile
+    const cloudRecord = auth.currentUser ? await getStudentFromCloud(uid).catch(() => null) : null;
+    const existingRecord = cloudRecord || getExistingStudentRecord(uid, email);
+    const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(uid, email);
+
+    onLoginSuccess({
+      id: uid,
+      name: existingRecord?.name || displayName || email.split('@')[0],
+      email,
+      role: 'student',
+      grade: existingRecord?.grade || 'third',
+      phone: existingRecord?.phone || '',
+      parentPhone: existingRecord?.parentPhone || '',
+      governorate: existingRecord?.governorate || 'القاهرة',
+      avatarUrl: photoURL || existingRecord?.avatarUrl || '',
+      score: existingRecord?.score || 0,
+      profileCompleted: isCompleted,
+      watchedLectureIds: existingRecord?.watchedLectureIds || [],
+      passedQuizIds: existingRecord?.passedQuizIds || [],
+      quizScores: existingRecord?.quizScores || {},
+      joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
+    });
+    onClose();
+  };
+
+  // Primary: Firebase Google Auth Popup
   const handleTriggerRealGooglePopup = async () => {
     setAuthError(null);
     setGoogleLoading(true);
@@ -98,66 +161,145 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
-      const email = fbUser.email || '';
-      const isAdmin = checkIsAdminEmail(email);
-
-      if (isAdmin) {
-        onLoginSuccess({
-          id: fbUser.uid,
-          name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
-          email,
-          role: 'teacher',
-          grade: 'third',
-          phone: siteConfig?.phone1 || '01002345678',
-          parentPhone: '',
-          avatarUrl: fbUser.photoURL || '',
-          score: 0,
-          profileCompleted: true,
-          watchedLectureIds: [],
-          passedQuizIds: [],
-          quizScores: {},
-          joinedAt: new Date().toISOString().split('T')[0],
-        });
-        onClose();
-        return;
-      }
-
-      // Check Firestore first for permanent cross-device profile
-      const cloudRecord = await getStudentFromCloud(fbUser.uid).catch(() => null);
-      const existingRecord = cloudRecord || getExistingStudentRecord(fbUser.uid, email);
-      const isCompleted = Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(fbUser.uid, email);
-
-      onLoginSuccess({
-        id: fbUser.uid,
-        name: existingRecord?.name || fbUser.displayName || email.split('@')[0],
-        email,
-        role: 'student',
-        grade: existingRecord?.grade || 'third',
-        phone: existingRecord?.phone || '',
-        parentPhone: existingRecord?.parentPhone || '',
-        governorate: existingRecord?.governorate || 'القاهرة',
-        avatarUrl: fbUser.photoURL || existingRecord?.avatarUrl || '',
-        score: existingRecord?.score || 0,
-        profileCompleted: isCompleted,
-        watchedLectureIds: existingRecord?.watchedLectureIds || [],
-        passedQuizIds: existingRecord?.passedQuizIds || [],
-        quizScores: existingRecord?.quizScores || {},
-        joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
-      });
-      onClose();
+      sessionStorage.removeItem('mm_gis_active');
+      await completeGoogleLogin(
+        fbUser.uid,
+        fbUser.email || '',
+        fbUser.displayName,
+        fbUser.photoURL
+      );
     } catch (err: any) {
       console.error('Firebase Google Sign-In Error:', err);
       const code = err?.code || '';
-      if (code === 'auth/popup-closed-by-user') {
-        setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية.');
+      setShowGoogleFallback(true);
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل قبل إتمام العملية. يمكنك المحاولة مرة أخرى أو استخدام الدخول بـ Client ID القديم أدناه.');
       } else if (code === 'auth/popup-blocked') {
-        setAuthError('المتصفح حجب النافذة المنبثقة، يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.');
+        setAuthError('المتصفح حجب النافذة المنبثقة. استخدم زر "الدخول عبر إعادة التوجيه" أو "حساب Google القديم (Client ID)" بالأسفل.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setAuthError(`النطاق الحالي (${window.location.hostname}) غير مضاف بعد في نطاقات Firebase المصرح لها. يمكنك استخدام "تسجيل جوجل القديم (Client ID)" بالأسفل فوراً.`);
       } else {
-        setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
+        setAuthError(`تعذر تسجيل الدخول السريع (${code || 'unknown'}). يمكنك استخدام زر "تسجيل جوجل القديم (Client ID)" بالأسفل.`);
       }
     } finally {
       setGoogleLoading(false);
     }
+  };
+
+  // Fallback 1: Redirect-based Firebase Auth (useful for iOS Safari / popup-blocked browsers)
+  const handleGoogleRedirectLogin = async () => {
+    setAuthError(null);
+    setGoogleLoading(true);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      setGoogleLoading(false);
+      setAuthError(`تعذر إعادة التوجيه (${err?.code || 'error'}). جرب الدخول بـ Client ID المخصص.`);
+    }
+  };
+
+  // Fallback / Restored Old Flow: Google Identity Services OAuth using siteConfig.googleClientId
+  const handleLegacyGoogleOAuth = () => {
+    setAuthError(null);
+
+    const activeClientId =
+      siteConfig?.googleClientId?.trim() ||
+      localStorage.getItem('mm_google_client_id')?.trim() ||
+      '244359507354-r0ic23fou6rfjgergu06i35ou2vn8qsc.apps.googleusercontent.com';
+
+    const startOAuth = () => {
+      try {
+        setGoogleLoading(true);
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: activeClientId,
+          scope: 'email profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              setGoogleLoading(false);
+              setAuthError(`خطأ في تسجيل جوجل (${tokenResponse.error}).`);
+              return;
+            }
+            if (!tokenResponse?.access_token) {
+              setGoogleLoading(false);
+              setAuthError('لم يتم استلام رمز الدخول من Google.');
+              return;
+            }
+            try {
+              const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              });
+              const profile = await userRes.json();
+              if (!profile?.email) {
+                setAuthError('تعذر قراءة البريد الإلكتروني من حساب Google.');
+                setGoogleLoading(false);
+                return;
+              }
+              sessionStorage.setItem('mm_gis_active', 'true');
+              await completeGoogleLogin(
+                profile.sub || `gis_${Date.now()}`,
+                profile.email,
+                profile.name,
+                profile.picture
+              );
+            } catch {
+              setAuthError('فشل جلب بيانات الحساب من Google.');
+            } finally {
+              setGoogleLoading(false);
+            }
+          },
+          error_callback: (err: any) => {
+            setGoogleLoading(false);
+            if (err?.type === 'popup_closed') {
+              setAuthError('تم إغلاق نافذة تسجيل الدخول بجوجل.');
+            } else if (err?.type === 'popup_failed_to_open') {
+              setAuthError('حجب المتصفح نافذة Google، يرجى السماح بالنوافذ المنبثقة.');
+            } else {
+              setAuthError('تعذر فتح نافذة Google Client ID، تأكد من صلاحية النطاق في Google Cloud Console.');
+            }
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+      } catch {
+        setGoogleLoading(false);
+        setAuthError('مكتبة Google غير جاهزة بعد، حاول مرة أخرى بعد ثانية.');
+      }
+    };
+
+    if (window.google?.accounts?.oauth2) {
+      startOAuth();
+      return;
+    }
+
+    // Dynamically load GIS script if blocked or still loading
+    setGoogleLoading(true);
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]') as HTMLScriptElement | null;
+    if (existingScript) {
+      const waitInterval = setInterval(() => {
+        if (window.google?.accounts?.oauth2) {
+          clearInterval(waitInterval);
+          startOAuth();
+        }
+      }, 150);
+      setTimeout(() => {
+        clearInterval(waitInterval);
+        if (!window.google?.accounts?.oauth2) {
+          setGoogleLoading(false);
+          setAuthError('تعذر تحميل خدمة Google Identity Services.');
+        }
+      }, 4000);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => startOAuth();
+    script.onerror = () => {
+      setGoogleLoading(false);
+      setAuthError('تعذر الاتصال بخدمة Google.');
+    };
+    document.head.appendChild(script);
   };
 
   // Regular Login Handler
@@ -363,8 +505,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           </div>
         )}
 
-        {/* 1. Quick Google Button (Available in both tabs) */}
-        <div className="space-y-3 mb-5">
+        {/* 1. Quick Google Buttons (Firebase Primary + Custom Client ID Legacy Option) */}
+        <div className="space-y-2.5 mb-5">
           <button
             type="button"
             disabled={googleLoading}
@@ -381,6 +523,26 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               {googleLoading ? 'جاري تسجيل الدخول بحساب Google...' : 'المتابعة السريعة بحساب Google'}
             </span>
           </button>
+
+          <button
+            type="button"
+            disabled={googleLoading}
+            onClick={handleLegacyGoogleOAuth}
+            className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 transition-all cursor-pointer font-sans disabled:opacity-60"
+          >
+            تسجيل الدخول بحساب Google المخصص (Client ID الخاص بك)
+          </button>
+
+          {showGoogleFallback && (
+            <button
+              type="button"
+              disabled={googleLoading}
+              onClick={handleGoogleRedirectLogin}
+              className="w-full py-2.5 px-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-bold text-amber-800 dark:text-amber-300 transition-all cursor-pointer font-sans disabled:opacity-60"
+            >
+              الدخول عبر إعادة توجيه الصفحة (بديل للآيفون عند حجب النوافذ)
+            </button>
+          )}
         </div>
 
         {/* Divider */}

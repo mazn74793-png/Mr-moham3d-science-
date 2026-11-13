@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { onAuthStateChanged, signOut, signInWithPopup, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signOut, signInWithPopup, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
@@ -63,7 +63,6 @@ export default function App() {
 
   // Firebase Auth user state
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [authReady, setAuthReady] = useState(false);
 
   // Current logged in user
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -183,14 +182,22 @@ export default function App() {
     return () => clearTimeout(t);
   }, [syncNotice]);
 
-  // 1. Firebase Auth Listener: keeps session verified & bootstraps cloud config on first admin login
+  // 1. Firebase Auth Listener + Redirect recovery: keeps session verified & bootstraps cloud config on first admin login
   useEffect(() => {
+    getRedirectResult(auth).catch((err) => {
+      if (err?.code) {
+        console.warn('Redirect sign-in warning:', err.code);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
-      setAuthReady(true);
 
       if (!fbUser) {
-        setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
+        const isGisActive = sessionStorage.getItem('mm_gis_active') === 'true';
+        if (!isGisActive) {
+          setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
+        }
         return;
       }
 
@@ -529,7 +536,7 @@ export default function App() {
   // Centralized navigation guard
   const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
     if (view === 'teacher') {
-      if (!isUserAdmin(currentUser) || (authReady && !firebaseUser)) {
+      if (!isUserAdmin(currentUser)) {
         setLoginModalOpen(true);
         return;
       }
@@ -620,6 +627,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    sessionStorage.removeItem('mm_gis_active');
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
     setCurrentUser(null);
     setCurrentView('landing');
