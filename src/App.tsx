@@ -964,14 +964,16 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <Footer
-        siteConfig={siteConfig}
-        onNavigate={handleNavigate}
-        onScrollToSection={handleScrollToSection}
-        onOpenLogin={() => setLoginModalOpen(true)}
-        onOpenSecretAdmin={() => setSecretAdminOpen(true)}
-      />
+      {/* Footer (hidden on mobile in student portal for clean app-like bottom navigation) */}
+      <div className={currentView === 'student' ? 'hidden lg:block' : ''}>
+        <Footer
+          siteConfig={siteConfig}
+          onNavigate={handleNavigate}
+          onScrollToSection={handleScrollToSection}
+          onOpenLogin={() => setLoginModalOpen(true)}
+          onOpenSecretAdmin={() => setSecretAdminOpen(true)}
+        />
+      </div>
 
       {/* Auth Modals */}
       <AuthModals

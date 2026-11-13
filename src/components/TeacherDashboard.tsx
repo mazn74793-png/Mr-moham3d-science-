@@ -10,7 +10,8 @@ import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfil
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
-import { uploadMediaFile } from '../utils/uploader';
+import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
+import { UploadProgressBar } from './UploadProgressBar';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
@@ -95,11 +96,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [videoUploadMeta, setVideoUploadMeta] = useState<UploadProgressInfo | null>(null);
   const [videoUploadSuccess, setVideoUploadSuccess] = useState(false);
   const [videoUploadNotice, setVideoUploadNotice] = useState<string | null>(null);
 
   // Cloudinary device file upload state
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [fileUploadProgress, setFileUploadProgress] = useState(0);
+  const [fileUploadMeta, setFileUploadMeta] = useState<UploadProgressInfo | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -107,6 +112,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [handoutFile, setHandoutFile] = useState<File | null>(null);
   const [uploadingHandout, setUploadingHandout] = useState(false);
   const [handoutProgress, setHandoutProgress] = useState(0);
+  const [handoutUploadMeta, setHandoutUploadMeta] = useState<UploadProgressInfo | null>(null);
   const [handoutCloudUrl, setHandoutCloudUrl] = useState<string>('');
 
   // Storage Quota Calculation (Cloudinary Free Plan: 25.0 GB total storage)
@@ -164,7 +170,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [lecGrade, setLecGrade] = useState<GradeLevel>('third');
   const [lecChapter, setLecChapter] = useState('الباب الأول: العناصر الانتقالية');
   const [lecDuration, setLecDuration] = useState('45 دقيقة');
-  const [lecVideoUrl, setLecVideoUrl] = useState('https://www.youtube.com/embed/dQw4w9WgXcQ');
+  const [lecVideoUrl, setLecVideoUrl] = useState('');
   const [lecThumbnail, setLecThumbnail] = useState('/images/chemistry_lab_visual_1794141316456.jpg');
   const [lecPdfTitle, setLecPdfTitle] = useState('');
   const [lecDescription, setLecDescription] = useState('');
@@ -185,6 +191,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [siteForm, setSiteForm] = useState<SiteConfig>(siteConfig);
   const [siteSaveSuccess, setSiteSaveSuccess] = useState(false);
   const [uploadingTeacherPhoto, setUploadingTeacherPhoto] = useState(false);
+  const [teacherPhotoProgress, setTeacherPhotoProgress] = useState(0);
+  const [teacherPhotoMeta, setTeacherPhotoMeta] = useState<UploadProgressInfo | null>(null);
 
   // Sync siteForm when siteConfig updates from props
   React.useEffect(() => {
@@ -260,133 +268,124 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTimeout(() => setSaveSuccessMsg(false), 3000);
   };
 
-  // Direct Device Upload via Cloudinary REST API with fallback
+  // Direct Device Upload via Cloudinary REST API with real-time progress
   const handleDeviceFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
 
     setUploadingFile(true);
+    setFileUploadProgress(0);
+    setFileUploadMeta(null);
+    setUploadedFileName(file.name);
     setUploadError(null);
 
+    const isPdfOrDoc = !file.type.startsWith('image/');
     try {
       const result = await uploadMediaFile(file, {
         cloudName,
         uploadPreset,
-        resourceType: 'image',
+        resourceType: isPdfOrDoc ? 'auto' : 'image',
+        onProgress: (percent, info) => {
+          setFileUploadProgress(percent);
+          setFileUploadMeta(info);
+        },
       });
       setUploadedUrl(result.url);
-      setLecThumbnail(result.url);
-      setUploadError('تم رفع الملف وحفظه بنجاح على النظام لجميع المتصفحات ☁️');
+      if (file.type.startsWith('image/')) {
+        setLecThumbnail(result.url);
+      }
+      setUploadError(
+        result.source === 'cloudinary'
+          ? 'تم رفع الملف إلى Cloudinary وحفظ الرابط بنجاح ☁️'
+          : 'تم رفع الملف وحفظه بنجاح ☁️'
+      );
     } catch (err: any) {
-      setUploadError(err.message || 'حدث خطأ أثناء رفع الملف');
+      setUploadError(err?.message || 'حدث خطأ أثناء رفع الملف');
     } finally {
       setUploadingFile(false);
     }
   };
 
-  // Upload teacher photo via Cloudinary / Server Persistent Storage (works in incognito & all browsers)
+  // Upload teacher photo via Cloudinary with real-time progress
   const handleTeacherPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     setUploadingTeacherPhoto(true);
+    setTeacherPhotoProgress(0);
+    setTeacherPhotoMeta(null);
+    setAdminNotice(null);
+
     try {
       const result = await uploadMediaFile(file, {
         cloudName,
         uploadPreset,
         resourceType: 'image',
+        onProgress: (percent, info) => {
+          setTeacherPhotoProgress(percent);
+          setTeacherPhotoMeta(info);
+        },
       });
       const url = result.url;
-      setSiteForm((prev: SiteConfig) => ({ ...prev, profileImageUrl: url }));
-      // Immediately save to persistent database on the server
-      onSaveSiteConfig({ ...siteConfig, profileImageUrl: url });
-      setAdminNotice({ 
-        type: 'success', 
-        message: result.source === 'cloudinary' 
-          ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️' 
-          : 'تم رفع وتثبيت صورة الأستاذ وحفظها في قاعدة البيانات السحابية لجميع المتصفحات بنجاح! ☁️'
+      const updatedConfig: SiteConfig = { ...siteConfig, ...siteForm, profileImageUrl: url };
+      setSiteForm(updatedConfig);
+      onSaveSiteConfig(updatedConfig);
+      setAdminNotice({
+        type: 'success',
+        message:
+          result.source === 'cloudinary'
+            ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️'
+            : 'تم رفع وتثبيت صورة الأستاذ وحفظها بنجاح! ☁️',
       });
     } catch (err: any) {
-      setAdminNotice({ type: 'error', message: err.message || 'فشل رفع الصورة' });
+      setAdminNotice({ type: 'error', message: err?.message || 'فشل رفع الصورة' });
     } finally {
       setUploadingTeacherPhoto(false);
     }
   };
 
-  // Cloudinary Direct Video Upload from Device
-  const handleCloudinaryVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Cloudinary Direct Video Upload from Device with real-time progress
+  const handleCloudinaryVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     setVideoFile(file);
     setUploadingVideo(true);
     setVideoUploadProgress(0);
+    setVideoUploadMeta(null);
     setVideoUploadSuccess(false);
     setVideoUploadNotice(null);
+    setLectureFormError(null);
 
-    const activeCloud = cloudName.trim() || 'chemistry-egypt';
-    const activePreset = uploadPreset.trim() || 'chemistry_uploads';
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', activePreset);
-    formData.append('resource_type', 'video');
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${activeCloud}/video/upload`);
-
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable) {
-        const percent = Math.round((evt.loaded / evt.total) * 100);
-        setVideoUploadProgress(percent);
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'video',
+        onProgress: (percent, info) => {
+          setVideoUploadProgress(percent);
+          setVideoUploadMeta(info);
+        },
+      });
+      setLecVideoUrl(result.url);
+      if (result.durationSeconds) {
+        const mins = Math.max(1, Math.round(result.durationSeconds / 60));
+        setLecDuration(`${mins} دقيقة`);
       }
-    };
-
-    xhr.onload = () => {
+      setVideoUploadSuccess(true);
+      setVideoUploadNotice(
+        result.source === 'cloudinary'
+          ? 'تم رفع الفيديو على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡'
+          : 'تم رفع الفيديو وحفظه بنجاح للبث المباشر ⚡'
+      );
+    } catch (err: any) {
+      setLectureFormError(err?.message || 'تعذر رفع الفيديو، يرجى التحقق من إعدادات Cloudinary واتصال الشبكة.');
+    } finally {
       setUploadingVideo(false);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const res = JSON.parse(xhr.responseText);
-          const secureUrl = res.secure_url || res.url;
-          setLecVideoUrl(secureUrl);
-          if (res.duration) {
-            const mins = Math.max(1, Math.round(res.duration / 60));
-            setLecDuration(`${mins} دقيقة`);
-          }
-          setVideoUploadSuccess(true);
-          setVideoUploadNotice('تم رفع الفيديو بسرعة فائقة على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡');
-        } catch {
-          uploadMediaFile(file, { resourceType: 'video' })
-            .then(res => {
-              setLecVideoUrl(res.url);
-              setVideoUploadSuccess(true);
-              setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
-            })
-            .catch(() => {});
-        }
-      } else {
-        uploadMediaFile(file, { resourceType: 'video' })
-          .then(res => {
-            setLecVideoUrl(res.url);
-            setVideoUploadSuccess(true);
-            setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
-          })
-          .catch(() => {});
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadingVideo(false);
-      uploadMediaFile(file, { resourceType: 'video' })
-        .then(res => {
-          setLecVideoUrl(res.url);
-          setVideoUploadSuccess(true);
-          setVideoUploadNotice('تم حفظ الفيديو بنجاح على السيرفر لجميع الأجهزة والوضع الخفي ⚡');
-        })
-        .catch(() => {});
-    };
-
-    xhr.send(formData);
+    }
   };
 
   // Submit new lecture
@@ -395,8 +394,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setLectureFormError(null);
     setLectureFormSuccess(null);
 
+    if (uploadingVideo) {
+      setLectureFormError('يرجى الانتظار حتى يكتمل رفع الفيديو بنسبة 100%.');
+      return;
+    }
+
     if (!lecTitle.trim()) {
       setLectureFormError('يرجى إدخال عنوان المحاضرة');
+      return;
+    }
+
+    if (!lecVideoUrl.trim()) {
+      setLectureFormError('يرجى رفع فيديو المحاضرة من جهازك أو إدخال رابط الفيديو أولاً.');
       return;
     }
 
@@ -404,12 +413,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       id: `lec-${Date.now()}`,
       sessionOrder: Number(lecSessionOrder) || (lectures.filter(l => l.grade === lecGrade).length + 1),
       quizId: lecQuizId || undefined,
-      title: lecTitle,
+      title: lecTitle.trim(),
       grade: lecGrade,
       gradeLabel: lecGrade === 'first' ? 'الصف الأول الثانوي' : lecGrade === 'second' ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي',
       chapter: lecChapter,
       duration: lecDuration || '50 دقيقة',
-      videoUrl: lecVideoUrl || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      videoUrl: lecVideoUrl.trim(),
       thumbnailUrl: lecThumbnail || '/images/chemistry_lab_visual_1794141316456.jpg',
       pdfTitle: lecPdfTitle ? `${lecPdfTitle}.pdf` : undefined,
       description: lecDescription || 'شرح تفاعلي لموضوع الدرس مع أمثلة وتدريبات تطبيقية.',
@@ -422,11 +431,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setLectureFormSuccess('تم نشر المحاضرة بنجاح وأصبحت متاحة للطلاب في المنصة! 🚀');
     setTimeout(() => setLectureFormSuccess(null), 4000);
     setLecTitle('');
+    setLecVideoUrl('');
     setLecPdfTitle('');
     setLecDescription('');
     setLecQuizId('');
     setVideoFile(null);
     setVideoUploadSuccess(false);
+    setVideoUploadProgress(0);
+    setVideoUploadMeta(null);
   };
 
   // Save edited lecture
@@ -442,76 +454,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   // Handle Direct Handout Upload to Cloudinary with Real-Time Progress
-  const handleSelectHandoutFile = (file: File) => {
+  const handleSelectHandoutFile = async (file: File) => {
     setHandoutFile(file);
-    // Auto title if empty
     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
     if (!fileTitle) {
       setFileTitle(nameWithoutExt);
     }
-    // Calculate real file size in MB
     const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
     setFileSize(`${sizeInMB} MB`);
 
     setUploadingHandout(true);
     setHandoutProgress(0);
+    setHandoutUploadMeta(null);
+    setFileFormError(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', uploadPreset);
-
-    const xhr = new XMLHttpRequest();
-    // Use raw or auto endpoint on Cloudinary
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, true);
-
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable) {
-        const percent = Math.round((evt.loaded / evt.total) * 100);
-        setHandoutProgress(percent);
-      }
-    };
-
-    xhr.onload = () => {
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'auto',
+        onProgress: (percent, info) => {
+          setHandoutProgress(percent);
+          setHandoutUploadMeta(info);
+        },
+      });
+      setHandoutCloudUrl(result.url);
+      setFileFormSuccess(`تم رفع المذكرة بنجاح (${file.name} · ${sizeInMB} MB) ☁️`);
+      setTimeout(() => setFileFormSuccess(null), 4000);
+    } catch (err: any) {
+      setFileFormError(err?.message || 'فشل رفع المذكرة، يرجى التحقق من إعدادات Cloudinary.');
+    } finally {
       setUploadingHandout(false);
-      if (xhr.status === 200) {
-        try {
-          const res = JSON.parse(xhr.responseText);
-          const finalUrl = res.secure_url || res.url;
-          setHandoutCloudUrl(finalUrl);
-          setFileFormSuccess(`تم رفع المذكرة بنجاح إلى كلاودنري (${file.name} · ${sizeInMB} MB) ☁️`);
-          setTimeout(() => setFileFormSuccess(null), 4000);
-        } catch {
-          uploadMediaFile(file, { resourceType: 'raw' })
-            .then(res => {
-              setHandoutCloudUrl(res.url);
-              setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
-              setTimeout(() => setFileFormSuccess(null), 4000);
-            })
-            .catch(() => {});
-        }
-      } else {
-        uploadMediaFile(file, { resourceType: 'raw' })
-          .then(res => {
-            setHandoutCloudUrl(res.url);
-            setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
-            setTimeout(() => setFileFormSuccess(null), 4000);
-          })
-          .catch(() => {});
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadingHandout(false);
-      uploadMediaFile(file, { resourceType: 'raw' })
-        .then(res => {
-          setHandoutCloudUrl(res.url);
-          setFileFormSuccess(`تم حفظ المذكرة بنجاح على السيرفر لجميع المتصفحات (${file.name}) ☁️`);
-          setTimeout(() => setFileFormSuccess(null), 4000);
-        })
-        .catch(() => {});
-    };
-
-    xhr.send(formData);
+    }
   };
 
   // Submit new PDF file
@@ -519,6 +493,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     e.preventDefault();
     setFileFormError(null);
     setFileFormSuccess(null);
+
+    if (uploadingHandout) {
+      setFileFormError('يرجى الانتظار حتى يكتمل رفع المذكرة.');
+      return;
+    }
 
     if (!fileTitle.trim()) {
       setFileFormError('يرجى إدخال اسم المذكرة أو الملف');
@@ -1680,23 +1659,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Active Upload Progress Bar */}
+                  {/* Active Video Upload Progress Bar */}
                   {uploadingVideo && (
-                    <div className="space-y-2 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-800 shadow-xs">
-                      <div className="flex items-center justify-between text-xs font-bold font-mono">
-                        <span className="text-teal-700 dark:text-teal-300 flex items-center gap-1.5">
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          جاري الرفع السحابي السريع...
-                        </span>
-                        <span className="text-teal-600 font-extrabold">{videoUploadProgress}%</span>
-                      </div>
-                      <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 rounded-full transition-all duration-200"
-                          style={{ width: `${Math.max(videoUploadProgress, 5)}%` }}
-                        />
-                      </div>
-                    </div>
+                    <UploadProgressBar
+                      label="جاري رفع الفيديو إلى Cloudinary..."
+                      progress={videoUploadProgress}
+                      meta={videoUploadMeta}
+                      fileName={videoFile?.name}
+                    />
                   )}
 
                   {/* Video Upload Success Notice */}
@@ -1831,10 +1801,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="px-8 py-3.5 rounded-xl font-bold text-sm text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-md shadow-teal-700/20 transition-all flex items-center gap-2 cursor-pointer"
+                  disabled={uploadingVideo}
+                  className="px-8 py-3.5 rounded-xl font-bold text-sm text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-md shadow-teal-700/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Upload className="w-4 h-4" />
-                  <span>نشر المحاضرة الآن على المنصة</span>
+                  <span>{uploadingVideo ? 'جاري انتظار اكتمال رفع الفيديو...' : 'نشر المحاضرة الآن على المنصة'}</span>
                 </button>
               </div>
 
@@ -2236,6 +2207,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
+                    e.target.value = '';
                     if (f) handleSelectHandoutFile(f);
                   }}
                 />
@@ -2258,17 +2230,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                 {/* Live Progress Bar for Handout Upload */}
                 {uploadingHandout && (
-                  <div className="max-w-md mx-auto space-y-2 pt-2">
-                    <div className="flex items-center justify-between text-xs font-mono text-teal-700 dark:text-teal-300">
-                      <span>جاري الرفع إلى كلاودنري...</span>
-                      <span>{handoutProgress}%</span>
-                    </div>
-                    <div className="w-full h-2.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                      <div
-                        className="h-full bg-teal-600 rounded-full transition-all duration-200"
-                        style={{ width: `${handoutProgress}%` }}
-                      />
-                    </div>
+                  <div className="max-w-md mx-auto pt-2">
+                    <UploadProgressBar
+                      label="جاري رفع المذكرة إلى Cloudinary..."
+                      progress={handoutProgress}
+                      meta={handoutUploadMeta}
+                      fileName={handoutFile?.name}
+                    />
                   </div>
                 )}
 
@@ -2365,13 +2333,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                     <div className="flex items-center gap-2 shrink-0">
                       {file.downloadUrl && file.downloadUrl !== '#' && (
-                        <button
-                          onClick={() => window.open(file.downloadUrl, '_blank')}
-                          className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/50 rounded-lg transition-colors cursor-pointer"
+                        <a
+                          href={file.downloadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/50 rounded-lg transition-colors inline-flex items-center justify-center"
                           title="معاينة الملف"
                         >
                           <ExternalLink className="w-4 h-4" />
-                        </button>
+                        </a>
                       )}
 
                       {deleteConfirmFileId === file.id ? (
@@ -2530,6 +2500,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Active File Upload Progress Bar */}
+              {uploadingFile && (
+                <UploadProgressBar
+                  label="جاري رفع الملف إلى Cloudinary..."
+                  progress={fileUploadProgress}
+                  meta={fileUploadMeta}
+                  fileName={uploadedFileName}
+                />
+              )}
 
               {/* Upload Result & Preview */}
               {uploadedUrl && (
@@ -2838,7 +2818,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       className="text-xs text-slate-600 dark:text-slate-300"
                     />
                     {uploadingTeacherPhoto && (
-                      <div className="text-xs text-teal-600 font-bold">جاري رفع وتحديث الصورة...</div>
+                      <div className="pt-2">
+                        <UploadProgressBar
+                          label="جاري رفع وتحديث صورة الأستاذ..."
+                          progress={teacherPhotoProgress}
+                          meta={teacherPhotoMeta}
+                        />
+                      </div>
                     )}
                   </div>
 

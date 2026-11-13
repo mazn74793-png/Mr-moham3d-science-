@@ -4,7 +4,8 @@ import {
   Type, Palette, Image as ImageIcon, FileText, Phone, User, ExternalLink, Cloud
 } from 'lucide-react';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
-import { uploadMediaFile } from '../utils/uploader';
+import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
+import { UploadProgressBar } from './UploadProgressBar';
 
 interface SecretAdminCustomizerModalProps {
   isOpen: boolean;
@@ -30,6 +31,9 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
   const [formData, setFormData] = useState<SiteConfig>(siteConfig);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadMeta, setUploadMeta] = useState<UploadProgressInfo | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   React.useEffect(() => {
     setFormData(siteConfig);
@@ -71,22 +75,35 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
   // Device file upload for teacher photo (Guarantees public permanent URL for all browsers & incognito)
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
+    setUploadError(null);
     setUploadingImage(true);
+    setUploadProgress(1);
+    setUploadMeta(null);
+
     try {
       const result = await uploadMediaFile(file, {
         cloudName: cloudinaryConfig.cloudName,
         uploadPreset: cloudinaryConfig.uploadPreset,
         resourceType: 'image',
+        onProgress: (percent, info) => {
+          setUploadProgress(percent);
+          setUploadMeta(info);
+        },
       });
       handleFieldChange('profileImageUrl', result.url);
       // Immediately push to server database so all other devices & incognito see it
       onSaveSiteConfig({ ...formData, profileImageUrl: result.url });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: any) {
-      console.error('Photo upload failed:', err);
+      setUploadError(err?.message || 'فشل رفع الصورة، يرجى المحاولة مرة أخرى.');
     } finally {
       setUploadingImage(false);
+      setUploadProgress(0);
+      setUploadMeta(null);
     }
   };
 
@@ -322,7 +339,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                   </div>
 
                   {/* Device upload button */}
-                  <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 space-y-2">
+                  <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 space-y-3">
                     <span className="text-xs font-bold text-teal-800 dark:text-teal-300 font-kufi flex items-center gap-1.5">
                       <Cloud className="w-4 h-4" />
                       <span>رفع صورة جديدة للأستاذ من جهازك مباشرة:</span>
@@ -335,7 +352,16 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                       className="text-xs text-slate-600 dark:text-slate-300"
                     />
                     {uploadingImage && (
-                      <div className="text-xs text-teal-600 font-bold">جاري رفع وتحديث الصورة...</div>
+                      <UploadProgressBar
+                        label="جاري رفع وتحديث صورة الأستاذ..."
+                        progress={uploadProgress}
+                        meta={uploadMeta}
+                      />
+                    )}
+                    {uploadError && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs text-rose-600 dark:text-rose-300 font-bold">
+                        {uploadError}
+                      </div>
                     )}
                   </div>
 

@@ -1,8 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Play, CheckCircle2, Clock, FileText, Download, Award, BookOpen, 
-  ChevronRight, ArrowRight, Video, Sparkles, Filter, Check, X, AlertCircle, HelpCircle,
-  Lock, AlertTriangle, ShieldCheck, Trophy, ChevronLeft, Compass, Flame, Target, TrendingUp
+import {
+  Play,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Download,
+  Award,
+  BookOpen,
+  ChevronRight,
+  ChevronLeft,
+  Video,
+  Check,
+  HelpCircle,
+  Lock,
+  AlertTriangle,
+  Trophy,
+  Atom,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile } from '../types';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
@@ -18,6 +32,19 @@ interface StudentPortalProps {
   onUpdateStudentProfile?: (updatedUser: UserProfile) => void;
 }
 
+const TRANSITION_ELEMENTS = [
+  { sym: 'Sc', num: 21, name: 'سكانديوم', conf: '[Ar] 4s² 3d¹', ox: '+3', note: 'عنصر نادر شديد الصلابة وخفيف الوزن، يُستخدم في سبائك الطائرات المقاتلة.' },
+  { sym: 'Ti', num: 22, name: 'تيتانيوم', conf: '[Ar] 4s² 3d²', ox: '+2, +3, +4', note: 'لا يرفضه الجسم البشري، يُستخدم في زراعة الأسنان والمفاصل الصناعية.' },
+  { sym: 'V', num: 23, name: 'فاناديوم', conf: '[Ar] 4s² 3d³', ox: '+2, +3, +4, +5', note: 'يُضاف للصلب لصناعة زنبركات السيارات لمقاومة التآكل والصلابة العالية.' },
+  { sym: 'Cr', num: 24, name: 'كروم', conf: '[Ar] 4s¹ 3d⁵ (شاذ)', ox: '+2, +3, +6', note: 'شاذ في التوزيع الإلكتروني لأن المستوى 3d نصف ممتلئ يكون أكثر استقراراً.' },
+  { sym: 'Mn', num: 25, name: 'منجنيز', conf: '[Ar] 4s² 3d⁵', ox: '+2 إلى +7', note: 'هش جداً في حالته النقية لذلك يُستخدم دائماً في صورة سبائك مثل سبيكة خطوط السكك الحديدية.' },
+  { sym: 'Fe', num: 26, name: 'حديد', conf: '[Ar] 4s² 3d⁶', ox: '+2, +3', note: 'عصب الصناعات الثقيلة وأكثر عناصر السلسلة الانتقالية الأولى استخداماً.' },
+  { sym: 'Co', num: 27, name: 'كوبالت', conf: '[Ar] 4s² 3d⁷', ox: '+2, +3', note: 'يشبه الحديد في القابلية للتمغنط، ونظيره المشع الكوبالت 60 يُستخدم في حفظ الأغذية والكشف عن الأورام.' },
+  { sym: 'Ni', num: 28, name: 'نيكل', conf: '[Ar] 4s² 3d⁸', ox: '+2, +3', note: 'المجال التطبيقي: النيكل المجزأ عامل حفاز في هدرجة الزيوت النباتية.' },
+  { sym: 'Cu', num: 29, name: 'نحاس', conf: '[Ar] 4s¹ 3d¹⁰ (شاذ)', ox: '+1, +2', note: 'شاذ في التوزيع الإلكتروني لأن المستوى 3d تام الامتلاء يمنح الذرة استقراراً أعلى.' },
+  { sym: 'Zn', num: 30, name: 'خارصين', conf: '[Ar] 4s² 3d¹⁰', ox: '+2 فقط', note: 'يُستخدم في جلفنة المعادن لحمايتها من الصدأ (ليس عنصراً انتقالياً لانشغال 3d التام).' },
+];
+
 export const StudentPortal: React.FC<StudentPortalProps> = ({
   currentUser,
   lectures,
@@ -27,10 +54,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onOpenTeacherDashboard,
   onUpdateStudentProfile,
 }) => {
-  const { lang, isRtl, t } = useLanguage();
-  const isTeacher = currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' || currentUser?.role === 'teacher';
-  
-  // Student view is locked strictly to their own grade; teacher can toggle to inspect all
+  const { lang, isRtl } = useLanguage();
+  const isTeacher =
+    currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
+    currentUser?.role === 'teacher';
+
   const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(currentUser?.grade || 'third');
 
   useEffect(() => {
@@ -39,9 +67,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
   }, [currentUser?.grade, isTeacher]);
 
-  const [activeTab, setActiveTab] = useState<'lectures' | 'quizzes' | 'files' | 'periodic-table'>('lectures');
-  
-  // Filter lectures for the chosen grade and sort by sequence
+  const [activeTab, setActiveTab] = useState<'lectures' | 'quizzes' | 'files' | 'periodic-table'>(
+    'lectures'
+  );
+
   const filteredLectures = lectures
     .filter((l) => l.grade === selectedGrade)
     .sort((a, b) => (a.sessionOrder || 1) - (b.sessionOrder || 1));
@@ -49,10 +78,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const filteredQuizzes = quizzes.filter((q) => q.grade === selectedGrade);
   const filteredAttachments = attachments.filter((a) => a.grade === selectedGrade);
 
-  const [activeLecture, setActiveLecture] = useState<Lecture | null>(filteredLectures[0] || lectures[0] || null);
+  const [activeLecture, setActiveLecture] = useState<Lecture | null>(
+    filteredLectures[0] || lectures[0] || null
+  );
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [selectedElementSym, setSelectedElementSym] = useState<string>('Cr');
 
-  // Update activeLecture if grade changes
   useEffect(() => {
     if (filteredLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
       setActiveLecture(filteredLectures[0]);
@@ -65,20 +96,36 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
-  const [studentNotes, setStudentNotes] = useState<string>('ملاحظة: تذكر أن عنصر الكروم والنحاس شواذ في التوزيع الإلكتروني 4s1 3d5.');
   const [showQuizCelebration, setShowQuizCelebration] = useState<string | null>(null);
+
+  // Per-lecture persistent quick notes
+  const [studentNotes, setStudentNotes] = useState<string>('');
+  useEffect(() => {
+    if (!activeLecture?.id) return;
+    const saved = localStorage.getItem(`mm_note_${activeLecture.id}`);
+    setStudentNotes(
+      saved ??
+        'ملاحظة: تذكر أن عنصر الكروم والنحاس شواذ في التوزيع الإلكتروني لاستقرار المستوى الفرعي 3d.'
+    );
+  }, [activeLecture?.id]);
+
+  const handleNotesChange = (val: string) => {
+    setStudentNotes(val);
+    if (activeLecture?.id) {
+      localStorage.setItem(`mm_note_${activeLecture.id}`, val);
+    }
+  };
 
   // Sequential Unlocking Logic
   const isLectureUnlocked = (lec: Lecture): boolean => {
-    if (isTeacher) return true; // Teacher has bypass
+    if (isTeacher) return true;
     const idx = filteredLectures.findIndex((l) => l.id === lec.id);
-    if (idx <= 0) return true; // Session 1 is always unlocked
+    if (idx <= 0) return true;
 
     const prevLec = filteredLectures[idx - 1];
     const prevWatched = currentUser?.watchedLectureIds?.includes(prevLec.id);
     const prevQuizId = prevLec.quizId;
-    
-    // If previous lecture has a quiz, it must be passed with >= 60%
+
     let prevQuizPassed = true;
     if (prevQuizId) {
       const isPassedInList = currentUser?.passedQuizIds?.includes(prevQuizId);
@@ -89,32 +136,33 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     return Boolean(prevWatched && prevQuizPassed);
   };
 
-  // Find prerequisite lecture details for a locked lecture
   const getPrerequisiteDetails = (lec: Lecture) => {
     const idx = filteredLectures.findIndex((l) => l.id === lec.id);
     if (idx <= 0) return null;
     const prevLec = filteredLectures[idx - 1];
     const prevWatched = Boolean(currentUser?.watchedLectureIds?.includes(prevLec.id));
     const prevQuiz = quizzes.find((q) => q.id === prevLec.quizId) || null;
-    const prevQuizPassed = prevQuiz ? Boolean(currentUser?.passedQuizIds?.includes(prevQuiz.id) || (currentUser?.quizScores?.[prevQuiz.id] ?? 0) >= 60) : true;
+    const prevQuizPassed = prevQuiz
+      ? Boolean(
+          currentUser?.passedQuizIds?.includes(prevQuiz.id) ||
+            (currentUser?.quizScores?.[prevQuiz.id] ?? 0) >= 60
+        )
+      : true;
     return { prevLec, prevWatched, prevQuiz, prevQuizPassed };
   };
 
-  // Handle Mark Lecture as Watched
   const handleMarkWatched = (lecId: string) => {
     if (!currentUser) return;
     const currentWatched = currentUser.watchedLectureIds || [];
     if (!currentWatched.includes(lecId)) {
       const updatedWatched = [...currentWatched, lecId];
-      const updatedUser: UserProfile = {
+      onUpdateStudentProfile?.({
         ...currentUser,
         watchedLectureIds: updatedWatched,
-      };
-      onUpdateStudentProfile?.(updatedUser);
+      });
     }
   };
 
-  // Handle starting a specific quiz directly
   const handleStartQuiz = (quiz: Quiz) => {
     setActiveQuiz(quiz);
     setCurrentQuestionIndex(0);
@@ -124,10 +172,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     setActiveTab('quizzes');
   };
 
-  // Handle quiz selection
   const handleSelectAnswer = (questionId: string, answerIndex: number) => {
     if (quizSubmitted) return;
-    setSelectedAnswers(prev => ({
+    setSelectedAnswers((prev) => ({
       ...prev,
       [questionId]: answerIndex,
     }));
@@ -144,14 +191,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     return score;
   };
 
-  // Handle submitting quiz
   const handleSubmitQuiz = () => {
     if (!activeQuiz) return;
     setQuizSubmitted(true);
 
     const score = calculateScore();
     const total = activeQuiz.questions.length;
-    const percentage = Math.round((score / total) * 100);
+    const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
 
     if (currentUser) {
       const currentScores = { ...(currentUser.quizScores || {}), [activeQuiz.id]: percentage };
@@ -159,70 +205,84 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       if (percentage >= 60 && !currentPassed.includes(activeQuiz.id)) {
         currentPassed.push(activeQuiz.id);
-        setShowQuizCelebration(`مبروك يا بطل! أحرزت ${percentage}% وتم فك قفل الحصة التالية بنجاح 🎉`);
+        setShowQuizCelebration(
+          `أحسنت! حققت ${percentage}% وتم فتح الحصة التالية بنجاح.`
+        );
       }
 
-      // Calculate new cumulative score
       const scoreValues = Object.values(currentScores);
-      const avgScore = scoreValues.length > 0 
-        ? Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length)
-        : percentage;
+      const avgScore =
+        scoreValues.length > 0
+          ? Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length)
+          : percentage;
 
-      const updatedUser: UserProfile = {
+      onUpdateStudentProfile?.({
         ...currentUser,
         quizScores: currentScores,
         passedQuizIds: currentPassed,
         score: avgScore,
-      };
-
-      onUpdateStudentProfile?.(updatedUser);
+      });
     }
   };
 
-  // Real student cumulative score
   const studentCumulativeScore = currentUser?.score ?? 0;
 
-  // Grade label helper
   const getGradeTitle = (g: GradeLevel) => {
     switch (g) {
-      case 'first': return 'الصف الأول الثانوي';
-      case 'second': return 'الصف الثاني الثانوي';
-      default: return 'الصف الثالث الثانوي (دفعة 2026)';
+      case 'first':
+        return lang === 'en' ? '1st Secondary' : 'الصف الأول الثانوي';
+      case 'second':
+        return lang === 'en' ? '2nd Secondary' : 'الصف الثاني الثانوي';
+      default:
+        return lang === 'en' ? '3rd Secondary 2026' : 'الصف الثالث الثانوي';
     }
   };
 
-  // Real strictly-calculated metrics for student activity & progress
-  const completedLecturesCount = filteredLectures.filter(l => currentUser?.watchedLectureIds?.includes(l.id)).length;
+  const completedLecturesCount = filteredLectures.filter((l) =>
+    currentUser?.watchedLectureIds?.includes(l.id)
+  ).length;
   const totalLecturesCount = filteredLectures.length;
-  const progressPercentage = totalLecturesCount > 0 ? Math.round((completedLecturesCount / totalLecturesCount) * 100) : 0;
-  const passedQuizzesCount = filteredQuizzes.filter(q => currentUser?.passedQuizIds?.includes(q.id) || (currentUser?.quizScores?.[q.id] ?? 0) >= 60).length;
+  const progressPercentage =
+    totalLecturesCount > 0 ? Math.round((completedLecturesCount / totalLecturesCount) * 100) : 0;
+  const passedQuizzesCount = filteredQuizzes.filter(
+    (q) =>
+      currentUser?.passedQuizIds?.includes(q.id) || (currentUser?.quizScores?.[q.id] ?? 0) >= 60
+  ).length;
 
-  // Next target session for the student
-  const nextTargetLecture = filteredLectures.find(l => !currentUser?.watchedLectureIds?.includes(l.id)) || filteredLectures[0] || null;
-  const isNextLectureReady = nextTargetLecture ? isLectureUnlocked(nextTargetLecture) : true;
+  const nextTargetLecture =
+    filteredLectures.find((l) => !currentUser?.watchedLectureIds?.includes(l.id)) ||
+    filteredLectures[0] ||
+    null;
 
-  // Next recommended quiz for the student
-  const nextTargetQuiz = (nextTargetLecture?.quizId ? quizzes.find(q => q.id === nextTargetLecture.quizId) : null) || 
-                         filteredQuizzes.find(q => !currentUser?.passedQuizIds?.includes(q.id)) || 
-                         filteredQuizzes[0] || null;
+  const nextTargetQuiz =
+    (nextTargetLecture?.quizId
+      ? quizzes.find((q) => q.id === nextTargetLecture.quizId)
+      : null) ||
+    filteredQuizzes.find((q) => !currentUser?.passedQuizIds?.includes(q.id)) ||
+    filteredQuizzes[0] ||
+    null;
+
+  const inspectedElement =
+    TRANSITION_ELEMENTS.find((el) => el.sym === selectedElementSym) || TRANSITION_ELEMENTS[0];
 
   if (!currentUser) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center font-cairo">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 border border-amber-500/20">
-          <Lock className="w-8 h-8" />
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-4 border border-amber-200 dark:border-amber-800">
+          <Lock className="w-7 h-7" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2">
           {isRtl ? 'تسجيل الدخول مطلوب' : 'Authentication Required'}
         </h2>
-        <p className="text-slate-600 dark:text-slate-400 max-w-md mb-6 text-sm">
-          {isRtl 
+        <p className="text-slate-600 dark:text-slate-400 max-w-md mb-6 text-sm leading-relaxed">
+          {isRtl
             ? 'من فضلك قم بتسجيل الدخول أولاً بحسابك للوصول إلى منصة الطالب والمحاضرات والاختبارات.'
             : 'Please log in with your student account first to access lectures, quizzes, and files.'}
         </p>
         <button
+          type="button"
           onClick={onBackToHome}
-          className="px-6 py-2.5 rounded-xl bg-teal-600 text-white font-semibold hover:bg-teal-700 transition-colors shadow-md cursor-pointer"
+          className="min-h-[44px] px-6 py-2.5 rounded-xl bg-teal-600 text-white font-semibold hover:bg-teal-700 transition-colors shadow-xs cursor-pointer"
         >
           {isRtl ? 'العودة للصفحة الرئيسية وتسجيل الدخول' : 'Return Home & Log In'}
         </button>
@@ -231,1018 +291,1041 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo">
-      
-      {/* Top Portal Banner */}
-      <div className="bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white border-b border-teal-700/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            
-            <div className="flex items-center gap-4">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo pb-24 lg:pb-12">
+      {/* Compact Non-Sticky Student Sub-Header */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <button
+                type="button"
                 onClick={onBackToHome}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-                title={lang === 'en' ? 'Back to Home' : 'العودة للصفحة الرئيسية'}
+                aria-label={lang === 'en' ? 'Back to Home' : 'العودة للرئيسية'}
+                className="min-w-[40px] min-h-[40px] px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center justify-center gap-1 text-xs font-bold shrink-0 cursor-pointer"
               >
                 {isRtl ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-                <span>{lang === 'en' ? 'Home' : 'الرئيسية'}</span>
+                <span className="hidden sm:inline">{lang === 'en' ? 'Home' : 'الرئيسية'}</span>
               </button>
 
-              <div className="space-y-0.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold">
-                    {lang === 'en' ? 'Student Portal · Chemistry & Science' : 'لوحة تحكم الطالب · Chemistry & Science'}
-                  </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-bold font-mono">
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                  {lang === 'en'
+                    ? `Welcome, ${currentUser.name.split(' ')[0]}`
+                    : `مرحباً، ${currentUser.name.split(' ')[0]}`}
+                </h1>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                  <span className="font-semibold text-teal-700 dark:text-teal-400">
                     {getGradeTitle(selectedGrade)}
                   </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {lang === 'en'
+                      ? `Progress ${progressPercentage}%`
+                      : `التقدم ${progressPercentage}%`}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {lang === 'en'
+                      ? `Score ${studentCumulativeScore}%`
+                      : `المعدل ${studentCumulativeScore}%`}
+                  </span>
                 </div>
-                <p className="text-xs sm:text-sm text-teal-200">
-                  {lang === 'en'
-                    ? `Welcome, ${currentUser ? currentUser.name : 'Future Leader'}! Your customized curriculum is protected by smart sequential learning.`
-                    : `مرحباً بك يا ${currentUser ? currentUser.name : 'دكتور المستقبل'}! المحتوى مخصص لصفك الدراسي ومؤمن بنظام التسلسل الذكي.`}
-                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
               {isTeacher && (
                 <button
+                  type="button"
                   onClick={onOpenTeacherDashboard}
-                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-400/20 text-amber-200 border border-amber-400/40 hover:bg-amber-400/30 transition-colors cursor-pointer"
+                  className="min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
-                  {lang === 'en' ? 'Admin Dashboard' : 'لوحة التحكم (Admin)'}
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span className="hidden sm:inline">
+                    {lang === 'en' ? 'Admin' : 'لوحة المعلم'}
+                  </span>
                 </button>
               )}
-
-              <div className="px-3.5 py-2 rounded-xl bg-white/10 text-xs font-mono flex items-center gap-2">
-                <Award className="w-4 h-4 text-amber-300" />
-                <span>
-                  {lang === 'en'
-                    ? `Cumulative Score: ${studentCumulativeScore}%`
-                    : `الدرجة التراكمية الحقيقية: ${studentCumulativeScore}%`}
-                </span>
-              </div>
             </div>
+          </div>
 
+          {/* Slim Curriculum Progress Bar */}
+          <div className="mt-3 w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full bg-teal-600 dark:bg-teal-500 rounded-full transition-all duration-300"
+              style={{ width: `${progressPercentage}%` }}
+            />
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        
-        {/* ========================================================
-            INTERACTIVE ACTIVITY & DESTINATION CARDS (مركز الأنشطة والوجهات السريعة)
-        ======================================================== */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-600">
-                <Compass className="w-5 h-5" />
-              </span>
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white font-kufi">
-                  {lang === 'en' ? 'Activity & Quick Destination Hub 🎯' : 'مركز أنشطة الطالب والوجهات السريعة 🎯'}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {lang === 'en'
-                    ? 'Instant shortcuts to your next session, pending quiz, handouts library, and periodic table.'
-                    : 'محطة وصولك السريعة لحصتك المستحقة، كويز التقييم، مكتبة المذكرات، ومختبر الجدول الدوري.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Overall Curriculum Progress Tag */}
-            <div className="flex items-center gap-3 p-2 px-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs self-start sm:self-auto font-mono text-xs">
-              <span className="text-slate-500">{lang === 'en' ? 'Curriculum Progress:' : 'إتقان المنهج:'}</span>
-              <div className="w-24 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 rounded-full transition-all duration-500"
-                  style={{ width: `${progressPercentage}%` }}
-                />
-              </div>
-              <span className="font-bold text-teal-600 dark:text-teal-400">{progressPercentage}%</span>
-            </div>
-          </div>
-
-          {/* 5 Destination Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            {/* DESTINATION CARD 1: NEXT LECTURE */}
-            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-teal-200/80 dark:border-slate-800 hover:border-teal-500 dark:hover:border-teal-500 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/80 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
-                    <Video className="w-5 h-5" />
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono ${
-                    isNextLectureReady ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                  }`}>
-                    {isNextLectureReady ? (lang === 'en' ? 'Next Up ▶️' : 'حصتك التالية ▶️') : (lang === 'en' ? 'Locked 🔒' : 'مقفولة 🔒')}
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-[11px] font-bold text-teal-600 dark:text-teal-400 font-mono">
-                    {lang === 'en' ? `Session #${nextTargetLecture?.sessionOrder || 1}` : `الحصة رقم ${nextTargetLecture?.sessionOrder || 1}`}
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
-                    {nextTargetLecture?.title || (lang === 'en' ? 'First Lecture' : 'محاضرة التأسيس')}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
-                    {nextTargetLecture?.chapter || 'الباب الأول'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  onClick={() => {
-                    if (nextTargetLecture) {
-                      setActiveLecture(nextTargetLecture);
-                      setActiveTab('lectures');
-                      setActiveQuiz(null);
-                      setTimeout(() => {
-                        document.getElementById('videoPlayerSection')?.scrollIntoView({ behavior: 'smooth' });
-                      }, 100);
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>{lang === 'en' ? 'Watch Lecture Now' : 'مشاهدة الحصة الآن'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* DESTINATION CARD 2: ASSESSMENT QUIZ */}
-            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-amber-200/80 dark:border-slate-800 hover:border-amber-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                    <Award className="w-5 h-5" />
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
-                    {lang === 'en' ? 'Assessment' : 'كويز الترقية 📝'}
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono">
-                    {nextTargetQuiz ? `${nextTargetQuiz.questions.length} ${lang === 'en' ? 'Questions' : 'أسئلة MCQ'}` : 'اختبار إلكتروني'}
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
-                    {nextTargetQuiz?.title || (lang === 'en' ? 'General Chemistry Quiz' : 'كويز قياس المستوى الدوري')}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
-                    {nextTargetQuiz?.chapter || (lang === 'en' ? 'Grade Syllabus' : 'منهج الصف')}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  onClick={() => {
-                    if (nextTargetQuiz) {
-                      handleStartQuiz(nextTargetQuiz);
-                      setTimeout(() => {
-                        document.getElementById('quizSection')?.scrollIntoView({ behavior: 'smooth' });
-                      }, 100);
-                    } else {
-                      setActiveTab('quizzes');
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
-                >
-                  <Target className="w-3.5 h-3.5" />
-                  <span>{lang === 'en' ? 'Start Assessment Quiz' : 'بدء الكويز الآن'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* DESTINATION CARD 3: HANDOUTS & PDF NOTES */}
-            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-teal-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/80 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
-                    {filteredAttachments.length} {lang === 'en' ? 'Files' : 'مذكرات'}
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-[11px] font-bold text-teal-600 dark:text-teal-400 font-mono">
-                    {lang === 'en' ? 'Download Center' : 'مكتبة الملازم والشيتات'}
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
-                    {filteredAttachments[0]?.title || (lang === 'en' ? 'Chemistry Handouts PDF' : 'مذكرات الشرح والمسائل')}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
-                    {lang === 'en' ? 'PDFs available for offline study' : 'جاهزة للتحميل والطباعة مباشرة'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  onClick={() => {
-                    setActiveTab('files');
-                    setActiveQuiz(null);
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>{lang === 'en' ? 'Explore Handouts' : 'تصفح المذكرات PDF'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* DESTINATION CARD 4: INTERACTIVE 3D PERIODIC TABLE */}
-            <div className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border-2 border-purple-200/80 dark:border-slate-800 hover:border-purple-400 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300">
-                    118 {lang === 'en' ? 'Elements' : 'عنصراً'}
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400 font-mono">
-                    {lang === 'en' ? 'Interactive 3D Lab' : 'المختبر ثلاثي الأبعاد'}
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
-                    {lang === 'en' ? 'Modern Periodic Table' : 'الجدول الدوري الحديث'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 line-clamp-1 mt-1 font-sans">
-                    {lang === 'en' ? 'Atomic numbers & electron configs' : 'أعداد التأكسد والتوزيع الإلكتروني'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  onClick={() => {
-                    setActiveTab('periodic-table');
-                    setActiveQuiz(null);
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{lang === 'en' ? 'Open Periodic Table' : 'استكشف الجدول الدوري'}</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Navigation Tabs & Grade Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800">
-          
-          {/* Main Module Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+      {/* Main Content Container */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
+        {/* Desktop Segmented Navigation & Teacher Grade Switcher */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Desktop Module Tabs (hidden on mobile because mobile uses Fixed Bottom Tab Bar) */}
+          <div className="hidden lg:flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
             <button
-              onClick={() => { setActiveTab('lectures'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              type="button"
+              onClick={() => {
+                setActiveTab('lectures');
+                setActiveQuiz(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
                 activeTab === 'lectures' && !activeQuiz
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Video className="w-4 h-4" />
               <span>
                 {lang === 'en'
-                  ? `Lectures & Sessions (${filteredLectures.length})`
-                  : `المحاضرات والشرح (${filteredLectures.length})`}
+                  ? `Lectures (${filteredLectures.length})`
+                  : `المحاضرات (${filteredLectures.length})`}
               </span>
             </button>
 
             <button
-              onClick={() => { setActiveTab('quizzes'); }}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                activeTab === 'quizzes'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              type="button"
+              onClick={() => setActiveTab('quizzes')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                activeTab === 'quizzes' || activeQuiz
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Award className="w-4 h-4" />
               <span>
                 {lang === 'en'
-                  ? `Online Quizzes (${filteredQuizzes.length})`
-                  : `الامتحانات الإلكترونية (${filteredQuizzes.length})`}
+                  ? `Quizzes (${filteredQuizzes.length})`
+                  : `الامتحانات (${filteredQuizzes.length})`}
               </span>
             </button>
 
             <button
-              onClick={() => { setActiveTab('files'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              type="button"
+              onClick={() => {
+                setActiveTab('files');
+                setActiveQuiz(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
                 activeTab === 'files'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <FileText className="w-4 h-4" />
               <span>
                 {lang === 'en'
-                  ? `PDF Handouts (${filteredAttachments.length})`
-                  : `المذكرات والملفات (${filteredAttachments.length})`}
+                  ? `Handouts (${filteredAttachments.length})`
+                  : `المذكرات (${filteredAttachments.length})`}
               </span>
             </button>
 
             <button
-              onClick={() => { setActiveTab('periodic-table'); setActiveQuiz(null); }}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              type="button"
+              onClick={() => {
+                setActiveTab('periodic-table');
+                setActiveQuiz(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
                 activeTab === 'periodic-table'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>
-                {lang === 'en' ? 'Periodic Table' : 'الجدول الدوري الحديث'}
-              </span>
+              <Atom className="w-4 h-4" />
+              <span>{lang === 'en' ? 'Periodic Table' : 'الجدول الدوري'}</span>
             </button>
           </div>
 
-          {/* Grade Selector - only visible to teacher for preview, for students their grade is locked */}
-          {isTeacher ? (
-            <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 dark:bg-slate-800 rounded-xl self-start sm:self-auto">
-              <span className="text-[10px] text-slate-500 font-bold px-1.5">معاينة الصف:</span>
+          {/* Teacher Grade Preview Switcher */}
+          {isTeacher && (
+            <div className="flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl self-start sm:self-auto overflow-x-auto max-w-full">
               <button
+                type="button"
                 onClick={() => setSelectedGrade('first')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                   selectedGrade === 'first'
-                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 أولى ثانوي
               </button>
               <button
+                type="button"
                 onClick={() => setSelectedGrade('second')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                   selectedGrade === 'second'
-                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 تانية ثانوي
               </button>
               <button
+                type="button"
                 onClick={() => setSelectedGrade('third')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                   selectedGrade === 'third'
-                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
                 تالتة ثانوي
               </button>
             </div>
-          ) : (
-            <div className="px-3.5 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-700 dark:text-teal-300">
-              📌 {getGradeTitle(selectedGrade)}
+          )}
+        </div>
+
+        {/* Flex column with responsive ordering: On mobile, active learning workspace comes FIRST, summary strip goes below; on desktop, summary KPI strip sits neatly at top */}
+        <div className="flex flex-col gap-6">
+          {/* Compact 4-Metric Quick Strip (Order 2 on mobile so student goes straight to video, Order 1 on desktop) */}
+          {!activeQuiz && (
+            <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (nextTargetLecture) {
+                    setActiveLecture(nextTargetLecture);
+                    setActiveTab('lectures');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{lang === 'en' ? 'Watched' : 'الحصص المشاهدة'}</span>
+                  <Video className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                </div>
+                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                  {completedLecturesCount} / {totalLecturesCount}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (nextTargetQuiz) {
+                    handleStartQuiz(nextTargetQuiz);
+                  } else {
+                    setActiveTab('quizzes');
+                  }
+                }}
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{lang === 'en' ? 'Quizzes Passed' : 'الاختبارات المجتازة'}</span>
+                  <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                </div>
+                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                  {passedQuizzesCount} / {filteredQuizzes.length}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('files')}
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{lang === 'en' ? 'PDF Handouts' : 'المذكرات المتاحة'}</span>
+                  <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                </div>
+                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                  {filteredAttachments.length} {lang === 'en' ? 'Files' : 'ملفات'}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('periodic-table')}
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{lang === 'en' ? 'Overall Score' : 'المعدل التراكمي'}</span>
+                  <Atom className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                </div>
+                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-teal-600 dark:text-teal-400">
+                  {studentCumulativeScore}%
+                </div>
+              </button>
             </div>
           )}
 
-        </div>
-
-        {/* 1. LECTURES TAB */}
-        {activeTab === 'lectures' && !activeQuiz && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
-            {/* Active Video Player or Locked Screen (Right side in RTL) */}
-            <div className="lg:col-span-8 space-y-6">
-              {activeLecture ? (
-                isLectureUnlocked(activeLecture) ? (
-                  /* UNLOCKED: SECURE VIDEO PLAYER WITH DYNAMIC WATERMARK */
-                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-                    
-                    {/* Safe Secure Video Player */}
-                    <SecureVideoPlayer
-                      lecture={activeLecture}
-                      currentUser={currentUser}
-                      isWatched={Boolean(currentUser?.watchedLectureIds?.includes(activeLecture.id))}
-                      onMarkWatched={handleMarkWatched}
-                      onTakeQuiz={(quizId) => {
-                        const targetQuiz = quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
-                        if (targetQuiz) handleStartQuiz(targetQuiz);
-                      }}
-                    />
-
-                    {/* Lecture Info */}
-                    <div className="space-y-3 pt-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-teal-700 dark:text-teal-300 px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950 border border-teal-200 dark:border-teal-800 font-mono">
-                          {activeLecture.chapter}
-                        </span>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" />
-                            {activeLecture.duration}
-                          </span>
-                          <span>{activeLecture.viewsCount} مشاهدة</span>
-                        </div>
-                      </div>
-
-                      <h2 className="text-xl sm:text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                        {activeLecture.title}
-                      </h2>
-
-                      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-sans">
-                        {activeLecture.description}
-                      </p>
-                    </div>
-
-                    {/* Attached Handout Download Strip */}
-                    {activeLecture.pdfTitle && (
-                      <div className="p-4 rounded-2xl bg-teal-50/60 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
-                            <FileText className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="text-sm font-bold text-slate-900 dark:text-white">
-                              {activeLecture.pdfTitle}
-                            </div>
-                            <div className="text-xs text-teal-700 dark:text-teal-300">
-                              مذكرة الشرح والتدريبات الخاصة بهذه الحصة
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            if (activeLecture.pdfUrl && activeLecture.pdfUrl !== '#') {
-                              window.open(activeLecture.pdfUrl, '_blank');
-                            }
+          {/* PRIMARY WORKSPACE (Order 1 on mobile, Order 2 on desktop) */}
+          <div className="order-1 lg:order-2">
+            {/* 1. LECTURES TAB */}
+            {activeTab === 'lectures' && !activeQuiz && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Active Video Player Column */}
+                <div id="videoPlayerSection" className="lg:col-span-8 space-y-5">
+                  {activeLecture ? (
+                    isLectureUnlocked(activeLecture) ? (
+                      <div className="space-y-4">
+                        {/* Modern Edge-to-Edge Mobile Video Stage */}
+                        <SecureVideoPlayer
+                          lecture={activeLecture}
+                          currentUser={currentUser}
+                          isWatched={Boolean(
+                            currentUser?.watchedLectureIds?.includes(activeLecture.id)
+                          )}
+                          onMarkWatched={handleMarkWatched}
+                          onTakeQuiz={(quizId) => {
+                            const targetQuiz =
+                              quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
+                            if (targetQuiz) handleStartQuiz(targetQuiz);
                           }}
-                          className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>تحميل المذكرة PDF</span>
-                        </button>
-                      </div>
-                    )}
+                        />
 
-                    {/* Student Quick Notes Tool */}
-                    <div className="space-y-2 pt-2">
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 font-kufi">
-                        <BookOpen className="w-4 h-4 text-teal-600" />
-                        <span>كشكول ملاحظاتك السريعة على هذه المحاضرة:</span>
-                      </label>
-                      <textarea
-                        value={studentNotes}
-                        onChange={(e) => setStudentNotes(e.target.value)}
-                        rows={3}
-                        className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        placeholder="اكتب معادلة أو ملاحظة هامة تريد الرجوع لها قبل الامتحان..."
-                      />
-                    </div>
-
-                  </div>
-                ) : (
-                  /* LOCKED SCREEN: PREREQUISITE WARNING */
-                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border-2 border-amber-300 dark:border-amber-800/60 shadow-xl space-y-6 text-center">
-                    
-                    <div className="w-20 h-20 mx-auto rounded-3xl bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-md">
-                      <Lock className="w-10 h-10 animate-bounce" />
-                    </div>
-
-                    <div className="space-y-2 max-w-lg mx-auto">
-                      <div className="inline-block px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-xs font-bold font-mono">
-                        الحصة مغلقة حتى إتمام الشروط
-                      </div>
-                      <h3 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                        {activeLecture.title}
-                      </h3>
-                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-sans">
-                        لضمان التأسيس المتين وحصولك على الدرجة النهائية، تم قفل هذه المحاضرة تلقائياً حتى تنتهي من مشاهدة الحصة السابقة واجتياز اختبارها بنجاح.
-                      </p>
-                    </div>
-
-                    {/* Prerequisite Checklist Box */}
-                    {(() => {
-                      const prereq = getPrerequisiteDetails(activeLecture);
-                      if (!prereq) return null;
-                      return (
-                        <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-right space-y-3.5 max-w-lg mx-auto">
-                          <h4 className="text-xs font-bold font-kufi text-slate-800 dark:text-slate-200">
-                            متطلبات فك القفل:
-                          </h4>
-
-                          {/* Step 1: Watch previous lecture */}
-                          <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                            <div className="flex items-center gap-2.5">
-                              {prereq.prevWatched ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                              ) : (
-                                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-                              )}
-                              <div>
-                                <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                  1. مشاهدة الحصة {prereq.prevLec.sessionOrder || 1}: {prereq.prevLec.title}
-                                </div>
-                                <div className="text-[10px] text-slate-500">
-                                  {prereq.prevWatched ? 'تمت المشاهدة بنجاح ✅' : 'لم تنتهِ من مشاهدتها بعد'}
-                                </div>
-                              </div>
+                        {/* Clean Single-Elevation Lecture Info Card */}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                              <span className="font-semibold text-teal-700 dark:text-teal-400">
+                                {activeLecture.chapter}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5" />
+                                {activeLecture.duration}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span>{activeLecture.viewsCount} مشاهدة</span>
                             </div>
 
-                            {!prereq.prevWatched && (
-                              <button
-                                onClick={() => setActiveLecture(prereq.prevLec)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 cursor-pointer shrink-0"
-                              >
-                                الذهاب للمحاضرة
-                              </button>
-                            )}
+                            <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
+                              {activeLecture.title}
+                            </h2>
+
+                            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                              {activeLecture.description}
+                            </p>
                           </div>
 
-                          {/* Step 2: Pass previous quiz */}
-                          {prereq.prevQuiz && (
-                            <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                              <div className="flex items-center gap-2.5">
-                                {prereq.prevQuizPassed ? (
-                                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                                ) : (
-                                  <Lock className="w-5 h-5 text-amber-500 shrink-0" />
-                                )}
-                                <div>
-                                  <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                    2. اجتياز: {prereq.prevQuiz.title} (60% فأعلى)
+                          {/* Attached PDF Handout Row */}
+                          {activeLecture.pdfTitle && (
+                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                    {activeLecture.pdfTitle}
                                   </div>
-                                  <div className="text-[10px] text-slate-500">
-                                    {prereq.prevQuizPassed 
-                                      ? `تم الاجتياز بنسبة ${currentUser?.quizScores?.[prereq.prevQuiz.id] || 100}% ✅` 
-                                      : 'مطلوب اجتياز الكويز لفتح هذه الحصة'}
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    مذكرة الشرح والتدريبات لهذه الحصة
                                   </div>
                                 </div>
                               </div>
 
-                              <button
-                                onClick={() => handleStartQuiz(prereq.prevQuiz!)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 cursor-pointer shrink-0"
-                              >
-                                حل الكويز الآن
-                              </button>
+                              {activeLecture.pdfUrl && activeLecture.pdfUrl !== '#' ? (
+                                <a
+                                  href={activeLecture.pdfUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2 shrink-0"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  <span>تحميل المذكرة PDF</span>
+                                </a>
+                              ) : (
+                                <span className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 shrink-0 cursor-not-allowed">
+                                  <Download className="w-4 h-4" />
+                                  <span>غير متاح حالياً</span>
+                                </span>
+                              )}
                             </div>
                           )}
 
-                        </div>
-                      );
-                    })()}
-
-                  </div>
-                )
-              ) : (
-                <div className="p-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
-                  لا توجد محاضرات متاحة حالياً لهذا الصف.
-                </div>
-              )}
-            </div>
-
-            {/* Lecture Playlist with Locks (Left side in RTL) */}
-            <div className="lg:col-span-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi">
-                  قائمة حصص {getGradeTitle(selectedGrade)}
-                </h3>
-                <span className="text-xs font-mono text-teal-600 dark:text-teal-400 font-semibold">
-                  {filteredLectures.length} حصص
-                </span>
-              </div>
-
-              <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-                {filteredLectures.map((lec, idx) => {
-                  const isCurrent = activeLecture?.id === lec.id;
-                  const unlocked = isLectureUnlocked(lec);
-                  const isWatched = currentUser?.watchedLectureIds?.includes(lec.id);
-
-                  return (
-                    <div
-                      key={lec.id}
-                      onClick={() => setActiveLecture(lec)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 ${
-                        isCurrent
-                          ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-500 shadow-sm'
-                          : unlocked
-                          ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-300'
-                          : 'bg-slate-100/70 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-800 opacity-80'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-mono text-xs font-bold ${
-                        !unlocked
-                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-500'
-                          : isCurrent
-                          ? 'bg-teal-600 text-white'
-                          : isWatched
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                      }`}>
-                        {!unlocked ? (
-                          <Lock className="w-4 h-4 text-amber-500" />
-                        ) : isWatched ? (
-                          <Check className="w-4 h-4 text-emerald-600" />
-                        ) : (
-                          idx + 1
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0 text-right">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
-                          <span>{lec.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                          <span>{lec.duration}</span>
-                          <span>·</span>
-                          <span>{lec.chapter.split(':')[0]}</span>
+                          {/* Quick Notes Section separated cleanly with hairline divider */}
+                          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                              <span>ملاحظاتك السريعة على الحصة (تُحفظ تلقائياً):</span>
+                            </label>
+                            <textarea
+                              value={studentNotes}
+                              onChange={(e) => handleNotesChange(e.target.value)}
+                              rows={2}
+                              className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                              placeholder="اكتب معادلة أو ملاحظة هامة تريد الرجوع لها..."
+                            />
+                          </div>
                         </div>
                       </div>
+                    ) : (
+                      /* Locked Prerequisite Screen */
+                      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 space-y-5 text-center">
+                        <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                          <Lock className="w-8 h-8" />
+                        </div>
 
-                      {!unlocked ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 flex items-center gap-1 shrink-0 font-mono">
-                          <Lock className="w-3 h-3" />
-                          <span>مقفل</span>
-                        </span>
-                      ) : isWatched ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
-                          تم الحضور ✅
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 shrink-0">
-                          متاح
-                        </span>
-                      )}
+                        <div className="space-y-1.5 max-w-md mx-auto">
+                          <div className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                            الحصة مقفلة حتى إتمام الشروط السابقة
+                          </div>
+                          <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+                            {activeLecture.title}
+                          </h3>
+                          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                            أنهِ مشاهدة الحصة السابقة واجتز اختبارها لفتح هذه المحاضرة تلقائياً.
+                          </p>
+                        </div>
+
+                        {(() => {
+                          const prereq = getPrerequisiteDetails(activeLecture);
+                          if (!prereq) return null;
+                          return (
+                            <div className="max-w-lg mx-auto border-t border-slate-100 dark:border-slate-800 pt-4 text-right space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                                <div className="flex items-center gap-2.5">
+                                  {prereq.prevWatched ? (
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                  ) : (
+                                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                                  )}
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                      1. مشاهدة الحصة {prereq.prevLec.sessionOrder || 1}:{' '}
+                                      {prereq.prevLec.title}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500">
+                                      {prereq.prevWatched ? 'مكتمل' : 'غير مكتمل'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {!prereq.prevWatched && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveLecture(prereq.prevLec)}
+                                    className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 cursor-pointer shrink-0"
+                                  >
+                                    الانتقال للحصة
+                                  </button>
+                                )}
+                              </div>
+
+                              {prereq.prevQuiz && (
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                                  <div className="flex items-center gap-2.5">
+                                    {prereq.prevQuizPassed ? (
+                                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                    ) : (
+                                      <Lock className="w-5 h-5 text-amber-500 shrink-0" />
+                                    )}
+                                    <div>
+                                      <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                        2. اجتياز {prereq.prevQuiz.title} (60% فأعلى)
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 tabular-nums">
+                                        {prereq.prevQuizPassed
+                                          ? `تم الاجتياز بنسبة ${
+                                              currentUser?.quizScores?.[prereq.prevQuiz.id] || 100
+                                            }%`
+                                          : 'مطلوب اجتياز الاختبار'}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartQuiz(prereq.prevQuiz!)}
+                                    className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 cursor-pointer shrink-0"
+                                  >
+                                    بدء الاختبار
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-10 text-center text-sm text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                      لا توجد محاضرات متاحة حالياً لهذا الصف.
                     </div>
-                  );
-                })}
-
-                {filteredLectures.length === 0 && (
-                  <div className="p-8 text-center text-xs text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
-                    <BookOpen className="w-8 h-8 text-teal-600/40 mx-auto" />
-                    <div className="font-bold text-slate-700 dark:text-slate-300">
-                      {lang === 'en' ? 'No lectures published yet' : 'لم يتم نشر محاضرات لهذا الصف حتى الآن'}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      {lang === 'en' ? 'Your teacher will add sessions soon.' : 'سيقوم المعلم برفع الحصص قريباً.'}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-        {/* 2. QUIZZES TAB & ACTIVE EXAM ENGINE */}
-        {(activeTab === 'quizzes' || activeQuiz) && (
-          <div>
-            {!activeQuiz ? (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                      الامتحانات الإلكترونية والتقييمات الدورية
-                    </h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      كل امتحان يشمل تصحيحاً فورياً وتفسيراً علمياً مفصلاً لكل سؤال بمعادلاته مع حفظ الدرجة في ملفك الشخصي.
-                    </p>
-                  </div>
+                  )}
                 </div>
 
-                {filteredQuizzes.length === 0 ? (
-                  <div className="p-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center mx-auto">
-                      <Award className="w-8 h-8" />
-                    </div>
-                    <h4 className="text-base font-bold text-slate-800 dark:text-white">
-                      {lang === 'en' ? 'No quizzes created yet' : 'لا توجد اختبارات إلكترونية مضافة لهذا الصف بعد'}
-                    </h4>
-                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                      {lang === 'en' ? 'Quizzes will be published here by your teacher after sessions.' : 'سيقوم المعلم بنشر الامتحانات الإلكترونية هنا فور إعدادها.'}
-                    </p>
+                {/* Lecture Curriculum Playlist Column */}
+                <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                      قائمة حصص المنهج
+                    </h3>
+                    <span className="text-xs font-mono tabular-nums text-slate-500">
+                      {filteredLectures.length} حصص
+                    </span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {filteredQuizzes.map((quiz) => {
-                      const quizScore = currentUser?.quizScores?.[quiz.id];
-                      const isPassed = currentUser?.passedQuizIds?.includes(quiz.id) || (quizScore !== undefined && quizScore >= 60);
+
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[540px] overflow-y-auto">
+                    {filteredLectures.map((lec, idx) => {
+                      const isCurrent = activeLecture?.id === lec.id;
+                      const unlocked = isLectureUnlocked(lec);
+                      const isWatched = currentUser?.watchedLectureIds?.includes(lec.id);
 
                       return (
-                        <div
-                          key={quiz.id}
-                          className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all space-y-4"
+                        <button
+                          key={lec.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveLecture(lec);
+                            if (window.innerWidth < 1024) {
+                              document
+                                .getElementById('videoPlayerSection')
+                                ?.scrollIntoView({ behavior: 'smooth' });
+                            }
+                          }}
+                          className={`w-full min-h-[64px] px-4 py-3 text-right transition-colors cursor-pointer flex items-center gap-3 ${
+                            isCurrent
+                              ? 'bg-teal-50/80 dark:bg-teal-950/40'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                          }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-bold font-mono">
-                              {quiz.chapter}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-amber-500" />
-                              {quiz.durationMinutes} دقيقة
-                            </span>
-                          </div>
-
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white font-kufi">
-                            {quiz.title}
-                          </h3>
-
-                          <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-slate-100 dark:border-slate-800">
-                            <span>{quiz.questions.length} أسئلة اختيار من متعدد</span>
-                            {quizScore !== undefined ? (
-                              <span className={`font-bold px-2 py-0.5 rounded-full ${
-                                isPassed 
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
-                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                              }`}>
-                                درجتك: {quizScore}% {isPassed ? '(ناجح)' : '(يحتاج إعادة)'}
-                              </span>
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-mono tabular-nums text-xs font-bold ${
+                              !unlocked
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                                : isCurrent
+                                ? 'bg-teal-600 text-white'
+                                : isWatched
+                                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {!unlocked ? (
+                              <Lock className="w-4 h-4 text-amber-500" />
+                            ) : isWatched ? (
+                              <Check className="w-4 h-4" />
                             ) : (
-                              <span className="text-amber-600 font-semibold">لم يُحل بعد</span>
+                              idx + 1
                             )}
                           </div>
 
-                          <button
-                            onClick={() => handleStartQuiz(quiz)}
-                            className={`w-full py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                              isPassed
-                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-teal-50'
-                                : 'bg-teal-600 hover:bg-teal-700 text-white'
-                            }`}
-                          >
-                            <Award className="w-4 h-4" />
-                            <span>{quizScore !== undefined ? 'إعادة الامتحان للتحسين' : 'ابدأ الامتحان الآن'}</span>
-                          </button>
-                        </div>
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className={`text-xs sm:text-sm font-bold truncate ${
+                                isCurrent
+                                  ? 'text-teal-800 dark:text-teal-300'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {lec.title}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums truncate">
+                              <span>{lec.duration}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="truncate">{lec.chapter.split(':')[0]}</span>
+                              <span aria-hidden="true">·</span>
+                              <span
+                                className={
+                                  !unlocked
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : isWatched
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-teal-600 dark:text-teal-400'
+                                }
+                              >
+                                {!unlocked ? 'مقفلة' : isWatched ? 'مكتملة' : 'متاحة'}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
                       );
                     })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* ACTIVE QUIZ ENGINE RUNNER */
-              <div className="max-w-3xl mx-auto space-y-6">
-                
-                {/* Quiz Runner Top Header */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-bold text-lg font-kufi text-slate-900 dark:text-white">
-                      {activeQuiz.title}
-                    </h3>
-                    <p className="text-xs text-teal-600 dark:text-teal-400 font-mono">
-                      السؤال {currentQuestionIndex + 1} من {activeQuiz.questions.length}
-                    </p>
-                  </div>
 
-                  <button
-                    onClick={() => setActiveQuiz(null)}
-                    className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
-                  >
-                    إنهاء والعودة
-                  </button>
-                </div>
-
-                {/* Quiz Celebration Banner if passed */}
-                {showQuizCelebration && (
-                  <div className="p-4 rounded-2xl bg-emerald-500 text-white text-center font-bold text-sm shadow-xl flex items-center justify-center gap-2 animate-bounce">
-                    <Trophy className="w-5 h-5 text-amber-300" />
-                    <span>{showQuizCelebration}</span>
-                  </div>
-                )}
-
-                {/* Question Card */}
-                {activeQuiz.questions[currentQuestionIndex] && (
-                  <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-6 shadow-sm">
-                    
-                    <div className="space-y-2">
-                      <span className="text-xs font-bold text-amber-600 dark:text-amber-400 font-mono">
-                        سؤال رقم {currentQuestionIndex + 1}:
-                      </span>
-                      <h4 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-relaxed">
-                        {activeQuiz.questions[currentQuestionIndex].question}
-                      </h4>
-                    </div>
-
-                    {/* Options list */}
-                    <div className="space-y-3">
-                      {activeQuiz.questions[currentQuestionIndex].options.map((opt, oIdx) => {
-                        const qId = activeQuiz.questions[currentQuestionIndex].id;
-                        const isSelected = selectedAnswers[qId] === oIdx;
-                        const isCorrect = activeQuiz.questions[currentQuestionIndex].correctAnswer === oIdx;
-
-                        let optionStyle = 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-teal-400';
-                        if (quizSubmitted) {
-                          if (isCorrect) {
-                            optionStyle = 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold';
-                          } else if (isSelected && !isCorrect) {
-                            optionStyle = 'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200';
-                          }
-                        } else if (isSelected) {
-                          optionStyle = 'border-teal-600 bg-teal-50 dark:bg-teal-950/50 text-teal-900 dark:text-teal-100 font-bold';
-                        }
-
-                        return (
-                          <button
-                            key={oIdx}
-                            onClick={() => handleSelectAnswer(qId, oIdx)}
-                            className={`w-full text-right p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${optionStyle}`}
-                          >
-                            <span className="text-sm sm:text-base">{opt}</span>
-                            <span className="w-6 h-6 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center text-xs shrink-0 font-mono">
-                              {String.fromCharCode(65 + oIdx)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Explanation after submission */}
-                    {quizSubmitted && (
-                      <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2 text-right">
-                        <div className="text-xs font-bold text-amber-800 dark:text-amber-300 font-kufi flex items-center gap-1.5">
-                          <HelpCircle className="w-4 h-4" />
-                          <span>التفسير العلمي وملاحظة مستر محمد مصطفى (Science Note):</span>
+                    {filteredLectures.length === 0 && (
+                      <div className="p-8 text-center text-xs text-slate-500 space-y-2">
+                        <BookOpen className="w-7 h-7 text-teal-600/40 mx-auto" />
+                        <div className="font-bold text-slate-700 dark:text-slate-300">
+                          {lang === 'en'
+                            ? 'No lectures published yet'
+                            : 'لم يتم نشر محاضرات لهذا الصف حتى الآن'}
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                          {activeQuiz.questions[currentQuestionIndex].explanation}
-                        </p>
-                        {activeQuiz.questions[currentQuestionIndex].formula && (
-                          <div className="pt-1 text-xs font-mono text-amber-900 dark:text-amber-200 dir-ltr font-bold">
-                            {activeQuiz.questions[currentQuestionIndex].formula}
-                          </div>
-                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. QUIZZES TAB & ACTIVE EXAM ENGINE */}
+            {(activeTab === 'quizzes' || activeQuiz) && (
+              <div>
+                {!activeQuiz ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
+                        الامتحانات الإلكترونية
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                        تصحيح فوري وتفسير علمي لكل سؤال مع حفظ الدرجة في ملفك.
+                      </p>
+                    </div>
+
+                    {filteredQuizzes.length === 0 ? (
+                      <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                        <Award className="w-8 h-8 text-amber-500 mx-auto" />
+                        <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                          {lang === 'en'
+                            ? 'No quizzes created yet'
+                            : 'لا توجد اختبارات مضافة لهذا الصف بعد'}
+                        </h4>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {filteredQuizzes.map((quiz) => {
+                          const quizScore = currentUser?.quizScores?.[quiz.id];
+                          const isPassed =
+                            currentUser?.passedQuizIds?.includes(quiz.id) ||
+                            (quizScore !== undefined && quizScore >= 60);
+
+                          return (
+                            <div
+                              key={quiz.id}
+                              className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4"
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                                  <span className="font-semibold text-teal-700 dark:text-teal-400 truncate">
+                                    {quiz.chapter}
+                                  </span>
+                                  <span className="flex items-center gap-1 shrink-0">
+                                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                                    {quiz.durationMinutes} دقيقة
+                                  </span>
+                                </div>
+
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                                  {quiz.title}
+                                </h3>
+
+                                <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
+                                  <span>{quiz.questions.length} سؤال</span>
+                                  <span aria-hidden="true">·</span>
+                                  {quizScore !== undefined ? (
+                                    <span
+                                      className={`font-bold ${
+                                        isPassed
+                                          ? 'text-emerald-600 dark:text-emerald-400'
+                                          : 'text-rose-600 dark:text-rose-400'
+                                      }`}
+                                    >
+                                      درجتك {quizScore}% ({isPassed ? 'ناجح' : 'إعادة مطلوبة'})
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                                      لم يُحل بعد
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleStartQuiz(quiz)}
+                                className={`w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                                  isPassed
+                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    : 'bg-teal-600 hover:bg-teal-700 text-white'
+                                }`}
+                              >
+                                <Award className="w-4 h-4" />
+                                <span>
+                                  {quizScore !== undefined ? 'إعادة الامتحان' : 'بدء الامتحان'}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Active Quiz Runner */
+                  <div className="max-w-2xl mx-auto space-y-4">
+                    <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white truncate">
+                            {activeQuiz.title}
+                          </h3>
+                          <p className="text-xs text-slate-500 tabular-nums">
+                            السؤال {currentQuestionIndex + 1} من {activeQuiz.questions.length}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveQuiz(null)}
+                          className="min-h-[40px] px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer shrink-0"
+                        >
+                          خروج
+                        </button>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full bg-teal-600 rounded-full transition-all duration-200"
+                          style={{
+                            width: `${Math.round(
+                              ((currentQuestionIndex + 1) /
+                                Math.max(1, activeQuiz.questions.length)) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {showQuizCelebration && (
+                      <div className="p-4 rounded-2xl bg-emerald-600 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2">
+                        <Trophy className="w-5 h-5 text-amber-300 shrink-0" />
+                        <span>{showQuizCelebration}</span>
                       </div>
                     )}
 
-                    {/* Navigation between questions */}
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
-                        disabled={currentQuestionIndex === 0}
-                        className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 cursor-pointer"
-                      >
-                        السابق
-                      </button>
+                    {activeQuiz.questions[currentQuestionIndex] && (
+                      <div className="p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
+                        <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
+                          {activeQuiz.questions[currentQuestionIndex].question}
+                        </h4>
 
-                      {!quizSubmitted ? (
-                        currentQuestionIndex === activeQuiz.questions.length - 1 ? (
-                          <button
-                            onClick={handleSubmitQuiz}
-                            className="px-6 py-2.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-sm cursor-pointer"
-                          >
-                            تصحيح الامتحان واعتماد النتيجة
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setCurrentQuestionIndex(Math.min(activeQuiz.questions.length - 1, currentQuestionIndex + 1))}
-                            className="px-5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl cursor-pointer"
-                          >
-                            التالي
-                          </button>
-                        )
-                      ) : (
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono">
-                            نتيجتك: {calculateScore()} من {activeQuiz.questions.length} ({Math.round((calculateScore() / activeQuiz.questions.length) * 100)}%)
-                          </div>
-                          <button
-                            onClick={() => {
-                              setActiveQuiz(null);
-                              setActiveTab('lectures');
-                            }}
-                            className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 text-white"
-                          >
-                            العودة للحصص
-                          </button>
+                        <div className="space-y-2.5">
+                          {activeQuiz.questions[currentQuestionIndex].options.map((opt, oIdx) => {
+                            const qId = activeQuiz.questions[currentQuestionIndex].id;
+                            const isSelected = selectedAnswers[qId] === oIdx;
+                            const isCorrect =
+                              activeQuiz.questions[currentQuestionIndex].correctAnswer === oIdx;
+
+                            let optionStyle =
+                              'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 hover:border-teal-400';
+                            if (quizSubmitted) {
+                              if (isCorrect) {
+                                optionStyle =
+                                  'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold';
+                              } else if (isSelected && !isCorrect) {
+                                optionStyle =
+                                  'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200';
+                              }
+                            } else if (isSelected) {
+                              optionStyle =
+                                'border-teal-600 bg-teal-50 dark:bg-teal-950/50 text-teal-900 dark:text-teal-100 font-bold';
+                            }
+
+                            return (
+                              <button
+                                key={oIdx}
+                                type="button"
+                                onClick={() => handleSelectAnswer(qId, oIdx)}
+                                className={`w-full min-h-[52px] text-right p-3.5 rounded-xl border transition-colors flex items-center justify-between gap-3 cursor-pointer ${optionStyle}`}
+                              >
+                                <span className="text-sm sm:text-base">{opt}</span>
+                                <span className="w-7 h-7 rounded-lg border border-slate-300 dark:border-slate-600 flex items-center justify-center text-xs shrink-0 font-mono">
+                                  {String.fromCharCode(65 + oIdx)}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
 
+                        {quizSubmitted && (
+                          <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1.5 text-right">
+                            <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                              <HelpCircle className="w-4 h-4 shrink-0" />
+                              <span>التفسير العلمي:</span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                              {activeQuiz.questions[currentQuestionIndex].explanation}
+                            </p>
+                            {activeQuiz.questions[currentQuestionIndex].formula && (
+                              <div className="pt-1 text-xs font-mono text-amber-900 dark:text-amber-200 dir-ltr font-bold">
+                                {activeQuiz.questions[currentQuestionIndex].formula}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))
+                            }
+                            disabled={currentQuestionIndex === 0}
+                            className="min-h-[44px] px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 cursor-pointer"
+                          >
+                            السابق
+                          </button>
+
+                          {!quizSubmitted ? (
+                            currentQuestionIndex === activeQuiz.questions.length - 1 ? (
+                              <button
+                                type="button"
+                                onClick={handleSubmitQuiz}
+                                className="min-h-[44px] px-5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl cursor-pointer"
+                              >
+                                تصحيح واعتماد النتيجة
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCurrentQuestionIndex(
+                                    Math.min(
+                                      activeQuiz.questions.length - 1,
+                                      currentQuestionIndex + 1
+                                    )
+                                  )
+                                }
+                                className="min-h-[44px] px-5 py-2 text-xs sm:text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl cursor-pointer"
+                              >
+                                التالي
+                              </button>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono tabular-nums">
+                                {calculateScore()} / {activeQuiz.questions.length} (
+                                {Math.round(
+                                  (calculateScore() / Math.max(1, activeQuiz.questions.length)) *
+                                    100
+                                )}
+                                %)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveQuiz(null);
+                                  setActiveTab('lectures');
+                                }}
+                                className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 text-white cursor-pointer"
+                              >
+                                للحصص
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-
               </div>
             )}
-          </div>
-        )}
 
-        {/* 3. FILES & ATTACHMENTS TAB */}
-        {activeTab === 'files' && !activeQuiz && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                  مذكرات وملفات {getGradeTitle(selectedGrade)}
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  تحميل مباشر للمذكرات وبنوك الأسئلة والشيتات بصيغة PDF عالية الجودة.
-                </p>
-              </div>
-            </div>
-
-            {filteredAttachments.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="w-16 h-16 rounded-2xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center mx-auto">
-                  <FileText className="w-8 h-8" />
+            {/* 3. FILES & ATTACHMENTS TAB */}
+            {activeTab === 'files' && !activeQuiz && (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
+                    مذكرات {getGradeTitle(selectedGrade)}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                    تحميل مباشر للمذكرات وبنوك الأسئلة بصيغة PDF.
+                  </p>
                 </div>
-                <h4 className="text-base font-bold text-slate-800 dark:text-white">
-                  {lang === 'en' ? 'No handouts or files added yet' : 'لا توجد مذكرات أو ملفات مضافة لهذا الصف بعد'}
-                </h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  {lang === 'en' ? 'PDF files and worksheets uploaded by your teacher will appear here.' : 'ستظهر هنا المذكرات والشيتات بصيغة PDF فور رفعها من قبل المعلم.'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredAttachments.map((file) => (
-                  <div
-                    key={file.id}
-                    className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:shadow-xl transition-all flex flex-col justify-between space-y-4"
-                  >
-                    <div className="space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center">
-                        <FileText className="w-6 h-6" />
+
+                {filteredAttachments.length === 0 ? (
+                  <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                    <FileText className="w-8 h-8 text-teal-600 mx-auto" />
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                      {lang === 'en'
+                        ? 'No handouts or files added yet'
+                        : 'لا توجد مذكرات مضافة لهذا الصف بعد'}
+                    </h4>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredAttachments.map((file) => (
+                      <div
+                        key={file.id}
+                        className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-11 h-11 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug">
+                              {file.title}
+                            </h3>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
+                              <span className="truncate">{file.chapter}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="shrink-0">{file.fileSize}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {file.downloadUrl && file.downloadUrl !== '#' ? (
+                          <a
+                            href={file.downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>تحميل PDF</span>
+                          </a>
+                        ) : (
+                          <span className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 cursor-not-allowed">
+                            <Download className="w-4 h-4" />
+                            <span>غير متاح للتحميل حالياً</span>
+                          </span>
+                        )}
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-                      <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi leading-snug">
-                        {file.title}
-                      </h3>
+            {/* 4. INTERACTIVE PERIODIC TABLE */}
+            {activeTab === 'periodic-table' && !activeQuiz && (
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-5">
+                  <div>
+                    <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
+                      مفاتيح السلسلة الانتقالية الأولى (3d)
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                      اضغط على أي عنصر لعرض التوزيع الإلكتروني وحالات التأكسد والملاحظة الامتحانية.
+                    </p>
+                  </div>
 
-                      <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
-                        <span>{file.chapter}</span>
-                        <span>·</span>
-                        <span>{file.fileSize}</span>
+                  {/* Active Element Inspector */}
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-14 h-14 rounded-xl bg-teal-600 text-white flex flex-col items-center justify-center shrink-0 font-mono tabular-nums">
+                        <span className="text-[10px] opacity-80 leading-none">
+                          {inspectedElement.num}
+                        </span>
+                        <span className="text-xl font-bold leading-tight">
+                          {inspectedElement.sym}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="text-base font-bold text-slate-900 dark:text-white">
+                          {inspectedElement.name}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono dir-ltr text-right">
+                          {inspectedElement.conf} · حالات التأكسد: {inspectedElement.ox}
+                        </div>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => {
-                        if (file.downloadUrl && file.downloadUrl !== '#') {
-                          window.open(file.downloadUrl, '_blank');
-                        }
-                      }}
-                      className="w-full py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-600 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>تحميل الآن PDF</span>
-                    </button>
+                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-md">
+                      {inspectedElement.note}
+                    </p>
                   </div>
-                ))}
+
+                  {/* Interactive Elements Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                    {TRANSITION_ELEMENTS.map((elem) => {
+                      const active = elem.sym === inspectedElement.sym;
+                      return (
+                        <button
+                          key={elem.sym}
+                          type="button"
+                          onClick={() => setSelectedElementSym(elem.sym)}
+                          className={`min-h-[96px] p-3 rounded-xl border text-center transition-colors cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                            active
+                              ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-500 ring-1 ring-teal-500/30'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-400'
+                          }`}
+                        >
+                          <span className="text-[11px] text-slate-400 font-mono tabular-nums">
+                            {elem.num}
+                          </span>
+                          <span className="text-xl font-bold font-mono text-teal-600 dark:text-teal-400">
+                            {elem.sym}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            {elem.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        )}
-
-        {/* 4. PERIODIC TABLE QUICK REFERENCE */}
-        {activeTab === 'periodic-table' && !activeQuiz && (
-          <div className="space-y-6">
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-              <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-amber-500" />
-                <span>الجدول الدوري الحديث · مفاتيح السلسلة الانتقالية 3d</span>
-              </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                مرجع سريع لأهم عناصر السلسلة الأولى وتوزيعها الإلكتروني الشاذ وحالات تأكسدها الشهيرة لدفعة 2026.
-              </p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3">
-                {[
-                  { sym: 'Sc', num: 21, name: 'سكانديوم', conf: '[Ar] 4s² 3d¹', ox: '+3' },
-                  { sym: 'Ti', num: 22, name: 'تيتانيوم', conf: '[Ar] 4s² 3d²', ox: '+2, +3, +4' },
-                  { sym: 'V', num: 23, name: 'فاناديوم', conf: '[Ar] 4s² 3d³', ox: '+2, +3, +4, +5' },
-                  { sym: 'Cr', num: 24, name: 'كروم ⭐', conf: '[Ar] 4s¹ 3d⁵ (شاذ)', ox: '+2, +3, +6' },
-                  { sym: 'Mn', num: 25, name: 'منجنيز', conf: '[Ar] 4s² 3d⁵', ox: '+2 إلى +7' },
-                  { sym: 'Fe', num: 26, name: 'حديد', conf: '[Ar] 4s² 3d⁶', ox: '+2, +3' },
-                  { sym: 'Co', num: 27, name: 'كوبالت', conf: '[Ar] 4s² 3d⁷', ox: '+2, +3' },
-                  { sym: 'Ni', num: 28, name: 'نيكل', conf: '[Ar] 4s² 3d⁸', ox: '+2, +3' },
-                  { sym: 'Cu', num: 29, name: 'نحاس ⭐', conf: '[Ar] 4s¹ 3d¹⁰ (شاذ)', ox: '+1, +2' },
-                  { sym: 'Zn', num: 30, name: 'خارصين', conf: '[Ar] 4s² 3d¹⁰', ox: '+2 فقط' },
-                ].map((elem) => (
-                  <div
-                    key={elem.sym}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center space-y-1 hover:border-teal-400 transition-colors"
-                  >
-                    <div className="text-[10px] text-slate-400 font-mono">{elem.num}</div>
-                    <div className="text-xl font-bold font-mono text-teal-600 dark:text-teal-400">{elem.sym}</div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{elem.name}</div>
-                    <div className="text-[9px] text-amber-600 dark:text-amber-400 font-mono dir-ltr">{elem.conf}</div>
-                    <div className="text-[10px] text-slate-500 font-mono">حالات: {elem.ox}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
+        </div>
       </div>
 
+      {/* Fixed Mobile Bottom Tab Bar (Natural thumb zone navigation, <= 15% aggregate sticky cap) */}
+      <nav
+        aria-label="التنقل الرئيسي للطالب"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)]"
+      >
+        <div className="grid grid-cols-4 h-14 max-w-lg mx-auto">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('lectures');
+              setActiveQuiz(null);
+            }}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+              activeTab === 'lectures' && !activeQuiz
+                ? 'text-teal-600 dark:text-teal-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Video className="w-5 h-5" />
+            <span>{lang === 'en' ? 'Lectures' : 'المحاضرات'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('quizzes')}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+              activeTab === 'quizzes' || activeQuiz
+                ? 'text-teal-600 dark:text-teal-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Award className="w-5 h-5" />
+            <span>{lang === 'en' ? 'Quizzes' : 'الامتحانات'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('files');
+              setActiveQuiz(null);
+            }}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+              activeTab === 'files'
+                ? 'text-teal-600 dark:text-teal-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <FileText className="w-5 h-5" />
+            <span>{lang === 'en' ? 'PDFs' : 'المذكرات'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('periodic-table');
+              setActiveQuiz(null);
+            }}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+              activeTab === 'periodic-table'
+                ? 'text-teal-600 dark:text-teal-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Atom className="w-5 h-5" />
+            <span>{lang === 'en' ? 'Elements' : 'الجدول'}</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 };

@@ -81,13 +81,10 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, 5);
 
-  // Send WhatsApp message to parent
-  const handleSendParentWhatsApp = (student: UserProfile) => {
+  // Build WhatsApp URL for parent follow-up report
+  const buildParentWhatsAppUrl = (student: UserProfile): string | null => {
     const parentPhoneClean = student.parentPhone?.replace(/\D/g, '') || '';
-    if (!parentPhoneClean) {
-      showFeedback('لا يوجد رقم هاتف مسجل لولي أمر هذا الطالب.', 'error');
-      return;
-    }
+    if (!parentPhoneClean) return null;
 
     const watchedCount = student.watchedLectureIds?.length || 0;
     const gradeLecs = lectures.filter((l) => l.grade === student.grade);
@@ -115,9 +112,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
 لأي استفسار تواصلوا مع الدعم الفني للمنصة.`;
 
     const encoded = encodeURIComponent(message);
-    const waUrl = `https://wa.me/2${parentPhoneClean}?text=${encoded}`;
-    window.open(waUrl, '_blank');
-    showFeedback('تم فتح واتساب لإرسال تقرير المتابعة لولي الأمر بنجاح.', 'success');
+    return `https://wa.me/2${parentPhoneClean}?text=${encoded}`;
   };
 
   // Reset Student Quizzes / Progress
@@ -480,16 +475,36 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                     <td className="py-3.5 px-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         
-                        {/* WhatsApp Report Button */}
-                        <button
-                          onClick={() => handleSendParentWhatsApp(std)}
-                          disabled={!std.parentPhone}
-                          className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shadow-xs"
-                          title="إرسال تقرير حضور ودرجات بالواتساب لولي الأمر"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>واتساب</span>
-                        </button>
+                        {/* WhatsApp Report Link */}
+                        {(() => {
+                          const waUrl = buildParentWhatsAppUrl(std);
+                          if (!waUrl) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => showFeedback('لا يوجد رقم هاتف مسجل لولي أمر هذا الطالب.', 'error')}
+                                className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center gap-1 opacity-50 cursor-not-allowed"
+                                title="لا يوجد رقم هاتف مسجل لولي الأمر"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>واتساب</span>
+                              </button>
+                            );
+                          }
+                          return (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => showFeedback('تم فتح واتساب لإرسال تقرير المتابعة لولي الأمر بنجاح.', 'success')}
+                              className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1 shadow-xs"
+                              title="إرسال تقرير حضور ودرجات بالواتساب لولي الأمر"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>واتساب</span>
+                            </a>
+                          );
+                        })()}
 
                         {/* Edit Student */}
                         {onUpdateStudent && (
