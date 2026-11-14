@@ -6,6 +6,8 @@ import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { Footer } from './components/Footer';
+import { NetworkStatusToast } from './components/NetworkStatusToast';
+import { probeNetworkQuality, emitNetworkAlert } from './utils/networkMonitor';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
 import { Lecture, AttachmentFile, Quiz, CloudinaryConfig, UserProfile, GradeLevel } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
@@ -200,11 +202,29 @@ export default function App() {
 
   // 1. Unified Firebase Auth Listener + Redirect recovery
   useEffect(() => {
-    getRedirectResult(auth).catch((err) => {
-      if (err?.code) {
-        console.warn('Redirect sign-in warning:', err.code);
-      }
-    });
+    getRedirectResult(auth)
+      .then((res) => {
+        if (res?.user) {
+          sessionStorage.removeItem('mm_auth_redirect_pending');
+          showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
+        }
+      })
+      .catch((err) => {
+        sessionStorage.removeItem('mm_auth_redirect_pending');
+        const code = err?.code || '';
+        if (code === 'auth/unauthorized-domain') {
+          showNotice(
+            'error',
+            `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
+          );
+        } else if (code === 'auth/network-request-failed') {
+          probeNetworkQuality('auth');
+          showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
+        } else if (code) {
+          showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
+          setLoginModalOpen(true);
+        }
+      });
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
@@ -216,6 +236,13 @@ export default function App() {
       }
 
       const email = fbUser.email || '';
+      const wasRedirectPending = sessionStorage.getItem('mm_auth_redirect_pending') === '1';
+      if (wasRedirectPending) {
+        sessionStorage.removeItem('mm_auth_redirect_pending');
+        setLoginModalOpen(false);
+        setRegisterModalOpen(false);
+      }
+
       const adminCfg = await fetchAdminConfigIfAuthorized();
       if (adminCfg) {
         const mergedEmails = Array.from(
@@ -241,6 +268,10 @@ export default function App() {
       }
 
       const isAdmin = Boolean(adminCfg) || isEmailAdmin(email);
+
+      if (wasRedirectPending) {
+        setCurrentView(isAdmin ? 'teacher' : 'student');
+      }
 
       if (isAdmin) {
         setCurrentUser((prev) => ({
@@ -532,6 +563,13 @@ export default function App() {
     action: () => Promise<void>,
     successMsg?: string
   ): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const offlineMsg = 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.';
+      emitNetworkAlert({ level: 'offline', message: offlineMsg, context: 'save' });
+      showNotice('error', offlineMsg);
+      return false;
+    }
+
     if (!auth.currentUser) {
       setLoginModalOpen(true);
       showNotice('error', 'انتهت جلسة المشرف، يرجى تسجيل الدخول بحساب Google مرة واحدة للمتابعة.');
@@ -570,7 +608,13 @@ export default function App() {
       return true;
     } catch (err) {
       console.error('Cloud write error:', err);
-      showNotice('error', 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.');
+      const net = await probeNetworkQuality('save');
+      showNotice(
+        'error',
+        net.level !== 'good'
+          ? 'تعذر الحفظ بسبب ضعف أو انقطاع الإنترنت، يرجى المحاولة مرة أخرى عند استقرار الشبكة.'
+          : 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
+      );
       return false;
     }
   };
@@ -947,6 +991,8 @@ export default function App() {
     <div
       className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
     >
+      <NetworkStatusToast />
+
       {/* Non-blocking Cloud Sync Toast */}
       {syncNotice && (
         <div

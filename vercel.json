@@ -5,7 +5,11 @@
       "destination": "https://gen-lang-client-0306518459.firebaseapp.com/__/auth/$1"
     },
     {
-      "source": "/((?!sw\\.js|assets/|images/|uploads/|favicon\\.svg|logo\\.svg).*)",
+      "source": "/__/firebase/(.*)",
+      "destination": "https://gen-lang-client-0306518459.firebaseapp.com/__/firebase/$1"
+    },
+    {
+      "source": "/((?!__/|api/|sw\\.js|assets/|images/|uploads/|favicon\\.svg|logo\\.svg).*)",
       "destination": "/index.html"
     }
   ]
