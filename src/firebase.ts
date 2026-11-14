@@ -2,9 +2,8 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  indexedDBLocalPersistence,
-  browserLocalPersistence,
   browserSessionPersistence,
+  inMemoryPersistence,
   browserPopupRedirectResolver,
   setPersistence,
   GoogleAuthProvider,
@@ -53,24 +52,42 @@ export const db = initializeFirestore(
   firebaseConfig.firestoreDatabaseId
 );
 
-function createPersistentAuth(): Auth {
+// Purge any legacy persistent Firebase auth storage from older builds so every browser session/tab stays strictly isolated
+function purgeLegacyPersistentAuthStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && (k.startsWith('firebase:authUser:') || k.startsWith('firebase:previousExternalId:'))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch {}
+  try {
+    if (window.indexedDB && typeof window.indexedDB.deleteDatabase === 'function') {
+      window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
+    }
+  } catch {}
+}
+
+purgeLegacyPersistentAuthStorage();
+
+function createSessionIsolatedAuth(): Auth {
   try {
     return initializeAuth(app, {
-      persistence: [
-        indexedDBLocalPersistence,
-        browserLocalPersistence,
-        browserSessionPersistence,
-      ],
+      persistence: [browserSessionPersistence, inMemoryPersistence],
       popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch {
     const existingAuth = getAuth(app);
-    setPersistence(existingAuth, browserLocalPersistence).catch(() => {});
+    setPersistence(existingAuth, browserSessionPersistence).catch(() => {});
     return existingAuth;
   }
 }
 
-export const auth = createPersistentAuth();
+export const auth = createSessionIsolatedAuth();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 

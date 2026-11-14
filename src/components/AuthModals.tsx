@@ -83,7 +83,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   const getExistingStudentRecord = (id?: string, email?: string): UserProfile | null => {
     try {
-      const savedRaw = localStorage.getItem('mm_registered_students');
+      const savedRaw = sessionStorage.getItem('mm_registered_students');
       if (savedRaw) {
         const list: UserProfile[] = JSON.parse(savedRaw);
         if (Array.isArray(list)) {
@@ -117,18 +117,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
       sessionStorage.setItem(REDIRECT_TS_KEY, nowStr);
     } catch {}
-    try {
-      localStorage.setItem(REDIRECT_PENDING_KEY, '1');
-      localStorage.setItem(REDIRECT_TS_KEY, nowStr);
-    } catch {}
   };
 
   const clearRedirectFlags = () => {
     try {
       sessionStorage.removeItem(REDIRECT_PENDING_KEY);
-    } catch {}
-    try {
-      localStorage.removeItem(REDIRECT_PENDING_KEY);
+      sessionStorage.removeItem(REDIRECT_TS_KEY);
     } catch {}
   };
 
@@ -277,9 +271,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       }
 
       const code = err?.code || '';
-      const lastRedirectTs = Number(
-        sessionStorage.getItem(REDIRECT_TS_KEY) || localStorage.getItem(REDIRECT_TS_KEY) || '0'
-      );
+      const lastRedirectTs = Number(sessionStorage.getItem(REDIRECT_TS_KEY) || '0');
       const canAutoRedirect = isTopLevelWindow() && Date.now() - lastRedirectTs > 15000;
 
       if (
@@ -350,7 +342,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     let existingList: UserProfile[] = [];
     try {
-      const savedStudentsRaw = localStorage.getItem('mm_registered_students');
+      const savedStudentsRaw = sessionStorage.getItem('mm_registered_students');
       if (savedStudentsRaw) {
         existingList = JSON.parse(savedStudentsRaw);
       }
@@ -359,10 +351,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
 
     const matched = existingList.find(
-      (s) => s.email?.toLowerCase() === cleanId.toLowerCase() || s.phone === cleanId
+      (s) =>
+        s.role !== 'teacher' &&
+        (s.email?.toLowerCase() === cleanId.toLowerCase() || s.phone === cleanId)
     );
 
     if (matched) {
+      const savedSecret = sessionStorage.getItem(`mm_local_pass_${matched.id}`);
+      if (!savedSecret || savedSecret !== loginPassword.trim()) {
+        setAuthError('كلمة المرور غير صحيحة، يرجى التحقق والمحاولة مرة أخرى.');
+        return;
+      }
       onLoginSuccess(matched);
       onClose();
       return;
@@ -446,13 +445,14 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         localStorage.setItem(`mm_profile_done_${createdUser.phone.trim()}`, 'true');
       }
       localStorage.setItem(`mm_profile_done_${createdUser.id}`, 'true');
+      sessionStorage.setItem(`mm_local_pass_${createdUser.id}`, passClean);
 
-      const savedRaw = localStorage.getItem('mm_registered_students');
+      const savedRaw = sessionStorage.getItem('mm_registered_students');
       const list: UserProfile[] = savedRaw ? JSON.parse(savedRaw) : [];
       const updated = [createdUser, ...list.filter((u) => u.id !== createdUser.id)];
-      localStorage.setItem('mm_registered_students', JSON.stringify(updated));
+      sessionStorage.setItem('mm_registered_students', JSON.stringify(updated));
     } catch (err) {
-      console.warn('Failed to save to local list:', err);
+      console.warn('Failed to save to session list:', err);
     }
 
     onLoginSuccess(createdUser);

@@ -137,7 +137,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                 لوحة التخصيص والتحكم الشاملة بالموقع
               </h3>
               <p className="text-xs text-teal-300">
-                رمز الحماية (2825) · تعديل النصوص، الصور، الخطوط، الألوان، والمميزات
+                محمي برمز مرور المشرف · تعديل النصوص، الصور، الخطوط، الألوان، والمميزات
               </p>
             </div>
           </div>
@@ -151,7 +151,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
           </button>
         </div>
 
-        {/* STEP 1: PIN CODE AUTHENTICATION (2825) */}
+        {/* STEP 1: PIN CODE AUTHENTICATION */}
         {!isAuthenticated ? (
           <div className="p-8 sm:p-12 text-center space-y-6 max-w-md mx-auto my-auto">
             <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 flex items-center justify-center mx-auto">
@@ -163,7 +163,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                 أدخل رمز المرور السري
               </h4>
               <p className="text-xs sm:text-sm text-slate-500">
-                يرجى إدخال الرمز الخاص (2825) لفتح إعدادات تخصيص الموقع بالكامل.
+                يرجى إدخال رمز الحماية الخاص بالمشرف لفتح إعدادات تخصيص الموقع.
               </p>
             </div>
 
@@ -177,13 +177,13 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                   setPinInput(e.target.value);
                   setPinError(false);
                 }}
-                placeholder="2825"
+                placeholder="••••"
                 className="w-full text-center text-3xl font-mono tracking-widest p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:border-teal-500 dark:text-white"
               />
 
               {pinError && (
                 <div className="text-xs text-rose-500 font-bold">
-                  رمز المرور غير صحيح! يرجى إدخال 2825
+                  رمز المرور غير صحيح! يرجى التحقق والمحاولة مرة أخرى.
                 </div>
               )}
 

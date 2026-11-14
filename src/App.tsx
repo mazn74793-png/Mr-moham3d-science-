@@ -86,6 +86,19 @@ export default function App() {
     return localStorage.getItem('mm_theme') === 'dark';
   });
 
+  // Purge legacy cross-tab sensitive keys from localStorage on boot so every session/tab stays isolated
+  useEffect(() => {
+    try {
+      localStorage.removeItem('mm_user');
+      localStorage.removeItem('mm_last_view');
+      localStorage.removeItem('mm_registered_students');
+      localStorage.removeItem('mm_redeem_codes');
+      localStorage.removeItem('mm_cloudinary');
+      localStorage.removeItem('mm_auth_redirect_pending');
+      localStorage.removeItem('mm_auth_redirect_ts');
+    } catch {}
+  }, []);
+
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('mm_site_config');
     if (saved) {
@@ -94,6 +107,7 @@ export default function App() {
         return {
           ...DEFAULT_SITE_CONFIG,
           ...parsed,
+          adminEmails: DEFAULT_SITE_CONFIG.adminEmails,
           profileImageUrl: sanitizeProfileImageUrl(parsed?.profileImageUrl),
         };
       } catch {
@@ -107,14 +121,8 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [resolvingAuth, setResolvingAuth] = useState<boolean>(() => {
     try {
-      const pending =
-        sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
-        localStorage.getItem('mm_auth_redirect_pending') === '1';
-      const ts = Number(
-        sessionStorage.getItem('mm_auth_redirect_ts') ||
-          localStorage.getItem('mm_auth_redirect_ts') ||
-          '0'
-      );
+      const pending = sessionStorage.getItem('mm_auth_redirect_pending') === '1';
+      const ts = Number(sessionStorage.getItem('mm_auth_redirect_ts') || '0');
       return pending && Date.now() - ts < 5 * 60 * 1000;
     } catch {
       return false;
@@ -122,7 +130,7 @@ export default function App() {
   });
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('mm_user');
+    const saved = sessionStorage.getItem('mm_user');
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as UserProfile;
@@ -173,32 +181,13 @@ export default function App() {
     }
   });
 
-  const [students, setStudents] = useState<UserProfile[]>(() => {
-    const saved = localStorage.getItem('mm_registered_students');
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [students, setStudents] = useState<UserProfile[]>([]);
 
-  const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(() => {
-    const saved = localStorage.getItem('mm_cloudinary');
-    try {
-      return saved ? JSON.parse(saved) : INITIAL_CLOUDINARY_CONFIG;
-    } catch {
-      return INITIAL_CLOUDINARY_CONFIG;
-    }
-  });
+  const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(
+    INITIAL_CLOUDINARY_CONFIG
+  );
 
-  const [redeemCodes, setRedeemCodes] = useState<RedeemCode[]>(() => {
-    const saved = localStorage.getItem('mm_redeem_codes');
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [redeemCodes, setRedeemCodes] = useState<RedeemCode[]>([]);
 
   const [rewards, setRewards] = useState<PointReward[]>(() => {
     const saved = localStorage.getItem('mm_rewards');
@@ -278,15 +267,9 @@ export default function App() {
         window.location.search.includes('apiKey=') ||
         window.location.search.includes('state=');
       if (urlHasAuth) return true;
-      const pending =
-        sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
-        localStorage.getItem('mm_auth_redirect_pending') === '1';
+      const pending = sessionStorage.getItem('mm_auth_redirect_pending') === '1';
       if (!pending) return false;
-      const ts = Number(
-        sessionStorage.getItem('mm_auth_redirect_ts') ||
-          localStorage.getItem('mm_auth_redirect_ts') ||
-          '0'
-      );
+      const ts = Number(sessionStorage.getItem('mm_auth_redirect_ts') || '0');
       return ts === 0 || Date.now() - ts < 5 * 60 * 1000;
     } catch {
       return false;
@@ -297,10 +280,6 @@ export default function App() {
     try {
       sessionStorage.removeItem('mm_auth_redirect_pending');
       sessionStorage.removeItem('mm_auth_redirect_ts');
-    } catch {}
-    try {
-      localStorage.removeItem('mm_auth_redirect_pending');
-      localStorage.removeItem('mm_auth_redirect_ts');
     } catch {}
   }, []);
 
@@ -380,12 +359,12 @@ export default function App() {
         });
       }
 
-      // Restore portal view when returning from OAuth redirect or reloading an active portal session
-      const savedLastView = localStorage.getItem('mm_last_view');
+      // Restore portal view ONLY within the same isolated tab session
+      const savedLastView = sessionStorage.getItem('mm_last_view');
       if (options?.fromRedirect) {
         const target = optimisticAdmin ? 'teacher' : 'student';
         setCurrentView(target);
-        localStorage.setItem('mm_last_view', target);
+        sessionStorage.setItem('mm_last_view', target);
         setLoginModalOpen(false);
         setRegisterModalOpen(false);
       } else if (!hasManualNavigatedRef.current && savedLastView) {
@@ -428,7 +407,6 @@ export default function App() {
             uploadPreset: adminCfg.uploadPreset,
           };
           setCloudinaryConfig(nextCloud);
-          localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
         }
       }
 
@@ -457,7 +435,7 @@ export default function App() {
 
         if (!skipDuplicateViewSwap && (options?.fromRedirect || savedLastView === 'teacher')) {
           setCurrentView('teacher');
-          localStorage.setItem('mm_last_view', 'teacher');
+          sessionStorage.setItem('mm_last_view', 'teacher');
         }
 
         if (!adminBootstrappedRef.current) {
@@ -716,7 +694,6 @@ export default function App() {
                   uploadPreset: data.uploadPreset,
                 };
                 setCloudinaryConfig(nextCloud);
-                localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
               }
               if (Array.isArray(data.adminEmails) && data.adminEmails.length > 0) {
                 const cleanEmails = Array.from(
@@ -796,9 +773,11 @@ export default function App() {
     };
   }, [firebaseUser, isEmailAdmin, currentUser?.role]);
 
-  // Persist local cache
+  // Persist public non-sensitive cache in localStorage (never store adminEmails), keep session state in sessionStorage ONLY
   useEffect(() => {
-    localStorage.setItem('mm_site_config', JSON.stringify(siteConfig));
+    const publicSiteCache: Partial<SiteConfig> = { ...siteConfig };
+    delete publicSiteCache.adminEmails;
+    localStorage.setItem('mm_site_config', JSON.stringify(publicSiteCache));
   }, [siteConfig]);
 
   useEffect(() => {
@@ -814,22 +793,14 @@ export default function App() {
   }, [quizzes]);
 
   useEffect(() => {
-    localStorage.setItem('mm_registered_students', JSON.stringify(students));
-  }, [students]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_redeem_codes', JSON.stringify(redeemCodes));
-  }, [redeemCodes]);
-
-  useEffect(() => {
     localStorage.setItem('mm_rewards', JSON.stringify(rewards));
   }, [rewards]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('mm_user', JSON.stringify(currentUser));
+      sessionStorage.setItem('mm_user', JSON.stringify(currentUser));
     } else if (authReady) {
-      localStorage.removeItem('mm_user');
+      sessionStorage.removeItem('mm_user');
     }
   }, [currentUser, authReady]);
 
@@ -914,7 +885,7 @@ export default function App() {
         return;
       }
       setCurrentView('teacher');
-      localStorage.setItem('mm_last_view', 'teacher');
+      sessionStorage.setItem('mm_last_view', 'teacher');
       return;
     }
     if (view === 'student') {
@@ -923,10 +894,10 @@ export default function App() {
         return;
       }
       setCurrentView('student');
-      localStorage.setItem('mm_last_view', 'student');
+      sessionStorage.setItem('mm_last_view', 'student');
       return;
     }
-    localStorage.setItem('mm_last_view', 'landing');
+    sessionStorage.setItem('mm_last_view', 'landing');
     setCurrentView(view);
   };
 
@@ -961,7 +932,7 @@ export default function App() {
       };
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
-      localStorage.setItem('mm_last_view', 'teacher');
+      sessionStorage.setItem('mm_last_view', 'teacher');
       return;
     }
 
@@ -996,7 +967,7 @@ export default function App() {
       };
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
-      localStorage.setItem('mm_last_view', 'teacher');
+      sessionStorage.setItem('mm_last_view', 'teacher');
       return;
     }
 
@@ -1040,7 +1011,7 @@ export default function App() {
 
     setCurrentUser(finalUser);
     setCurrentView('student');
-    localStorage.setItem('mm_last_view', 'student');
+    sessionStorage.setItem('mm_last_view', 'student');
 
     if (finalUser.profileCompleted && fbUser && fbUser.emailVerified) {
       saveStudentToCloud(finalUser, fbUser.uid).catch((err) =>
@@ -1063,10 +1034,26 @@ export default function App() {
 
   const handleLogout = () => {
     hasManualNavigatedRef.current = true;
-    localStorage.removeItem('mm_last_view');
-    localStorage.removeItem('mm_user');
+    try {
+      sessionStorage.removeItem('mm_last_view');
+      sessionStorage.removeItem('mm_user');
+      sessionStorage.removeItem('mm_registered_students');
+      localStorage.removeItem('mm_last_view');
+      localStorage.removeItem('mm_user');
+      localStorage.removeItem('mm_registered_students');
+      localStorage.removeItem('mm_redeem_codes');
+      localStorage.removeItem('mm_cloudinary');
+    } catch {}
     clearRedirectFlags();
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
+    adminEmailsRef.current = ['mizoo2y2@gmail.com'];
+    setSiteConfig((prev) => ({
+      ...prev,
+      adminEmails: ['mizoo2y2@gmail.com'],
+    }));
+    setCloudinaryConfig(INITIAL_CLOUDINARY_CONFIG);
+    setStudents([]);
+    setRedeemCodes([]);
     setFirebaseUser(null);
     setCurrentUser(null);
     setCurrentView('landing');
@@ -1305,7 +1292,8 @@ export default function App() {
       localStorage.setItem('mm_lectures', JSON.stringify([]));
       localStorage.setItem('mm_attachments', JSON.stringify([]));
       localStorage.setItem('mm_quizzes', JSON.stringify([]));
-      localStorage.setItem('mm_registered_students', JSON.stringify([]));
+      localStorage.removeItem('mm_registered_students');
+      sessionStorage.removeItem('mm_registered_students');
     }
     return ok;
   };
@@ -1322,12 +1310,6 @@ export default function App() {
       saveStudentToCloud(finalized, auth.currentUser.uid).catch((err) =>
         console.warn('Cloud student profile save warning:', err)
       );
-    } else {
-      fetch('/api/students/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalized),
-      }).catch(() => {});
     }
 
     if (finalized.email) {
@@ -1360,7 +1342,6 @@ export default function App() {
     );
     if (ok) {
       setCloudinaryConfig(config);
-      localStorage.setItem('mm_cloudinary', JSON.stringify(config));
     }
     return ok;
   };
@@ -1387,7 +1368,6 @@ export default function App() {
     if (ok) {
       adminEmailsRef.current = cleanEmails;
       setSiteConfig(sanitized);
-      localStorage.setItem('mm_site_config', JSON.stringify(sanitized));
     }
     return ok;
   };
@@ -1575,7 +1555,13 @@ export default function App() {
           onNavigate={handleNavigate}
           onScrollToSection={handleScrollToSection}
           onOpenLogin={() => setLoginModalOpen(true)}
-          onOpenSecretAdmin={() => setSecretAdminOpen(true)}
+          onOpenSecretAdmin={() => {
+            if (isUserAdmin(currentUser)) {
+              setSecretAdminOpen(true);
+            } else {
+              setLoginModalOpen(true);
+            }
+          }}
         />
       </div>
 
@@ -1613,7 +1599,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {secretAdminOpen && (
+      {secretAdminOpen && isUserAdmin(currentUser) && (
         <Suspense fallback={null}>
           <SecretAdminCustomizerModal
             isOpen={secretAdminOpen}
