@@ -111,6 +111,120 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     return Boolean(record?.profileCompleted);
   };
 
+  const persistRedirectFlags = () => {
+    const nowStr = String(Date.now());
+    try {
+      sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
+      sessionStorage.setItem(REDIRECT_TS_KEY, nowStr);
+    } catch {}
+    try {
+      localStorage.setItem(REDIRECT_PENDING_KEY, '1');
+      localStorage.setItem(REDIRECT_TS_KEY, nowStr);
+    } catch {}
+  };
+
+  const clearRedirectFlags = () => {
+    try {
+      sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+    } catch {}
+    try {
+      localStorage.removeItem(REDIRECT_PENDING_KEY);
+    } catch {}
+  };
+
+  const completeFirebaseUserLogin = async (fbUser: NonNullable<typeof auth.currentUser>) => {
+    const email = fbUser.email || '';
+    const cleanEmail = email.toLowerCase().trim();
+    const defaultGrade =
+      resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
+
+    const cachedAdminEmails = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
+    const isInstantAdmin =
+      Boolean(fbUser.emailVerified) &&
+      (cleanEmail === 'mizoo2y2@gmail.com' ||
+        cachedAdminEmails.some((e) => e.toLowerCase().trim() === cleanEmail));
+
+    // Fast path: Primary / already-known verified admins log in instantly with zero blocking wait
+    if (isInstantAdmin) {
+      onLoginSuccess({
+        id: fbUser.uid,
+        name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+        email,
+        role: 'teacher',
+        grade: defaultGrade,
+        phone: siteConfig?.phone1 || '01002345678',
+        parentPhone: '',
+        avatarUrl: fbUser.photoURL || '',
+        score: 0,
+        profileCompleted: true,
+        watchedLectureIds: [],
+        passedQuizIds: [],
+        quizScores: {},
+        joinedAt: new Date().toISOString().split('T')[0],
+      });
+      onClose();
+      return;
+    }
+
+    // Run admin check & student lookup concurrently with a tight 1.5s ceiling so login never hangs
+    const [adminCfg, cloudRecord] = await Promise.all([
+      fbUser.emailVerified ? fetchAdminConfigIfAuthorized(1500) : Promise.resolve(null),
+      getStudentFromCloud(fbUser.uid, 1500).catch(() => null),
+    ]);
+
+    const isAdmin =
+      Boolean(fbUser.emailVerified) && checkIsAdminEmail(email, adminCfg?.adminEmails);
+
+    if (isAdmin) {
+      onLoginSuccess({
+        id: fbUser.uid,
+        name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+        email,
+        role: 'teacher',
+        grade: defaultGrade,
+        phone: siteConfig?.phone1 || '01002345678',
+        parentPhone: '',
+        avatarUrl: fbUser.photoURL || '',
+        score: 0,
+        profileCompleted: true,
+        watchedLectureIds: [],
+        passedQuizIds: [],
+        quizScores: {},
+        joinedAt: new Date().toISOString().split('T')[0],
+      });
+      onClose();
+      return;
+    }
+
+    const existingRecord = cloudRecord || getExistingStudentRecord(fbUser.uid, email);
+    const isCompleted =
+      Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(fbUser.uid, email);
+
+    onLoginSuccess({
+      id: fbUser.uid,
+      name: existingRecord?.name || fbUser.displayName || email.split('@')[0] || 'طالب منصة',
+      email,
+      role: 'student',
+      grade: existingRecord?.grade || defaultGrade,
+      phone: existingRecord?.phone || '',
+      parentPhone: existingRecord?.parentPhone || '',
+      governorate: existingRecord?.governorate || 'القاهرة',
+      avatarUrl: fbUser.photoURL || existingRecord?.avatarUrl || '',
+      score: existingRecord?.score || 0,
+      points: existingRecord?.points || 0,
+      unlockedLectureIds: existingRecord?.unlockedLectureIds || [],
+      unlockedAttachmentIds: existingRecord?.unlockedAttachmentIds || [],
+      claimedRewardIds: existingRecord?.claimedRewardIds || [],
+      pointsHistory: existingRecord?.pointsHistory || [],
+      profileCompleted: isCompleted,
+      watchedLectureIds: existingRecord?.watchedLectureIds || [],
+      passedQuizIds: existingRecord?.passedQuizIds || [],
+      quizScores: existingRecord?.quizScores || {},
+      joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
+    });
+    onClose();
+  };
+
   // Single unified Google Sign-In directly via Firebase Auth (1 login = full live session)
   const handleGoogleLogin = async () => {
     if (googleLoading) return;
@@ -150,66 +264,23 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     try {
       const result = await signInWithPopup(auth, googleProvider);
       window.clearTimeout(slowWatchTimer);
-      const fbUser = result.user;
-      const email = fbUser.email || '';
-      const defaultGrade =
-        resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
+      clearRedirectFlags();
+      await completeFirebaseUserLogin(result.user);
+    } catch (err: any) {
+      window.clearTimeout(slowWatchTimer);
 
-      // Verify Admin / Co-Admin permissions strictly by verified email in live Firestore adminConfig
-      const adminCfg = await fetchAdminConfigIfAuthorized();
-      const isAdmin =
-        Boolean(fbUser.emailVerified) &&
-        checkIsAdminEmail(email, adminCfg?.adminEmails);
-
-      if (isAdmin) {
-        onLoginSuccess({
-          id: fbUser.uid,
-          name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
-          email,
-          role: 'teacher',
-          grade: defaultGrade,
-          phone: siteConfig?.phone1 || '01002345678',
-          parentPhone: '',
-          avatarUrl: fbUser.photoURL || '',
-          score: 0,
-          profileCompleted: true,
-          watchedLectureIds: [],
-          passedQuizIds: [],
-          quizScores: {},
-          joinedAt: new Date().toISOString().split('T')[0],
-        });
-        onClose();
+      // Some mobile browsers lose popup window communication right after auth actually finishes
+      if (auth.currentUser) {
+        clearRedirectFlags();
+        await completeFirebaseUserLogin(auth.currentUser);
         return;
       }
 
-      const cloudRecord = await getStudentFromCloud(fbUser.uid).catch(() => null);
-      const existingRecord = cloudRecord || getExistingStudentRecord(fbUser.uid, email);
-      const isCompleted =
-        Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(fbUser.uid, email);
-
-      onLoginSuccess({
-        id: fbUser.uid,
-        name: existingRecord?.name || fbUser.displayName || email.split('@')[0] || 'طالب منصة',
-        email,
-        role: 'student',
-        grade: existingRecord?.grade || defaultGrade,
-        phone: existingRecord?.phone || '',
-        parentPhone: existingRecord?.parentPhone || '',
-        governorate: existingRecord?.governorate || 'القاهرة',
-        avatarUrl: fbUser.photoURL || existingRecord?.avatarUrl || '',
-        score: existingRecord?.score || 0,
-        profileCompleted: isCompleted,
-        watchedLectureIds: existingRecord?.watchedLectureIds || [],
-        passedQuizIds: existingRecord?.passedQuizIds || [],
-        quizScores: existingRecord?.quizScores || {},
-        joinedAt: existingRecord?.joinedAt || new Date().toISOString().split('T')[0],
-      });
-      onClose();
-    } catch (err: any) {
-      window.clearTimeout(slowWatchTimer);
       const code = err?.code || '';
-      const lastRedirectTs = Number(sessionStorage.getItem(REDIRECT_TS_KEY) || '0');
-      const canAutoRedirect = isTopLevelWindow() && Date.now() - lastRedirectTs > 30000;
+      const lastRedirectTs = Number(
+        sessionStorage.getItem(REDIRECT_TS_KEY) || localStorage.getItem(REDIRECT_TS_KEY) || '0'
+      );
+      const canAutoRedirect = isTopLevelWindow() && Date.now() - lastRedirectTs > 15000;
 
       if (
         (code === 'auth/popup-blocked' ||
@@ -217,12 +288,11 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         canAutoRedirect
       ) {
         try {
-          sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
-          sessionStorage.setItem(REDIRECT_TS_KEY, String(Date.now()));
+          persistRedirectFlags();
           await signInWithRedirect(auth, googleProvider);
           return;
         } catch {
-          sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+          clearRedirectFlags();
           setAuthError('حجب المتصفح نافذة تسجيل الدخول، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
         }
       } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {

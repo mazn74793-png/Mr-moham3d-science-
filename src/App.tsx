@@ -105,6 +105,21 @@ export default function App() {
 
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [resolvingAuth, setResolvingAuth] = useState<boolean>(() => {
+    try {
+      const pending =
+        sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
+        localStorage.getItem('mm_auth_redirect_pending') === '1';
+      const ts = Number(
+        sessionStorage.getItem('mm_auth_redirect_ts') ||
+          localStorage.getItem('mm_auth_redirect_ts') ||
+          '0'
+      );
+      return pending && Date.now() - ts < 5 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  });
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('mm_user');
@@ -196,9 +211,29 @@ export default function App() {
 
   const adminBootstrappedRef = useRef(false);
   const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
+  const siteConfigRef = useRef(siteConfig);
+  const cloudinaryConfigRef = useRef(cloudinaryConfig);
+  const studentsRef = useRef(students);
+  const currentUserRef = useRef(currentUser);
+  const hasManualNavigatedRef = useRef(false);
+  const lastLoginHydratedRef = useRef<{ uid: string; ts: number } | null>(null);
+
   useEffect(() => {
     adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
-  }, [siteConfig.adminEmails]);
+    siteConfigRef.current = siteConfig;
+  }, [siteConfig]);
+
+  useEffect(() => {
+    cloudinaryConfigRef.current = cloudinaryConfig;
+  }, [cloudinaryConfig]);
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   const isEmailAdmin = useCallback((email?: string | null, extraEmails?: string[]) => {
     if (!email) return false;
@@ -237,57 +272,143 @@ export default function App() {
     return () => clearTimeout(t);
   }, [syncNotice]);
 
-  // 1. Unified Firebase Auth Listener + Redirect recovery
-  useEffect(() => {
-    const hasRedirectPending =
-      sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
-      window.location.search.includes('apiKey=') ||
-      window.location.search.includes('state=');
-
-    if (hasRedirectPending) {
-      getRedirectResult(auth)
-        .then((res) => {
-          if (res?.user) {
-            sessionStorage.removeItem('mm_auth_redirect_pending');
-            showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
-          }
-        })
-        .catch((err) => {
-          sessionStorage.removeItem('mm_auth_redirect_pending');
-          const code = err?.code || '';
-          if (code === 'auth/unauthorized-domain') {
-            showNotice(
-              'error',
-              `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
-            );
-          } else if (code === 'auth/network-request-failed') {
-            probeNetworkQuality('auth');
-            showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
-          } else if (code) {
-            showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
-            setLoginModalOpen(true);
-          }
-        });
+  const hasPendingRedirectFlag = useCallback(() => {
+    try {
+      const urlHasAuth =
+        window.location.search.includes('apiKey=') ||
+        window.location.search.includes('state=');
+      if (urlHasAuth) return true;
+      const pending =
+        sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
+        localStorage.getItem('mm_auth_redirect_pending') === '1';
+      if (!pending) return false;
+      const ts = Number(
+        sessionStorage.getItem('mm_auth_redirect_ts') ||
+          localStorage.getItem('mm_auth_redirect_ts') ||
+          '0'
+      );
+      return ts === 0 || Date.now() - ts < 5 * 60 * 1000;
+    } catch {
+      return false;
     }
+  }, []);
 
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+  const clearRedirectFlags = useCallback(() => {
+    try {
+      sessionStorage.removeItem('mm_auth_redirect_pending');
+      sessionStorage.removeItem('mm_auth_redirect_ts');
+    } catch {}
+    try {
+      localStorage.removeItem('mm_auth_redirect_pending');
+      localStorage.removeItem('mm_auth_redirect_ts');
+    } catch {}
+  }, []);
+
+  const hydrateFirebaseUser = useCallback(
+    async (fbUser: FirebaseUser, options?: { fromRedirect?: boolean }) => {
       setFirebaseUser(fbUser);
-      setAuthReady(true);
-
-      if (!fbUser) {
-        setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
-        return;
-      }
 
       const email = fbUser.email || '';
-      const wasRedirectPending = sessionStorage.getItem('mm_auth_redirect_pending') === '1';
-      if (wasRedirectPending) {
-        sessionStorage.removeItem('mm_auth_redirect_pending');
-        setLoginModalOpen(false);
-        setRegisterModalOpen(false);
+      const cleanEmail = email.toLowerCase().trim();
+      const cfg = siteConfigRef.current;
+
+      // 1. Instant optimistic user hydration BEFORE awaiting Firestore so returning users are logged in immediately
+      const optimisticAdmin =
+        Boolean(fbUser.emailVerified) && isEmailAdmin(cleanEmail);
+
+      if (optimisticAdmin) {
+        setCurrentUser((prev) => ({
+          id: fbUser.uid,
+          name: cfg.teacherName ? `أ/ ${cfg.teacherName}` : 'أ/ محمد مصطفى',
+          email,
+          role: 'teacher',
+          grade: 'third',
+          phone: cfg.phone1 || '01002345678',
+          parentPhone: '',
+          avatarUrl: fbUser.photoURL || prev?.avatarUrl || '',
+          score: 0,
+          profileCompleted: true,
+          watchedLectureIds: [],
+          passedQuizIds: [],
+          quizScores: {},
+          joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
+        }));
+      } else {
+        const localMatch = studentsRef.current.find(
+          (s) =>
+            s.id === fbUser.uid ||
+            (cleanEmail && s.email && s.email.toLowerCase().trim() === cleanEmail)
+        );
+        const isDoneLocally =
+          Boolean(localMatch?.profileCompleted) ||
+          Boolean(cleanEmail && localStorage.getItem(`mm_profile_done_${cleanEmail}`) === 'true') ||
+          localStorage.getItem(`mm_profile_done_${fbUser.uid}`) === 'true';
+
+        setCurrentUser((prev) => {
+          if (prev && prev.id === fbUser.uid && prev.role === 'student') {
+            return {
+              ...prev,
+              avatarUrl: fbUser.photoURL || prev.avatarUrl || '',
+              profileCompleted: prev.profileCompleted || isDoneLocally,
+            };
+          }
+          if (localMatch) {
+            return {
+              ...localMatch,
+              role: 'student',
+              avatarUrl: fbUser.photoURL || localMatch.avatarUrl || '',
+              profileCompleted: isDoneLocally,
+            };
+          }
+          return {
+            id: fbUser.uid,
+            name: fbUser.displayName || email.split('@')[0] || 'طالب منصة',
+            email,
+            role: 'student',
+            grade: 'third',
+            phone: '',
+            parentPhone: '',
+            governorate: 'القاهرة',
+            avatarUrl: fbUser.photoURL || '',
+            score: 0,
+            profileCompleted: isDoneLocally,
+            watchedLectureIds: [],
+            passedQuizIds: [],
+            quizScores: {},
+            joinedAt: new Date().toISOString().split('T')[0],
+          };
+        });
       }
 
-      const adminCfg = await fetchAdminConfigIfAuthorized();
+      // Restore portal view when returning from OAuth redirect or reloading an active portal session
+      const savedLastView = localStorage.getItem('mm_last_view');
+      if (options?.fromRedirect) {
+        const target = optimisticAdmin ? 'teacher' : 'student';
+        setCurrentView(target);
+        localStorage.setItem('mm_last_view', target);
+        setLoginModalOpen(false);
+        setRegisterModalOpen(false);
+      } else if (!hasManualNavigatedRef.current && savedLastView) {
+        if (savedLastView === 'teacher' && optimisticAdmin) {
+          setCurrentView('teacher');
+        } else if (savedLastView === 'student') {
+          setCurrentView('student');
+        }
+      }
+
+      // Avoid duplicate Firestore fetches if handleLoginSuccess already triggered them within 2s
+      const now = Date.now();
+      const skipDuplicateViewSwap =
+        lastLoginHydratedRef.current &&
+        lastLoginHydratedRef.current.uid === fbUser.uid &&
+        now - lastLoginHydratedRef.current.ts < 3000;
+
+      // 2. Single deduplicated background Firestore verification & sync (capped at 2.5s timeout)
+      const [adminCfg, cloudStudent] = await Promise.all([
+        fbUser.emailVerified ? fetchAdminConfigIfAuthorized(2500) : Promise.resolve(null),
+        !optimisticAdmin ? getStudentFromCloud(fbUser.uid, 2500) : Promise.resolve(null),
+      ]);
+
       if (adminCfg) {
         const mergedEmails = Array.from(
           new Set(
@@ -309,31 +430,21 @@ export default function App() {
           setCloudinaryConfig(nextCloud);
           localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
         }
-      } else {
-        adminEmailsRef.current = ['mizoo2y2@gmail.com'];
-        setSiteConfig((prev) => ({
-          ...prev,
-          adminEmails: ['mizoo2y2@gmail.com'],
-        }));
       }
 
-      const isAdmin =
+      const verifiedIsAdmin =
         Boolean(fbUser.emailVerified) &&
-        (email.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
-          Boolean(adminCfg && isEmailAdmin(email, adminCfg.adminEmails)));
+        (cleanEmail === 'mizoo2y2@gmail.com' ||
+          Boolean(adminCfg && isEmailAdmin(cleanEmail, adminCfg.adminEmails)));
 
-      if (wasRedirectPending) {
-        setCurrentView(isAdmin ? 'teacher' : 'student');
-      }
-
-      if (isAdmin) {
+      if (verifiedIsAdmin) {
         setCurrentUser((prev) => ({
           id: fbUser.uid,
-          name: siteConfig.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
+          name: cfg.teacherName ? `أ/ ${cfg.teacherName}` : 'أ/ محمد مصطفى',
           email,
           role: 'teacher',
           grade: 'third',
-          phone: siteConfig.phone1 || '01002345678',
+          phone: cfg.phone1 || '01002345678',
           parentPhone: '',
           avatarUrl: fbUser.photoURL || prev?.avatarUrl || '',
           score: 0,
@@ -344,81 +455,156 @@ export default function App() {
           joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
         }));
 
+        if (!skipDuplicateViewSwap && (options?.fromRedirect || savedLastView === 'teacher')) {
+          setCurrentView('teacher');
+          localStorage.setItem('mm_last_view', 'teacher');
+        }
+
         if (!adminBootstrappedRef.current) {
           adminBootstrappedRef.current = true;
-          try {
-            const [siteSnap, adminSnap] = await Promise.all([
-              getDoc(doc(db, 'publicConfig', 'site')),
-              getDoc(doc(db, 'adminConfig', 'settings')),
-            ]);
-
-            if (!siteSnap.exists()) {
-              await savePublicSiteConfigToCloud({
-                ...siteConfig,
-                profileImageUrl: sanitizeProfileImageUrl(siteConfig.profileImageUrl),
-              });
-            }
-            if (!adminSnap.exists()) {
-              await saveAdminConfigToCloud(
-                siteConfig.adminEmails || ['mizoo2y2@gmail.com'],
-                cloudinaryConfig
-              );
-            }
-          } catch (err) {
-            console.warn('Admin bootstrap warning:', err);
-          }
+          Promise.all([
+            getDoc(doc(db, 'publicConfig', 'site')),
+            getDoc(doc(db, 'adminConfig', 'settings')),
+          ])
+            .then(async ([siteSnap, adminSnap]) => {
+              if (!siteSnap.exists()) {
+                await savePublicSiteConfigToCloud({
+                  ...siteConfigRef.current,
+                  profileImageUrl: sanitizeProfileImageUrl(
+                    siteConfigRef.current.profileImageUrl
+                  ),
+                });
+              }
+              if (!adminSnap.exists()) {
+                await saveAdminConfigToCloud(
+                  siteConfigRef.current.adminEmails || ['mizoo2y2@gmail.com'],
+                  cloudinaryConfigRef.current
+                );
+              }
+            })
+            .catch((err) => {
+              console.warn('Admin bootstrap warning:', err);
+            });
         }
       } else {
         setCurrentView((v) => (v === 'teacher' ? 'student' : v));
-        const fallbackStudent: UserProfile = {
-          id: fbUser.uid,
-          name: fbUser.displayName || email.split('@')[0] || 'طالب منصة',
-          email,
-          role: 'student',
-          grade: 'third',
-          phone: '',
-          parentPhone: '',
-          governorate: 'القاهرة',
-          avatarUrl: fbUser.photoURL || '',
-          score: 0,
-          profileCompleted: false,
-          watchedLectureIds: [],
-          passedQuizIds: [],
-          quizScores: {},
-          joinedAt: new Date().toISOString().split('T')[0],
-        };
-        try {
-          const cloudStudent = await getStudentFromCloud(fbUser.uid);
-          if (cloudStudent) {
-            setCurrentUser({
-              ...cloudStudent,
-              role: 'student',
-              avatarUrl: fbUser.photoURL || cloudStudent.avatarUrl || '',
-              profileCompleted: Boolean(cloudStudent.profileCompleted),
-            });
-          } else {
-            setCurrentUser((prev) => {
-              if (prev && prev.id === fbUser.uid) {
-                return { ...prev, role: 'student' };
-              }
-              return fallbackStudent;
-            });
-          }
-        } catch (err) {
-          console.warn('Student cloud fetch warning:', err);
-          setCurrentUser((prev) => {
-            if (prev && prev.id === fbUser.uid) {
-              return { ...prev, role: 'student' };
-            }
-            return fallbackStudent;
+        if (cloudStudent) {
+          setCurrentUser({
+            ...cloudStudent,
+            role: 'student',
+            avatarUrl: fbUser.photoURL || cloudStudent.avatarUrl || '',
+            profileCompleted: Boolean(cloudStudent.profileCompleted),
           });
         }
       }
+    },
+    [isEmailAdmin]
+  );
+
+  // 1. Unified Firebase Auth Listener + Unconditional Redirect & Tab-Return Recovery
+  useEffect(() => {
+    let mounted = true;
+    let redirectCheckDone = false;
+
+    const handleRedirectCheck = async () => {
+      const pendingBefore = hasPendingRedirectFlag();
+      try {
+        // Always call getRedirectResult unconditionally so OAuth returns work even if sessionStorage was reset
+        const res = await getRedirectResult(auth);
+        if (!mounted) return;
+        if (res?.user) {
+          clearRedirectFlags();
+          setLoginModalOpen(false);
+          setRegisterModalOpen(false);
+          showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
+          await hydrateFirebaseUser(res.user, { fromRedirect: true });
+        } else if (pendingBefore) {
+          if (typeof auth.authStateReady === 'function') {
+            await auth.authStateReady().catch(() => {});
+          }
+          if (!mounted) return;
+          if (auth.currentUser) {
+            clearRedirectFlags();
+            await hydrateFirebaseUser(auth.currentUser, { fromRedirect: true });
+          } else {
+            clearRedirectFlags();
+          }
+        }
+      } catch (err: any) {
+        if (!mounted) return;
+        clearRedirectFlags();
+        const code = err?.code || '';
+        if (code === 'auth/unauthorized-domain') {
+          showNotice(
+            'error',
+            `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
+          );
+        } else if (code === 'auth/network-request-failed') {
+          probeNetworkQuality('auth');
+          showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
+        } else if (code) {
+          showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
+          setLoginModalOpen(true);
+        }
+      } finally {
+        redirectCheckDone = true;
+        if (mounted) {
+          setResolvingAuth(false);
+          setAuthReady(true);
+        }
+      }
+    };
+
+    handleRedirectCheck();
+
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (!mounted) return;
+
+      if (!fbUser) {
+        setFirebaseUser(null);
+        setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
+        if (redirectCheckDone) {
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      const wasRedirectPending = hasPendingRedirectFlag();
+      if (wasRedirectPending) {
+        clearRedirectFlags();
+        setLoginModalOpen(false);
+        setRegisterModalOpen(false);
+      }
+
+      await hydrateFirebaseUser(fbUser, { fromRedirect: wasRedirectPending });
+      if (mounted) {
+        setResolvingAuth(false);
+        setAuthReady(true);
+      }
     });
 
-    return () => unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEmailAdmin]);
+    // Re-sync session automatically when user returns from another tab/app (mobile OAuth / bfcache)
+    const handleReturnToSite = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (auth.currentUser && !currentUserRef.current) {
+        const pending = hasPendingRedirectFlag();
+        if (pending) clearRedirectFlags();
+        hydrateFirebaseUser(auth.currentUser, { fromRedirect: pending });
+      } else if (!auth.currentUser && hasPendingRedirectFlag()) {
+        handleRedirectCheck();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleReturnToSite);
+    window.addEventListener('pageshow', handleReturnToSite);
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+      document.removeEventListener('visibilitychange', handleReturnToSite);
+      window.removeEventListener('pageshow', handleReturnToSite);
+    };
+  }, [clearRedirectFlags, hasPendingRedirectFlag, hydrateFirebaseUser, showNotice]);
 
   // 2. Public Real-Time Firestore Listeners
   useEffect(() => {
@@ -642,10 +828,10 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('mm_user', JSON.stringify(currentUser));
-    } else {
+    } else if (authReady) {
       localStorage.removeItem('mm_user');
     }
-  }, [currentUser]);
+  }, [currentUser, authReady]);
 
   // Strict route guard
   useEffect(() => {
@@ -721,12 +907,14 @@ export default function App() {
   };
 
   const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
+    hasManualNavigatedRef.current = true;
     if (view === 'teacher') {
       if (!isUserAdmin(currentUser)) {
         setLoginModalOpen(true);
         return;
       }
       setCurrentView('teacher');
+      localStorage.setItem('mm_last_view', 'teacher');
       return;
     }
     if (view === 'student') {
@@ -735,8 +923,10 @@ export default function App() {
         return;
       }
       setCurrentView('student');
+      localStorage.setItem('mm_last_view', 'student');
       return;
     }
+    localStorage.setItem('mm_last_view', 'landing');
     setCurrentView(view);
   };
 
@@ -745,10 +935,40 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    let isAdmin = false;
-    if (auth.currentUser && auth.currentUser.emailVerified && auth.currentUser.email) {
-      const liveEmail = auth.currentUser.email.toLowerCase().trim();
-      const adminCfg = await fetchAdminConfigIfAuthorized();
+    hasManualNavigatedRef.current = true;
+    const fbUser = auth.currentUser;
+    if (fbUser) {
+      setFirebaseUser(fbUser);
+      lastLoginHydratedRef.current = { uid: fbUser.uid, ts: Date.now() };
+    }
+
+    const verifiedEmail =
+      fbUser && fbUser.emailVerified && fbUser.email
+        ? fbUser.email.toLowerCase().trim()
+        : '';
+    const isInstantVerifiedAdmin =
+      Boolean(verifiedEmail) &&
+      (user.role === 'teacher' || isEmailAdmin(verifiedEmail));
+
+    // Fast path for verified admins: transition immediately with zero blocking wait
+    if (isInstantVerifiedAdmin && fbUser) {
+      const finalAdmin: UserProfile = {
+        ...user,
+        id: fbUser.uid,
+        email: fbUser.email || user.email,
+        role: 'teacher',
+        profileCompleted: true,
+      };
+      setCurrentUser(finalAdmin);
+      setCurrentView('teacher');
+      localStorage.setItem('mm_last_view', 'teacher');
+      return;
+    }
+
+    // For students or newly-added co-admins: finish immediately if already resolved in AuthModals (deduplicated 1.5s cache)
+    let isCloudAdmin = false;
+    if (fbUser && fbUser.emailVerified && verifiedEmail) {
+      const adminCfg = await fetchAdminConfigIfAuthorized(1500);
       if (adminCfg) {
         const mergedEmails = Array.from(
           new Set(
@@ -762,26 +982,21 @@ export default function App() {
           ...prev,
           adminEmails: mergedEmails,
         }));
-        isAdmin = mergedEmails.includes(liveEmail);
-      } else {
-        adminEmailsRef.current = ['mizoo2y2@gmail.com'];
-        setSiteConfig((prev) => ({
-          ...prev,
-          adminEmails: ['mizoo2y2@gmail.com'],
-        }));
-        isAdmin = liveEmail === 'mizoo2y2@gmail.com';
+        isCloudAdmin = mergedEmails.includes(verifiedEmail);
       }
     }
 
-    if (isAdmin) {
+    if (isCloudAdmin && fbUser) {
       const finalAdmin: UserProfile = {
         ...user,
-        email: auth.currentUser?.email || user.email,
+        id: fbUser.uid,
+        email: fbUser.email || user.email,
         role: 'teacher',
         profileCompleted: true,
       };
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
+      localStorage.setItem('mm_last_view', 'teacher');
       return;
     }
 
@@ -790,7 +1005,7 @@ export default function App() {
       role: 'student',
     };
 
-    let matched: UserProfile | undefined = students.find(
+    const matchedLocal: UserProfile | undefined = students.find(
       (s) =>
         (sanitizedStudentInput.id && s.id === sanitizedStudentInput.id) ||
         (sanitizedStudentInput.email &&
@@ -799,15 +1014,7 @@ export default function App() {
         (sanitizedStudentInput.phone && s.phone && s.phone === sanitizedStudentInput.phone)
     );
 
-    if (!matched && auth.currentUser) {
-      try {
-        const cloudStudent = await getStudentFromCloud(auth.currentUser.uid);
-        if (cloudStudent) matched = cloudStudent;
-      } catch (e) {
-        console.warn('Cloud student lookup error:', e);
-      }
-    }
-
+    const matched = matchedLocal || sanitizedStudentInput;
     const isMarkedDone =
       Boolean(sanitizedStudentInput.profileCompleted) ||
       Boolean(matched?.profileCompleted) ||
@@ -822,24 +1029,21 @@ export default function App() {
           localStorage.getItem(`mm_profile_done_${sanitizedStudentInput.id}`) === 'true'
       );
 
-    const finalUser: UserProfile = matched
-      ? {
-          ...matched,
-          role: 'student',
-          avatarUrl: sanitizedStudentInput.avatarUrl || matched.avatarUrl,
-          name: matched.name || sanitizedStudentInput.name,
-          profileCompleted: isMarkedDone,
-        }
-      : {
-          ...sanitizedStudentInput,
-          role: 'student',
-          profileCompleted: isMarkedDone,
-        };
+    const finalUser: UserProfile = {
+      ...sanitizedStudentInput,
+      ...matched,
+      name: matched.name || sanitizedStudentInput.name,
+      avatarUrl: sanitizedStudentInput.avatarUrl || matched.avatarUrl,
+      role: 'student',
+      profileCompleted: isMarkedDone,
+    };
 
     setCurrentUser(finalUser);
+    setCurrentView('student');
+    localStorage.setItem('mm_last_view', 'student');
 
-    if (finalUser.profileCompleted && auth.currentUser && auth.currentUser.emailVerified) {
-      saveStudentToCloud(finalUser, auth.currentUser.uid).catch((err) =>
+    if (finalUser.profileCompleted && fbUser && fbUser.emailVerified) {
+      saveStudentToCloud(finalUser, fbUser.uid).catch((err) =>
         console.warn('Cloud student save warning:', err)
       );
     }
@@ -855,12 +1059,15 @@ export default function App() {
       }
       return [finalUser, ...prev];
     });
-
-    setCurrentView('student');
   };
 
   const handleLogout = () => {
+    hasManualNavigatedRef.current = true;
+    localStorage.removeItem('mm_last_view');
+    localStorage.removeItem('mm_user');
+    clearRedirectFlags();
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
+    setFirebaseUser(null);
     setCurrentUser(null);
     setCurrentView('landing');
   };
@@ -1231,6 +1438,16 @@ export default function App() {
       className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
     >
       <NetworkStatusMonitor />
+
+      {resolvingAuth && (
+        <div
+          dir="rtl"
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-[95] px-4 py-2 rounded-xl bg-teal-900/95 text-white border border-teal-400/40 shadow-xl backdrop-blur-md flex items-center gap-2.5 text-xs font-bold font-kufi animate-fade-in"
+        >
+          <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+          <span>جاري استكمال تسجيل الدخول بحساب Google...</span>
+        </div>
+      )}
 
       {/* Non-blocking Cloud Sync Toast */}
       {syncNotice && (

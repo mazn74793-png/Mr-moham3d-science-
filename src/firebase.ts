@@ -1,10 +1,19 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import {
+  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  browserPopupRedirectResolver,
+  setPersistence,
+  GoogleAuthProvider,
+  Auth,
+} from 'firebase/auth';
 import {
   initializeFirestore,
   doc,
   getDoc,
-  getDocFromServer,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -27,8 +36,7 @@ import {
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 
 const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
-const useSameOriginAuthDomain =
-  currentHost === 'moham3d-mostafa.vercel.app' || currentHost.endsWith('.vercel.app');
+const useSameOriginAuthDomain = currentHost === 'moham3d-mostafa.vercel.app';
 
 const runtimeFirebaseConfig = {
   ...firebaseConfig,
@@ -39,12 +47,30 @@ const app = initializeApp(runtimeFirebaseConfig);
 export const db = initializeFirestore(
   app,
   {
-    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
     ignoreUndefinedProperties: true,
   },
   firebaseConfig.firestoreDatabaseId
 );
-export const auth = getAuth(app);
+
+function createPersistentAuth(): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+      ],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    const existingAuth = getAuth(app);
+    setPersistence(existingAuth, browserLocalPersistence).catch(() => {});
+    return existingAuth;
+  }
+}
+
+export const auth = createPersistentAuth();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -100,18 +126,32 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Validate connection to Firestore on boot without raising spurious configuration errors when offline
-async function testConnection() {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firestore operating in offline cache mode until network stabilizes.');
-    }
-  }
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(fallback);
+        }
+      });
+  });
 }
-testConnection();
 
 // Strip undefined properties recursively (including nested arrays and maps) so Firestore never rejects payloads
 function stripUndefinedDeep<T>(value: T): T {
@@ -151,41 +191,69 @@ export interface AdminCloudConfig {
   googleClientId?: string;
 }
 
+let inflightAdminConfigFetch: {
+  uid: string;
+  ts: number;
+  promise: Promise<AdminCloudConfig | null>;
+} | null = null;
+
 /**
- * Queries protected adminConfig/settings inside try/catch and explicitly verifies
- * that the signed-in user's verified email is in the allowed adminEmails list.
- * Returns null immediately for any non-admin or unverified account.
+ * Queries protected adminConfig/settings inside try/catch with a fast timeout + short burst deduplication,
+ * and explicitly verifies that the signed-in user's verified email is in the allowed adminEmails list.
  */
-export async function fetchAdminConfigIfAuthorized(): Promise<AdminCloudConfig | null> {
+export async function fetchAdminConfigIfAuthorized(
+  timeoutMs = 2500
+): Promise<AdminCloudConfig | null> {
   const user = auth.currentUser;
   if (!user || !user.email || !user.emailVerified) return null;
   const currentEmail = user.email.toLowerCase().trim();
 
-  try {
-    const snap = await getDoc(doc(db, 'adminConfig', 'settings'));
-    if (snap.exists()) {
-      const data = snap.data() as AdminCloudConfig;
-      const allowedList = Array.from(
-        new Set(
-          ['mizoo2y2@gmail.com', ...(data.adminEmails || [])]
-            .map((e) => String(e).toLowerCase().trim())
-            .filter(Boolean)
-        )
-      );
-      if (!allowedList.includes(currentEmail)) {
-        return null;
-      }
-      return {
-        ...data,
-        adminEmails: allowedList,
-      };
-    }
-    return currentEmail === 'mizoo2y2@gmail.com'
-      ? { adminEmails: ['mizoo2y2@gmail.com'] }
-      : null;
-  } catch {
-    return null;
+  const now = Date.now();
+  if (
+    inflightAdminConfigFetch &&
+    inflightAdminConfigFetch.uid === user.uid &&
+    now - inflightAdminConfigFetch.ts < 3000
+  ) {
+    return inflightAdminConfigFetch.promise;
   }
+
+  const runFetch = async (): Promise<AdminCloudConfig | null> => {
+    try {
+      const snap = await withTimeout(
+        getDoc(doc(db, 'adminConfig', 'settings')),
+        timeoutMs,
+        null
+      );
+      if (snap && snap.exists()) {
+        const data = snap.data() as AdminCloudConfig;
+        const allowedList = Array.from(
+          new Set(
+            ['mizoo2y2@gmail.com', ...(data.adminEmails || [])]
+              .map((e) => String(e).toLowerCase().trim())
+              .filter(Boolean)
+          )
+        );
+        if (!allowedList.includes(currentEmail)) {
+          return null;
+        }
+        return {
+          ...data,
+          adminEmails: allowedList,
+        };
+      }
+      return currentEmail === 'mizoo2y2@gmail.com'
+        ? { adminEmails: ['mizoo2y2@gmail.com'] }
+        : null;
+    } catch {
+      return currentEmail === 'mizoo2y2@gmail.com'
+        ? { adminEmails: ['mizoo2y2@gmail.com'] }
+        : null;
+    }
+  };
+
+  const promise = runFetch();
+  inflightAdminConfigFetch = { uid: user.uid, ts: now, promise };
+  return promise;
 }
 
 export async function savePublicSiteConfigToCloud(config: SiteConfig): Promise<void> {
@@ -487,17 +555,44 @@ export async function deleteStudentFromCloud(studentId: string): Promise<void> {
   }
 }
 
-export async function getStudentFromCloud(studentId: string): Promise<UserProfile | null> {
-  const path = `students/${studentId}`;
-  try {
-    const snap = await getDoc(doc(db, 'students', studentId));
-    if (snap.exists()) {
-      return snap.data() as UserProfile;
-    }
-    return null;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+let inflightStudentFetch: {
+  uid: string;
+  ts: number;
+  promise: Promise<UserProfile | null>;
+} | null = null;
+
+export async function getStudentFromCloud(
+  studentId: string,
+  timeoutMs = 2500
+): Promise<UserProfile | null> {
+  const now = Date.now();
+  if (
+    inflightStudentFetch &&
+    inflightStudentFetch.uid === studentId &&
+    now - inflightStudentFetch.ts < 3000
+  ) {
+    return inflightStudentFetch.promise;
   }
+
+  const runFetch = async (): Promise<UserProfile | null> => {
+    try {
+      const snap = await withTimeout(
+        getDoc(doc(db, 'students', studentId)),
+        timeoutMs,
+        null
+      );
+      if (snap && snap.exists()) {
+        return snap.data() as UserProfile;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const promise = runFetch();
+  inflightStudentFetch = { uid: studentId, ts: now, promise };
+  return promise;
 }
 
 // ==========================================
