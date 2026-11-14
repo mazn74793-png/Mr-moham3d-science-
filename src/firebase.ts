@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
-  getFirestore,
+  initializeFirestore,
   doc,
   getDoc,
   getDocFromServer,
@@ -10,9 +10,20 @@ import {
   deleteDoc,
   deleteField,
   serverTimestamp,
+  runTransaction,
+  writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Lecture, AttachmentFile, Quiz, UserProfile, CloudinaryConfig } from './types';
+import {
+  Lecture,
+  AttachmentFile,
+  Quiz,
+  UserProfile,
+  CloudinaryConfig,
+  RedeemCode,
+  PointReward,
+  PointsHistoryEntry,
+} from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 
 const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
@@ -25,7 +36,14 @@ const runtimeFirebaseConfig = {
 };
 
 const app = initializeApp(runtimeFirebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+    ignoreUndefinedProperties: true,
+  },
+  firebaseConfig.firestoreDatabaseId
+);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -82,13 +100,14 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Validate connection to Firestore on boot
+// Validate connection to Firestore on boot without raising spurious configuration errors when offline
 async function testConnection() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore operating in offline cache mode until network stabilizes.');
     }
   }
 }
@@ -244,6 +263,7 @@ export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
       dateAdded: lecture.dateAdded || new Date().toISOString().split('T')[0],
       sessionOrder: lecture.sessionOrder !== undefined ? Number(lecture.sessionOrder) : undefined,
       quizId: lecture.quizId || undefined,
+      pointsCost: Math.max(0, Math.min(100000, Math.round(Number(lecture.pointsCost) || 0))),
     });
 
     const snap = await getDoc(ref);
@@ -292,6 +312,7 @@ export async function saveAttachmentToCloud(file: AttachmentFile): Promise<void>
       downloadUrl: file.downloadUrl,
       pageCount: file.pageCount !== undefined ? Number(file.pageCount) : undefined,
       dateAdded: file.dateAdded || new Date().toISOString().split('T')[0],
+      pointsCost: Math.max(0, Math.min(100000, Math.round(Number(file.pointsCost) || 0))),
     });
 
     const snap = await getDoc(ref);
@@ -363,13 +384,17 @@ export async function deleteQuizFromCloud(id: string): Promise<void> {
   }
 }
 
-export async function saveStudentToCloud(student: UserProfile, authUid?: string): Promise<void> {
+export async function saveStudentToCloud(
+  student: UserProfile,
+  authUid?: string,
+  allowPointsOverride = false
+): Promise<void> {
   const docId = student.id;
   const path = `students/${docId}`;
   try {
     const ref = doc(db, 'students', docId);
     const uid = authUid || auth.currentUser?.uid || docId;
-    const clean = stripUndefinedDeep({
+    const baseClean = stripUndefinedDeep({
       id: docId,
       uid,
       name: student.name || 'طالب منصة',
@@ -382,24 +407,71 @@ export async function saveStudentToCloud(student: UserProfile, authUid?: string)
       avatarUrl: student.avatarUrl || '',
       score: Number(student.score) || 0,
       profileCompleted: Boolean(student.profileCompleted),
-      watchedLectureIds: Array.isArray(student.watchedLectureIds) ? student.watchedLectureIds.slice(0, 500) : [],
-      passedQuizIds: Array.isArray(student.passedQuizIds) ? student.passedQuizIds.slice(0, 500) : [],
+      watchedLectureIds: Array.isArray(student.watchedLectureIds)
+        ? student.watchedLectureIds.slice(0, 500)
+        : [],
+      passedQuizIds: Array.isArray(student.passedQuizIds)
+        ? student.passedQuizIds.slice(0, 500)
+        : [],
       quizScores: student.quizScores || {},
       joinedAt: student.joinedAt || new Date().toISOString().split('T')[0],
     });
 
     const snap = await getDoc(ref);
     if (!snap.exists()) {
+      const initialPointsPayload = allowPointsOverride
+        ? stripUndefinedDeep({
+            points: Math.max(0, Math.round(Number(student.points) || 0)),
+            unlockedLectureIds: Array.isArray(student.unlockedLectureIds)
+              ? student.unlockedLectureIds.slice(0, 500)
+              : [],
+            unlockedAttachmentIds: Array.isArray(student.unlockedAttachmentIds)
+              ? student.unlockedAttachmentIds.slice(0, 500)
+              : [],
+            claimedRewardIds: Array.isArray(student.claimedRewardIds)
+              ? student.claimedRewardIds.slice(0, 500)
+              : [],
+            pointsHistory: Array.isArray(student.pointsHistory)
+              ? student.pointsHistory.slice(0, 50)
+              : [],
+          })
+        : {
+            points: 0,
+            unlockedLectureIds: [],
+            unlockedAttachmentIds: [],
+            claimedRewardIds: [],
+            pointsHistory: [],
+          };
+
       await setDoc(ref, {
-        ...clean,
+        ...baseClean,
+        ...initialPointsPayload,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     } else {
-      await updateDoc(ref, {
-        ...clean,
+      const updatePayload: Record<string, any> = {
+        ...baseClean,
         updatedAt: serverTimestamp(),
-      });
+      };
+      // Only admin updates should include wallet fields on regular profile save;
+      // student updates omit them so Zero-Trust Action 1 affectedKeys rule passes.
+      if (allowPointsOverride) {
+        updatePayload.points = Math.max(0, Math.round(Number(student.points) || 0));
+        if (Array.isArray(student.unlockedLectureIds)) {
+          updatePayload.unlockedLectureIds = student.unlockedLectureIds.slice(0, 500);
+        }
+        if (Array.isArray(student.unlockedAttachmentIds)) {
+          updatePayload.unlockedAttachmentIds = student.unlockedAttachmentIds.slice(0, 500);
+        }
+        if (Array.isArray(student.claimedRewardIds)) {
+          updatePayload.claimedRewardIds = student.claimedRewardIds.slice(0, 500);
+        }
+        if (Array.isArray(student.pointsHistory)) {
+          updatePayload.pointsHistory = stripUndefinedDeep(student.pointsHistory.slice(0, 50));
+        }
+      }
+      await updateDoc(ref, updatePayload);
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -426,4 +498,452 @@ export async function getStudentFromCloud(studentId: string): Promise<UserProfil
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
   }
+}
+
+// ==========================================
+// REDEEM CODES & STUDENT POINTS SYSTEM
+// ==========================================
+
+export function normalizeRedeemCodeInput(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Z0-9_\-]/g, '')
+    .slice(0, 64);
+}
+
+export async function saveRedeemCodeToCloud(item: RedeemCode): Promise<void> {
+  const cleanCode = normalizeRedeemCodeInput(item.code || item.id);
+  const path = `redeemCodes/${cleanCode}`;
+  try {
+    const ref = doc(db, 'redeemCodes', cleanCode);
+    const clean = stripUndefinedDeep({
+      id: cleanCode,
+      code: cleanCode,
+      points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
+      maxUses: Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1))),
+      usedCount: Math.max(0, Math.round(Number(item.usedCount) || 0)),
+      active: Boolean(item.active),
+      label: item.label?.trim() ? item.label.trim().slice(0, 150) : undefined,
+      createdBy: item.createdBy?.trim()
+        ? item.createdBy.trim().slice(0, 150)
+        : auth.currentUser?.email || 'admin',
+      createdAtDate: item.createdAtDate || new Date().toISOString().split('T')[0],
+    });
+
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        ...clean,
+        usedCount: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        ...clean,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function saveRedeemCodesBatchToCloud(items: RedeemCode[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const batch = writeBatch(db);
+    for (const item of items) {
+      const cleanCode = normalizeRedeemCodeInput(item.code || item.id);
+      if (!cleanCode) continue;
+      const ref = doc(db, 'redeemCodes', cleanCode);
+      const clean = stripUndefinedDeep({
+        id: cleanCode,
+        code: cleanCode,
+        points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
+        maxUses: Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1))),
+        usedCount: 0,
+        active: Boolean(item.active),
+        label: item.label?.trim() ? item.label.trim().slice(0, 150) : undefined,
+        createdBy: auth.currentUser?.email || 'admin',
+        createdAtDate: item.createdAtDate || new Date().toISOString().split('T')[0],
+      });
+      batch.set(ref, {
+        ...clean,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'redeemCodes/batch');
+  }
+}
+
+export async function toggleRedeemCodeActiveInCloud(
+  codeId: string,
+  active: boolean
+): Promise<void> {
+  const cleanCode = normalizeRedeemCodeInput(codeId);
+  const path = `redeemCodes/${cleanCode}`;
+  try {
+    await updateDoc(doc(db, 'redeemCodes', cleanCode), {
+      active: Boolean(active),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteRedeemCodeFromCloud(codeId: string): Promise<void> {
+  const cleanCode = normalizeRedeemCodeInput(codeId);
+  const path = `redeemCodes/${cleanCode}`;
+  try {
+    await deleteDoc(doc(db, 'redeemCodes', cleanCode));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function savePointRewardToCloud(reward: PointReward): Promise<void> {
+  const path = `rewards/${reward.id}`;
+  try {
+    const ref = doc(db, 'rewards', reward.id);
+    const clean = stripUndefinedDeep({
+      id: reward.id,
+      title: reward.title.trim().slice(0, 300),
+      description: (reward.description || '').trim().slice(0, 1500),
+      pointsCost: Math.max(1, Math.min(100000, Math.round(Number(reward.pointsCost) || 50))),
+      category: reward.category || 'perk',
+      grade: reward.grade || 'all',
+      active: Boolean(reward.active),
+      dateAdded: reward.dateAdded || new Date().toISOString().split('T')[0],
+    });
+
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        ...clean,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        ...clean,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deletePointRewardFromCloud(rewardId: string): Promise<void> {
+  const path = `rewards/${rewardId}`;
+  try {
+    await deleteDoc(doc(db, 'rewards', rewardId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+async function ensureStudentCloudDocExists(student: UserProfile): Promise<string> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || !fbUser.emailVerified) {
+    throw new Error('يرجى تسجيل الدخول بحساب Google لتفعيل الأكواد واستخدام محفظة النقاط بأمان.');
+  }
+  const uid = fbUser.uid;
+  const studentRef = doc(db, 'students', uid);
+  const snap = await getDoc(studentRef);
+  if (!snap.exists()) {
+    await saveStudentToCloud(
+      {
+        ...student,
+        id: uid,
+        email: fbUser.email || student.email || '',
+        avatarUrl: fbUser.photoURL || student.avatarUrl || '',
+        role: 'student',
+      },
+      uid,
+      false
+    );
+  }
+  return uid;
+}
+
+export async function redeemCodeForStudent(
+  rawCode: string,
+  student: UserProfile
+): Promise<{
+  pointsAdded: number;
+  newBalance: number;
+  code: string;
+  updatedStudent: UserProfile;
+}> {
+  const cleanCode = normalizeRedeemCodeInput(rawCode);
+  if (!cleanCode || cleanCode.length < 3) {
+    throw new Error('من فضلك أدخل كود شحن صحيح (مثال: CHEM-2026).');
+  }
+
+  const uid = await ensureStudentCloudDocExists(student);
+  const codeRef = doc(db, 'redeemCodes', cleanCode);
+  const redemptionRef = doc(db, 'redeemCodes', cleanCode, 'redemptions', uid);
+  const studentRef = doc(db, 'students', uid);
+
+  const txResult = await runTransaction(db, async (tx) => {
+    const [codeSnap, redemptionSnap, studentSnap] = await Promise.all([
+      tx.get(codeRef),
+      tx.get(redemptionRef),
+      tx.get(studentRef),
+    ]);
+
+    if (!codeSnap.exists()) {
+      throw new Error('كود الشحن غير صحيح أو غير موجود، تأكد من كتابة الأحرف بشكل سليم.');
+    }
+
+    const codeData = codeSnap.data() as RedeemCode;
+    if (!codeData.active) {
+      throw new Error('هذا الكود متوقف حالياً من قبل الإدارة.');
+    }
+    if ((codeData.usedCount || 0) >= (codeData.maxUses || 1)) {
+      throw new Error('عذراً، تم استهلاك الحد الأقصى لاستخدامات هذا الكود بالكامل.');
+    }
+    if (redemptionSnap.exists()) {
+      throw new Error('لقد قمت بشحن هذا الكود من قبل في حسابك.');
+    }
+    if (!studentSnap.exists()) {
+      throw new Error('تعذر العثور على ملف الطالب السحابي.');
+    }
+
+    const currentStudent = studentSnap.data() as UserProfile;
+    const currentPoints = Number(currentStudent.points) || 0;
+    const rewardPoints = Number(codeData.points) || 0;
+    const newBalance = currentPoints + rewardPoints;
+
+    const historyEntry: PointsHistoryEntry = stripUndefinedDeep({
+      id: `pt-${Date.now()}`,
+      type: 'redeem',
+      title: codeData.label ? `شحن كود (${codeData.label})` : `شحن كود: ${cleanCode}`,
+      delta: rewardPoints,
+      code: cleanCode,
+      date: new Date().toISOString().split('T')[0],
+    });
+    const nextHistory = [historyEntry, ...(currentStudent.pointsHistory || [])].slice(0, 50);
+
+    tx.set(redemptionRef, {
+      uid,
+      studentName: (currentStudent.name || student.name || 'طالب').slice(0, 200),
+      code: cleanCode,
+      points: rewardPoints,
+      redeemedAt: serverTimestamp(),
+    });
+
+    tx.update(codeRef, {
+      usedCount: (codeData.usedCount || 0) + 1,
+      updatedAt: serverTimestamp(),
+    });
+
+    tx.update(studentRef, {
+      points: newBalance,
+      lastRedeemedCode: cleanCode,
+      pointsHistory: nextHistory,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      pointsAdded: rewardPoints,
+      newBalance,
+      code: cleanCode,
+      updatedStudent: {
+        ...currentStudent,
+        id: uid,
+        points: newBalance,
+        pointsHistory: nextHistory,
+      },
+    };
+  });
+
+  return txResult;
+}
+
+export async function unlockLectureWithPoints(
+  lecture: Lecture,
+  student: UserProfile
+): Promise<UserProfile> {
+  const cost = Math.max(0, Math.round(Number(lecture.pointsCost) || 0));
+  if (cost <= 0) {
+    throw new Error('هذه المحاضرة لا تتطلب نقاط لفتحها.');
+  }
+
+  const uid = await ensureStudentCloudDocExists(student);
+  const studentRef = doc(db, 'students', uid);
+
+  return await runTransaction(db, async (tx) => {
+    const studentSnap = await tx.get(studentRef);
+    if (!studentSnap.exists()) {
+      throw new Error('تعذر الوصول لبيانات المحفظة السحابية.');
+    }
+
+    const currentStudent = studentSnap.data() as UserProfile;
+    const unlockedIds = currentStudent.unlockedLectureIds || [];
+    if (unlockedIds.includes(lecture.id)) {
+      return { ...currentStudent, id: uid };
+    }
+
+    const currentPoints = Number(currentStudent.points) || 0;
+    if (currentPoints < cost) {
+      throw new Error(
+        `رصيدك الحالي (${currentPoints} نقطة) غير كافٍ — مطلوب ${cost} نقطة لفتح هذه المحاضرة.`
+      );
+    }
+
+    const newBalance = currentPoints - cost;
+    const nextUnlocked = Array.from(new Set([...unlockedIds, lecture.id])).slice(0, 500);
+    const entry: PointsHistoryEntry = {
+      id: `pt-${Date.now()}`,
+      type: 'unlock_lecture',
+      title: `فتح محاضرة: ${lecture.title}`,
+      delta: -cost,
+      date: new Date().toISOString().split('T')[0],
+    };
+    const nextHistory = [entry, ...(currentStudent.pointsHistory || [])].slice(0, 50);
+
+    tx.update(studentRef, {
+      points: newBalance,
+      unlockedLectureIds: nextUnlocked,
+      pointsHistory: nextHistory,
+      lastSpendTargetType: 'lecture',
+      lastSpendTargetId: lecture.id,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      ...currentStudent,
+      id: uid,
+      points: newBalance,
+      unlockedLectureIds: nextUnlocked,
+      pointsHistory: nextHistory,
+    };
+  });
+}
+
+export async function unlockAttachmentWithPoints(
+  file: AttachmentFile,
+  student: UserProfile
+): Promise<UserProfile> {
+  const cost = Math.max(0, Math.round(Number(file.pointsCost) || 0));
+  if (cost <= 0) {
+    throw new Error('هذه المذكرة مجانية ولا تتطلب نقاط.');
+  }
+
+  const uid = await ensureStudentCloudDocExists(student);
+  const studentRef = doc(db, 'students', uid);
+
+  return await runTransaction(db, async (tx) => {
+    const studentSnap = await tx.get(studentRef);
+    if (!studentSnap.exists()) {
+      throw new Error('تعذر الوصول لبيانات المحفظة السحابية.');
+    }
+
+    const currentStudent = studentSnap.data() as UserProfile;
+    const unlockedIds = currentStudent.unlockedAttachmentIds || [];
+    if (unlockedIds.includes(file.id)) {
+      return { ...currentStudent, id: uid };
+    }
+
+    const currentPoints = Number(currentStudent.points) || 0;
+    if (currentPoints < cost) {
+      throw new Error(
+        `رصيدك الحالي (${currentPoints} نقطة) غير كافٍ — مطلوب ${cost} نقطة لفتح المذكرة.`
+      );
+    }
+
+    const newBalance = currentPoints - cost;
+    const nextUnlocked = Array.from(new Set([...unlockedIds, file.id])).slice(0, 500);
+    const entry: PointsHistoryEntry = {
+      id: `pt-${Date.now()}`,
+      type: 'unlock_file',
+      title: `فتح مذكرة: ${file.title}`,
+      delta: -cost,
+      date: new Date().toISOString().split('T')[0],
+    };
+    const nextHistory = [entry, ...(currentStudent.pointsHistory || [])].slice(0, 50);
+
+    tx.update(studentRef, {
+      points: newBalance,
+      unlockedAttachmentIds: nextUnlocked,
+      pointsHistory: nextHistory,
+      lastSpendTargetType: 'attachment',
+      lastSpendTargetId: file.id,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      ...currentStudent,
+      id: uid,
+      points: newBalance,
+      unlockedAttachmentIds: nextUnlocked,
+      pointsHistory: nextHistory,
+    };
+  });
+}
+
+export async function claimRewardWithPoints(
+  reward: PointReward,
+  student: UserProfile
+): Promise<UserProfile> {
+  const cost = Math.max(1, Math.round(Number(reward.pointsCost) || 0));
+  const uid = await ensureStudentCloudDocExists(student);
+  const studentRef = doc(db, 'students', uid);
+
+  return await runTransaction(db, async (tx) => {
+    const studentSnap = await tx.get(studentRef);
+    if (!studentSnap.exists()) {
+      throw new Error('تعذر الوصول لبيانات المحفظة السحابية.');
+    }
+
+    const currentStudent = studentSnap.data() as UserProfile;
+    const claimedIds = currentStudent.claimedRewardIds || [];
+    if (claimedIds.includes(reward.id)) {
+      throw new Error('لقد قمت باستبدال هذه المكافأة بالفعل.');
+    }
+
+    const currentPoints = Number(currentStudent.points) || 0;
+    if (currentPoints < cost) {
+      throw new Error(
+        `رصيدك الحالي (${currentPoints} نقطة) غير كافٍ — مطلوب ${cost} نقطة للحصول على هذه المكافأة.`
+      );
+    }
+
+    const newBalance = currentPoints - cost;
+    const nextClaimed = Array.from(new Set([...claimedIds, reward.id])).slice(0, 500);
+    const entry: PointsHistoryEntry = {
+      id: `pt-${Date.now()}`,
+      type: 'claim_reward',
+      title: `استبدال مكافأة: ${reward.title}`,
+      delta: -cost,
+      date: new Date().toISOString().split('T')[0],
+    };
+    const nextHistory = [entry, ...(currentStudent.pointsHistory || [])].slice(0, 50);
+
+    tx.update(studentRef, {
+      points: newBalance,
+      claimedRewardIds: nextClaimed,
+      pointsHistory: nextHistory,
+      lastSpendTargetType: 'reward',
+      lastSpendTargetId: reward.id,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      ...currentStudent,
+      id: uid,
+      points: newBalance,
+      claimedRewardIds: nextClaimed,
+      pointsHistory: nextHistory,
+    };
+  });
 }

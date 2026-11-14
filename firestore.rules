@@ -121,7 +121,7 @@ service cloud.firestore {
 
     function isValidLecture(data) {
       return data.keys().hasAll(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'duration', 'videoUrl', 'thumbnailUrl', 'description', 'isFreePreview', 'viewsCount', 'dateAdded', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'duration', 'videoUrl', 'thumbnailUrl', 'pdfUrl', 'pdfTitle', 'description', 'isFreePreview', 'viewsCount', 'dateAdded', 'sessionOrder', 'quizId', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'duration', 'videoUrl', 'thumbnailUrl', 'pdfUrl', 'pdfTitle', 'description', 'isFreePreview', 'viewsCount', 'dateAdded', 'sessionOrder', 'quizId', 'pointsCost', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
         isValidGradeId(data.grade) &&
@@ -137,12 +137,13 @@ service cloud.firestore {
         data.viewsCount is number && data.viewsCount >= 0 &&
         data.dateAdded is string && data.dateAdded.size() <= 50 &&
         (!('sessionOrder' in data) || data.sessionOrder is number) &&
-        (!('quizId' in data) || (data.quizId is string && data.quizId.size() <= 128));
+        (!('quizId' in data) || (data.quizId is string && data.quizId.size() <= 128)) &&
+        (!('pointsCost' in data) || (data.pointsCost is number && data.pointsCost >= 0 && data.pointsCost <= 100000));
     }
 
     function isValidAttachment(data) {
       return data.keys().hasAll(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'fileSize', 'fileType', 'downloadUrl', 'dateAdded', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'fileSize', 'fileType', 'downloadUrl', 'pageCount', 'dateAdded', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'title', 'grade', 'gradeLabel', 'chapter', 'fileSize', 'fileType', 'downloadUrl', 'pageCount', 'dateAdded', 'pointsCost', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
         isValidGradeId(data.grade) &&
@@ -152,7 +153,8 @@ service cloud.firestore {
         data.fileType in ['pdf', 'doc', 'image'] &&
         data.downloadUrl is string && data.downloadUrl.size() > 0 && data.downloadUrl.size() <= 2000 &&
         (!('pageCount' in data) || data.pageCount is number) &&
-        data.dateAdded is string && data.dateAdded.size() <= 50;
+        data.dateAdded is string && data.dateAdded.size() <= 50 &&
+        (!('pointsCost' in data) || (data.pointsCost is number && data.pointsCost >= 0 && data.pointsCost <= 100000));
     }
 
     function isValidQuiz(data) {
@@ -170,7 +172,14 @@ service cloud.firestore {
 
     function isValidStudent(data) {
       return data.keys().hasAll(['id', 'uid', 'name', 'role', 'phone', 'profileCompleted', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'uid', 'name', 'email', 'role', 'grade', 'phone', 'parentPhone', 'governorate', 'avatarUrl', 'score', 'profileCompleted', 'watchedLectureIds', 'passedQuizIds', 'quizScores', 'joinedAt', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'uid', 'name', 'email', 'role', 'grade', 'phone', 'parentPhone',
+          'governorate', 'avatarUrl', 'score', 'profileCompleted', 'watchedLectureIds',
+          'passedQuizIds', 'quizScores', 'joinedAt', 'points', 'unlockedLectureIds',
+          'unlockedAttachmentIds', 'claimedRewardIds', 'pointsHistory',
+          'lastRedeemedCode', 'lastSpendTargetType', 'lastSpendTargetId',
+          'createdAt', 'updatedAt'
+        ]) &&
         isValidId(data.id) &&
         data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
         data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
@@ -186,7 +195,51 @@ service cloud.firestore {
         (!('watchedLectureIds' in data) || (data.watchedLectureIds is list && data.watchedLectureIds.size() <= 500 && (data.watchedLectureIds.size() == 0 || data.watchedLectureIds[0] is string))) &&
         (!('passedQuizIds' in data) || (data.passedQuizIds is list && data.passedQuizIds.size() <= 500 && (data.passedQuizIds.size() == 0 || data.passedQuizIds[0] is string))) &&
         (!('quizScores' in data) || data.quizScores is map) &&
-        (!('joinedAt' in data) || (data.joinedAt is string && data.joinedAt.size() <= 50));
+        (!('joinedAt' in data) || (data.joinedAt is string && data.joinedAt.size() <= 50)) &&
+        (!('points' in data) || (data.points is number && data.points >= 0 && data.points <= 10000000)) &&
+        (!('unlockedLectureIds' in data) || (data.unlockedLectureIds is list && data.unlockedLectureIds.size() <= 500 && (data.unlockedLectureIds.size() == 0 || data.unlockedLectureIds[0] is string))) &&
+        (!('unlockedAttachmentIds' in data) || (data.unlockedAttachmentIds is list && data.unlockedAttachmentIds.size() <= 500 && (data.unlockedAttachmentIds.size() == 0 || data.unlockedAttachmentIds[0] is string))) &&
+        (!('claimedRewardIds' in data) || (data.claimedRewardIds is list && data.claimedRewardIds.size() <= 500 && (data.claimedRewardIds.size() == 0 || data.claimedRewardIds[0] is string))) &&
+        (!('pointsHistory' in data) || (data.pointsHistory is list && data.pointsHistory.size() <= 50 && (data.pointsHistory.size() == 0 || data.pointsHistory[0] is map))) &&
+        (!('lastRedeemedCode' in data) || (data.lastRedeemedCode is string && data.lastRedeemedCode.size() <= 128)) &&
+        (!('lastSpendTargetType' in data) || data.lastSpendTargetType in ['lecture', 'attachment', 'reward']) &&
+        (!('lastSpendTargetId' in data) || (data.lastSpendTargetId is string && data.lastSpendTargetId.size() <= 128));
+    }
+
+    function isValidRedeemCode(data) {
+      return data.keys().hasAll(['id', 'code', 'points', 'maxUses', 'usedCount', 'active', 'createdAtDate', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'code', 'points', 'maxUses', 'usedCount', 'active', 'label', 'createdBy', 'createdAtDate', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id.size() <= 64 &&
+        isValidId(data.code) && data.code.size() <= 64 &&
+        data.points is number && data.points > 0 && data.points <= 100000 &&
+        data.maxUses is number && data.maxUses > 0 && data.maxUses <= 100000 &&
+        data.usedCount is number && data.usedCount >= 0 && data.usedCount <= data.maxUses &&
+        data.active is bool &&
+        (!('label' in data) || (data.label is string && data.label.size() <= 150)) &&
+        (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 150)) &&
+        data.createdAtDate is string && data.createdAtDate.size() <= 50;
+    }
+
+    function isValidCodeRedemption(data, codeId, studentUid) {
+      return data.keys().hasAll(['uid', 'studentName', 'code', 'points', 'redeemedAt']) &&
+        data.keys().hasOnly(['uid', 'studentName', 'code', 'points', 'redeemedAt']) &&
+        data.uid is string && data.uid == studentUid && data.uid.size() <= 128 &&
+        data.studentName is string && data.studentName.size() <= 200 &&
+        data.code is string && data.code == codeId && data.code.size() <= 64 &&
+        data.points is number && data.points > 0 && data.points <= 100000;
+    }
+
+    function isValidPointReward(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'pointsCost', 'category', 'grade', 'active', 'dateAdded', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'title', 'description', 'pointsCost', 'category', 'grade', 'active', 'dateAdded', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
+        data.description is string && data.description.size() <= 1500 &&
+        data.pointsCost is number && data.pointsCost > 0 && data.pointsCost <= 100000 &&
+        data.category in ['perk', 'badge', 'discount', 'material'] &&
+        isValidGradeId(data.grade) &&
+        data.active is bool &&
+        data.dateAdded is string && data.dateAdded.size() <= 50;
     }
 
     // ==========================================
@@ -238,13 +291,69 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(quizId);
     }
 
-    // Private Student Profiles (Strict PII Isolation)
+    // Admin-defined Points Store & Perks
+    match /rewards/{rewardId} {
+      allow get: if isValidId(rewardId);
+      allow list: if resource.data.grade != '';
+      allow create: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == rewardId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(rewardId);
+    }
+
+    // Redeem Codes: Single code lookup allowed for signed-in students; full listing reserved for admins
+    match /redeemCodes/{codeId} {
+      allow get: if isSignedIn() && isValidId(codeId);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == codeId && incoming().code == codeId && incoming().usedCount == 0 && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == existing().id && incoming().code == existing().code && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time && (
+        isAdmin() ||
+        (
+          isVerifiedUser() &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['usedCount', 'updatedAt']) &&
+          existing().active == true &&
+          existing().usedCount < existing().maxUses &&
+          incoming().usedCount == existing().usedCount + 1 &&
+          !exists(/databases/$(database)/documents/redeemCodes/$(codeId)/redemptions/$(request.auth.uid)) &&
+          existsAfter(/databases/$(database)/documents/redeemCodes/$(codeId)/redemptions/$(request.auth.uid))
+        )
+      );
+      allow delete: if isAdmin() && isValidId(codeId);
+
+      // Subcollection tracking unique student redemptions atomically
+      match /redemptions/{studentUid} {
+        allow get: if isSignedIn() && isValidId(codeId) && isValidId(studentUid) && (request.auth.uid == studentUid || isAdmin());
+        allow list: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow create: if isVerifiedUser() &&
+          isValidId(codeId) &&
+          isValidId(studentUid) &&
+          request.auth.uid == studentUid &&
+          isValidCodeRedemption(incoming(), codeId, studentUid) &&
+          !exists(/databases/$(database)/documents/redeemCodes/$(codeId)/redemptions/$(studentUid)) &&
+          get(/databases/$(database)/documents/redeemCodes/$(codeId)).data.active == true &&
+          get(/databases/$(database)/documents/redeemCodes/$(codeId)).data.usedCount < get(/databases/$(database)/documents/redeemCodes/$(codeId)).data.maxUses &&
+          incoming().points == get(/databases/$(database)/documents/redeemCodes/$(codeId)).data.points &&
+          getAfter(/databases/$(database)/documents/redeemCodes/$(codeId)).data.usedCount == get(/databases/$(database)/documents/redeemCodes/$(codeId)).data.usedCount + 1 &&
+          incoming().redeemedAt == request.time;
+        allow update, delete: if isAdmin() && isValidId(codeId) && isValidId(studentUid);
+      }
+    }
+
+    // Private Student Profiles (Strict PII Isolation + Zero-Trust Points Accounting)
     match /students/{studentId} {
       allow get: if isSignedIn() && isValidId(studentId) && (request.auth.uid == studentId || isAdmin());
       allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
-        (request.auth.uid == studentId && incoming().id == studentId && incoming().uid == request.auth.uid && incoming().role == 'student')
+        (
+          request.auth.uid == studentId &&
+          incoming().id == studentId &&
+          incoming().uid == request.auth.uid &&
+          incoming().role == 'student' &&
+          (!('points' in incoming()) || incoming().points == 0) &&
+          (!('unlockedLectureIds' in incoming()) || incoming().unlockedLectureIds.size() == 0) &&
+          (!('unlockedAttachmentIds' in incoming()) || incoming().unlockedAttachmentIds.size() == 0) &&
+          (!('claimedRewardIds' in incoming()) || incoming().claimedRewardIds.size() == 0)
+        )
       ) && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
@@ -253,11 +362,59 @@ service cloud.firestore {
           incoming().id == existing().id &&
           incoming().uid == existing().uid &&
           incoming().role == existing().role &&
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'name', 'email', 'grade', 'phone', 'parentPhone', 'governorate',
-            'avatarUrl', 'score', 'profileCompleted', 'watchedLectureIds',
-            'passedQuizIds', 'quizScores', 'updatedAt'
-          ])
+          (
+            // Action 1: Standard Profile / Progress Update
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'email', 'grade', 'phone', 'parentPhone', 'governorate',
+              'avatarUrl', 'score', 'profileCompleted', 'watchedLectureIds',
+              'passedQuizIds', 'quizScores', 'updatedAt'
+            ]) ||
+            // Action 2: Redeem Code Atomic Credit
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['points', 'lastRedeemedCode', 'pointsHistory', 'updatedAt']) &&
+              incoming().lastRedeemedCode is string &&
+              isValidId(incoming().lastRedeemedCode) &&
+              !exists(/databases/$(database)/documents/redeemCodes/$(incoming().lastRedeemedCode)/redemptions/$(request.auth.uid)) &&
+              existsAfter(/databases/$(database)/documents/redeemCodes/$(incoming().lastRedeemedCode)/redemptions/$(request.auth.uid)) &&
+              (
+                (!('points' in existing()) && incoming().points == get(/databases/$(database)/documents/redeemCodes/$(incoming().lastRedeemedCode)).data.points) ||
+                ('points' in existing() && existing().points is number && incoming().points == existing().points + get(/databases/$(database)/documents/redeemCodes/$(incoming().lastRedeemedCode)).data.points)
+              )
+            ) ||
+            // Action 3: Spend Points to Unlock Lecture, Handout, or Reward
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'points', 'unlockedLectureIds', 'unlockedAttachmentIds', 'claimedRewardIds',
+                'pointsHistory', 'lastSpendTargetType', 'lastSpendTargetId', 'updatedAt'
+              ]) &&
+              'points' in existing() &&
+              existing().points is number &&
+              incoming().points >= 0 &&
+              incoming().lastSpendTargetId is string &&
+              isValidId(incoming().lastSpendTargetId) &&
+              (
+                (
+                  incoming().lastSpendTargetType == 'lecture' &&
+                  get(/databases/$(database)/documents/lectures/$(incoming().lastSpendTargetId)).data.pointsCost is number &&
+                  get(/databases/$(database)/documents/lectures/$(incoming().lastSpendTargetId)).data.pointsCost > 0 &&
+                  incoming().points == existing().points - get(/databases/$(database)/documents/lectures/$(incoming().lastSpendTargetId)).data.pointsCost
+                ) ||
+                (
+                  incoming().lastSpendTargetType == 'attachment' &&
+                  get(/databases/$(database)/documents/attachments/$(incoming().lastSpendTargetId)).data.pointsCost is number &&
+                  get(/databases/$(database)/documents/attachments/$(incoming().lastSpendTargetId)).data.pointsCost > 0 &&
+                  incoming().points == existing().points - get(/databases/$(database)/documents/attachments/$(incoming().lastSpendTargetId)).data.pointsCost
+                ) ||
+                (
+                  incoming().lastSpendTargetType == 'reward' &&
+                  get(/databases/$(database)/documents/rewards/$(incoming().lastSpendTargetId)).data.active == true &&
+                  get(/databases/$(database)/documents/rewards/$(incoming().lastSpendTargetId)).data.pointsCost is number &&
+                  get(/databases/$(database)/documents/rewards/$(incoming().lastSpendTargetId)).data.pointsCost > 0 &&
+                  incoming().points == existing().points - get(/databases/$(database)/documents/rewards/$(incoming().lastSpendTargetId)).data.pointsCost
+                )
+              )
+            )
+          )
         )
       ) && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(studentId);

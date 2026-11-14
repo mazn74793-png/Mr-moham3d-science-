@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Sparkles, Video, FileText, Users, ShieldCheck, Plus, GraduationCap,
-  Palette, Trash2, RefreshCcw, Eye
+  Palette, Trash2, RefreshCcw, Eye, Ticket
 } from 'lucide-react';
 import { Lecture, AttachmentFile, UserProfile } from '../../types';
 import { SiteConfig } from '../../types/siteConfig';
@@ -28,6 +28,7 @@ interface OverviewTabProps {
       | 'files'
       | 'academic-years'
       | 'co-admins'
+      | 'points-codes'
       | 'site-customizer'
       | 'cloudinary'
   ) => void;
@@ -184,7 +185,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
           روابط التشغيل السريعة:
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <button
             type="button"
             onClick={() => onNavigateTab('upload-lecture')}
@@ -193,6 +194,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <Plus className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">رفع محاضرة</div>
             <div className="text-[10px] text-slate-400 mt-0.5">فيديو وكويز مباشر</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('points-codes')}
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover:shadow-sm text-right transition-all group cursor-pointer"
+          >
+            <Ticket className="w-6 h-6 text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
+            <div className="text-xs font-bold text-slate-900 dark:text-white">أكواد النقاط والمكافآت</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">إنشاء أكواد شحن للطلاب</div>
           </button>
 
           <button

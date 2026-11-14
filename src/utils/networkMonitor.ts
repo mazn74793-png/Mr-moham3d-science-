@@ -1,4 +1,4 @@
-// Real-time network speed & connectivity monitor (zero-false-positive RTT probe + throughput alerts)
+// Real-time network speed, server latency (RTT), and connectivity monitor
 
 export type NetworkQualityLevel = 'good' | 'slow' | 'offline';
 
@@ -11,6 +11,7 @@ export interface NetworkAlertDetail {
 }
 
 export const NETWORK_ALERT_EVENT = 'mm-network-alert';
+export const HIGH_LATENCY_MS = 1000;
 
 export function emitNetworkAlert(detail: NetworkAlertDetail): void {
   if (typeof window === 'undefined') return;
@@ -53,15 +54,18 @@ export function getQuickNetworkStatus(): { level: NetworkQualityLevel; reason?: 
 }
 
 export async function probeNetworkQuality(
-  context: NetworkAlertDetail['context'] = 'general'
+  context: NetworkAlertDetail['context'] = 'general',
+  options?: { silent?: boolean }
 ): Promise<NetworkAlertDetail> {
+  const silent = Boolean(options?.silent);
+
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     const detail: NetworkAlertDetail = {
       level: 'offline',
       message: 'انقطع الاتصال بالإنترنت — تأكد من الشبكة للمتابعة.',
       context,
     };
-    emitNetworkAlert(detail);
+    if (!silent) emitNetworkAlert(detail);
     return detail;
   }
 
@@ -83,39 +87,42 @@ export async function probeNetworkQuality(
       return { level: quick.level, message: quick.reason || '', rttMs, context };
     }
 
-    if (rttMs >= 1600 || quick.level === 'slow') {
+    if (rttMs >= HIGH_LATENCY_MS || quick.level === 'slow') {
       const detail: NetworkAlertDetail = {
         level: 'slow',
         rttMs,
         message:
           context === 'upload'
-            ? 'الإنترنت ضعيف حالياً — قد يستغرق رفع الملفات والفيديوهات وقتاً أطول، لا تغلق الصفحة.'
+            ? 'زمن الاستجابة مرتفع والإنترنت ضعيف حالياً — جاري متابعة الرفع تدريجياً، لا تغلق الصفحة.'
             : context === 'auth'
-            ? 'الإنترنت ضعيف حالياً — إذا تأخرت نافذة Google يمكنك استخدام الدخول في نفس الصفحة.'
-            : 'سرعة الإنترنت لديك ضعيفة حالياً، قد يتأخر تحميل أو حفظ البيانات.',
+            ? 'زمن التأخير (Latency) مرتفع — قد تتأخر نافذة تسجيل الدخول، يُرجى الانتظار أو إعادة المحاولة.'
+            : 'جودة الإنترنت منخفضة (زمن التأخير مرتفع) — قد يتأخر تحميل أو حفظ البيانات.',
         context,
       };
-      emitNetworkAlert(detail);
+      if (!silent) emitNetworkAlert(detail);
       return detail;
     }
 
-    return {
+    const goodDetail: NetworkAlertDetail = {
       level: 'good',
       rttMs,
       message: '',
       context,
     };
+    if (!silent) emitNetworkAlert(goodDetail);
+    return goodDetail;
   } catch {
     clearTimeout(timeout);
     const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
     const detail: NetworkAlertDetail = {
       level: offlineNow ? 'offline' : 'slow',
+      rttMs: offlineNow ? undefined : 5500,
       message: offlineNow
         ? 'انقطع الاتصال بالإنترنت — تحقق من الواي فاي أو بيانات الهاتف.'
-        : 'اتصال الإنترنت ضعيف أو غير مستقر حالياً.',
+        : 'اتصال الإنترنت ضعيف أو انتهت مهلة استجابة السيرفر.',
       context,
     };
-    emitNetworkAlert(detail);
+    if (!silent) emitNetworkAlert(detail);
     return detail;
   }
 }

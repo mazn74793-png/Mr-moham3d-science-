@@ -1,29 +1,52 @@
 import React, { useState } from 'react';
-import { Download, Eye, FileText, Image as ImageIcon } from 'lucide-react';
-import { AttachmentFile } from '../../types';
+import { Download, Eye, FileText, Image as ImageIcon, Lock, Unlock, Loader2, AlertCircle } from 'lucide-react';
+import { AttachmentFile, UserProfile } from '../../types';
 import { MediaKind, MediaPreviewModal, detectMediaKind } from '../MediaPreview';
 
 interface HandoutsTabProps {
   lang: string;
   gradeTitle: string;
   filteredAttachments: AttachmentFile[];
+  currentUser?: UserProfile | null;
+  onUnlockAttachment?: (file: AttachmentFile) => Promise<void>;
 }
 
 export const HandoutsTab: React.FC<HandoutsTabProps> = ({
   lang,
   gradeTitle,
   filteredAttachments,
+  currentUser,
+  onUnlockAttachment,
 }) => {
   const [previewTarget, setPreviewTarget] = useState<{
     url: string;
     title: string;
     kind: MediaKind;
   } | null>(null);
+  const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+
+  const isTeacher = currentUser?.role === 'teacher';
+  const pointsBalance = Number(currentUser?.points) || 0;
+  const unlockedIds = currentUser?.unlockedAttachmentIds || [];
 
   const getBadgeLabel = (kind: MediaKind): string => {
     if (kind === 'image') return 'صورة';
     if (kind === 'pdf') return 'PDF';
     return 'ملف';
+  };
+
+  const handleUnlock = async (file: AttachmentFile) => {
+    if (!onUnlockAttachment || unlockingId) return;
+    setUnlockError(null);
+    setUnlockingId(file.id);
+    try {
+      await onUnlockAttachment(file);
+    } catch (err: any) {
+      setUnlockError(err?.message || 'تعذر فتح المذكرة بالنقاط حالياً.');
+    } finally {
+      setUnlockingId(null);
+    }
   };
 
   return (
@@ -37,6 +60,13 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
             معاينة مباشرة أو تحميل سريع للمذكرات وبنوك الأسئلة.
           </p>
         </div>
+
+        {unlockError && (
+          <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-bold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <span>{unlockError}</span>
+          </div>
+        )}
 
         {filteredAttachments.length === 0 ? (
           <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
@@ -55,6 +85,9 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                 file.fileType as MediaKind | undefined
               );
               const isAvailable = Boolean(file.downloadUrl && file.downloadUrl !== '#');
+              const cost = file.pointsCost || 0;
+              const isLocked = cost > 0 && !isTeacher && !unlockedIds.includes(file.id);
+              const canAfford = pointsBalance >= cost;
 
               return (
                 <div
@@ -63,7 +96,9 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-11 h-11 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                      {kind === 'image' ? (
+                      {isLocked ? (
+                        <Lock className="w-5 h-5 text-amber-500" />
+                      ) : kind === 'image' ? (
                         <ImageIcon className="w-5 h-5" />
                       ) : (
                         <FileText className="w-5 h-5" />
@@ -75,7 +110,7 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                           {file.title}
                         </h3>
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold font-mono shrink-0">
-                          {getBadgeLabel(kind)}
+                          {cost > 0 ? `${cost} نقطة` : getBadgeLabel(kind)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
@@ -86,7 +121,31 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                     </div>
                   </div>
 
-                  {isAvailable ? (
+                  {isLocked ? (
+                    <button
+                      type="button"
+                      disabled={Boolean(unlockingId) || !canAfford}
+                      onClick={() => handleUnlock(file)}
+                      className={`w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 ${
+                        canAfford
+                          ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {unlockingId === file.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Unlock className="w-4 h-4" />
+                      )}
+                      <span>
+                        {unlockingId === file.id
+                          ? 'جاري الفتح...'
+                          : canAfford
+                          ? `افتح المذكرة بـ ${cost} نقطة`
+                          : `مطلوب ${cost} نقطة (رصيدك ${pointsBalance})`}
+                      </span>
+                    </button>
+                  ) : isAvailable ? (
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"

@@ -1,14 +1,28 @@
-const CACHE_NAME = 'mm-chem-media-v1';
+const CACHE_NAME = 'mm-chem-media-v2';
 
 // Static media & font origins/paths safe to serve Cache-First / Stale-While-Revalidate
 function isCacheableAsset(request) {
   if (request.method !== 'GET') return false;
-  const url = new URL(request.url);
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return false;
+  }
 
-  // Never cache Firebase Auth, Firestore, or dynamic API endpoints
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return false;
+  }
+
+  // Never intercept Vite dev/HMR endpoints, Firebase Auth, Firestore, or dynamic API endpoints
   if (
+    url.pathname.startsWith('/@vite/') ||
+    url.pathname.startsWith('/@react-refresh') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/__/auth/') ||
+    url.pathname.startsWith('/__/firebase/') ||
     url.hostname.includes('firestore.googleapis.com') ||
     url.hostname.includes('identitytoolkit.googleapis.com') ||
     url.hostname.includes('securetoken.googleapis.com')
@@ -71,7 +85,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (!isCacheableAsset(request)) return;
 
-  // Cache-first with background refresh for fast repeat loads
+  // Cache-first with safe fallback
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cached = await cache.match(request);
@@ -80,12 +94,12 @@ self.addEventListener('fetch', (event) => {
       }
       try {
         const response = await fetch(request);
-        if (response && (response.status === 200 || response.type === 'opaque')) {
+        if (response && response.status === 200 && response.type === 'basic') {
           cache.put(request, response.clone()).catch(() => {});
         }
         return response;
       } catch {
-        return cached || Response.error();
+        return cached || new Response('', { status: 504, statusText: 'Gateway Timeout' });
       }
     })
   );

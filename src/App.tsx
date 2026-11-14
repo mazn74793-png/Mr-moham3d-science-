@@ -6,10 +6,19 @@ import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { Footer } from './components/Footer';
-import { NetworkStatusToast } from './components/NetworkStatusToast';
+import { NetworkStatusMonitor } from './components/NetworkStatusMonitor';
 import { probeNetworkQuality, emitNetworkAlert } from './utils/networkMonitor';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
-import { Lecture, AttachmentFile, Quiz, CloudinaryConfig, UserProfile, GradeLevel } from './types';
+import {
+  Lecture,
+  AttachmentFile,
+  Quiz,
+  CloudinaryConfig,
+  UserProfile,
+  GradeLevel,
+  RedeemCode,
+  PointReward,
+} from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 import {
   auth,
@@ -26,6 +35,16 @@ import {
   deleteStudentFromCloud,
   getStudentFromCloud,
   fetchAdminConfigIfAuthorized,
+  saveRedeemCodeToCloud,
+  saveRedeemCodesBatchToCloud,
+  toggleRedeemCodeActiveInCloud,
+  deleteRedeemCodeFromCloud,
+  savePointRewardToCloud,
+  deletePointRewardFromCloud,
+  redeemCodeForStudent,
+  unlockLectureWithPoints,
+  unlockAttachmentWithPoints,
+  claimRewardWithPoints,
 } from './firebase';
 
 // Lazy-load heavy views and modals for ultra-fast initial landing page load
@@ -157,6 +176,24 @@ export default function App() {
     }
   });
 
+  const [redeemCodes, setRedeemCodes] = useState<RedeemCode[]>(() => {
+    const saved = localStorage.getItem('mm_redeem_codes');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [rewards, setRewards] = useState<PointReward[]>(() => {
+    const saved = localStorage.getItem('mm_rewards');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const adminBootstrappedRef = useRef(false);
   const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
   useEffect(() => {
@@ -202,29 +239,36 @@ export default function App() {
 
   // 1. Unified Firebase Auth Listener + Redirect recovery
   useEffect(() => {
-    getRedirectResult(auth)
-      .then((res) => {
-        if (res?.user) {
+    const hasRedirectPending =
+      sessionStorage.getItem('mm_auth_redirect_pending') === '1' ||
+      window.location.search.includes('apiKey=') ||
+      window.location.search.includes('state=');
+
+    if (hasRedirectPending) {
+      getRedirectResult(auth)
+        .then((res) => {
+          if (res?.user) {
+            sessionStorage.removeItem('mm_auth_redirect_pending');
+            showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
+          }
+        })
+        .catch((err) => {
           sessionStorage.removeItem('mm_auth_redirect_pending');
-          showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
-        }
-      })
-      .catch((err) => {
-        sessionStorage.removeItem('mm_auth_redirect_pending');
-        const code = err?.code || '';
-        if (code === 'auth/unauthorized-domain') {
-          showNotice(
-            'error',
-            `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
-          );
-        } else if (code === 'auth/network-request-failed') {
-          probeNetworkQuality('auth');
-          showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
-        } else if (code) {
-          showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
-          setLoginModalOpen(true);
-        }
-      });
+          const code = err?.code || '';
+          if (code === 'auth/unauthorized-domain') {
+            showNotice(
+              'error',
+              `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
+            );
+          } else if (code === 'auth/network-request-failed') {
+            probeNetworkQuality('auth');
+            showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
+          } else if (code) {
+            showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
+            setLoginModalOpen(true);
+          }
+        });
+    }
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
@@ -439,11 +483,25 @@ export default function App() {
       }
     );
 
+    const rewardsQuery = query(collection(db, 'rewards'), where('grade', '!=', ''));
+    const unsubRewards = onSnapshot(
+      rewardsQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as PointReward);
+        list.sort((a, b) => (b.dateAdded || '').localeCompare(a.dateAdded || ''));
+        setRewards(list);
+      },
+      (error) => {
+        console.warn('Rewards listener error:', error.message);
+      }
+    );
+
     return () => {
       unsubSite();
       unsubLectures();
       unsubAttachments();
       unsubQuizzes();
+      unsubRewards();
     };
   }, []);
 
@@ -508,6 +566,20 @@ export default function App() {
           }
         )
       );
+
+      unsubscribers.push(
+        onSnapshot(
+          collection(db, 'redeemCodes'),
+          (snap) => {
+            const list = snap.docs.map((d) => d.data() as RedeemCode);
+            list.sort((a, b) => (b.createdAtDate || '').localeCompare(a.createdAtDate || ''));
+            setRedeemCodes(list);
+          },
+          (error) => {
+            console.warn('RedeemCodes admin listener error:', error.message);
+          }
+        )
+      );
     } else {
       const ownStudentQuery = query(
         collection(db, 'students'),
@@ -558,6 +630,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('mm_registered_students', JSON.stringify(students));
   }, [students]);
+
+  useEffect(() => {
+    localStorage.setItem('mm_redeem_codes', JSON.stringify(redeemCodes));
+  }, [redeemCodes]);
+
+  useEffect(() => {
+    localStorage.setItem('mm_rewards', JSON.stringify(rewards));
+  }, [rewards]);
 
   useEffect(() => {
     if (currentUser) {
@@ -862,7 +942,7 @@ export default function App() {
   };
 
   const handleAdminAddStudent = async (student: UserProfile): Promise<boolean> => {
-    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id, true));
     if (ok) {
       setStudents((prev) => [student, ...prev.filter((s) => s.id !== student.id)]);
     }
@@ -870,7 +950,7 @@ export default function App() {
   };
 
   const handleAdminUpdateStudent = async (student: UserProfile): Promise<boolean> => {
-    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id, true));
     if (ok) {
       setStudents((prev) => {
         const idx = prev.findIndex((s) => s.id === student.id);
@@ -883,6 +963,116 @@ export default function App() {
       });
     }
     return ok;
+  };
+
+  // Redeem Codes & Rewards Admin Handlers
+  const handleCreateRedeemCode = async (codeItem: RedeemCode): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveRedeemCodeToCloud(codeItem),
+      `تم حفظ كود (${codeItem.code}) في قاعدة البيانات!`
+    );
+    if (ok) {
+      setRedeemCodes((prev) => [codeItem, ...prev.filter((c) => c.id !== codeItem.id)]);
+    }
+    return ok;
+  };
+
+  const handleCreateRedeemCodesBatch = async (items: RedeemCode[]): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveRedeemCodesBatchToCloud(items),
+      `تم توليد وحفظ ${items.length} أكواد جديدة في السحابة!`
+    );
+    if (ok) {
+      setRedeemCodes((prev) => {
+        const newIds = new Set(items.map((i) => i.id));
+        return [...items, ...prev.filter((c) => !newIds.has(c.id))];
+      });
+    }
+    return ok;
+  };
+
+  const handleToggleRedeemCode = async (codeId: string, active: boolean): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => toggleRedeemCodeActiveInCloud(codeId, active));
+    if (ok) {
+      setRedeemCodes((prev) => prev.map((c) => (c.id === codeId ? { ...c, active } : c)));
+    }
+    return ok;
+  };
+
+  const handleDeleteRedeemCode = async (codeId: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deleteRedeemCodeFromCloud(codeId));
+    if (ok) {
+      setRedeemCodes((prev) => prev.filter((c) => c.id !== codeId));
+    }
+    return ok;
+  };
+
+  const handleSaveReward = async (reward: PointReward): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => savePointRewardToCloud(reward),
+      'تم حفظ المكافأة ونشرها في متجر الطلاب!'
+    );
+    if (ok) {
+      setRewards((prev) => [reward, ...prev.filter((r) => r.id !== reward.id)]);
+    }
+    return ok;
+  };
+
+  const handleDeleteReward = async (rewardId: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deletePointRewardFromCloud(rewardId));
+    if (ok) {
+      setRewards((prev) => prev.filter((r) => r.id !== rewardId));
+    }
+    return ok;
+  };
+
+  // Student Points & Unlocking Atomic Handlers
+  const syncUpdatedStudentLocally = (updated: UserProfile) => {
+    setCurrentUser((prev) => (prev ? { ...prev, ...updated, role: prev.role } : updated));
+    setStudents((prev) => {
+      const idx = prev.findIndex((s) => s.id === updated.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...updated };
+        return copy;
+      }
+      return prev;
+    });
+  };
+
+  const handleStudentRedeemCode = async (rawCode: string) => {
+    if (!currentUser) {
+      throw new Error('يرجى تسجيل الدخول أولاً.');
+    }
+    const result = await redeemCodeForStudent(rawCode, currentUser);
+    syncUpdatedStudentLocally(result.updatedStudent);
+    showNotice('success', `تمت إضافة +${result.pointsAdded} نقطة إلى رصيدك!`);
+    return {
+      pointsAdded: result.pointsAdded,
+      newBalance: result.newBalance,
+      code: result.code,
+    };
+  };
+
+  const handleStudentUnlockLecture = async (lecture: Lecture) => {
+    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    const updated = await unlockLectureWithPoints(lecture, currentUser);
+    syncUpdatedStudentLocally(updated);
+    showNotice('success', `تم فتح محاضرة "${lecture.title}" بنجاح!`);
+  };
+
+  const handleStudentUnlockAttachment = async (file: AttachmentFile) => {
+    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    const updated = await unlockAttachmentWithPoints(file, currentUser);
+    syncUpdatedStudentLocally(updated);
+    showNotice('success', `تم فتح مذكرة "${file.title}" بنجاح!`);
+  };
+
+  const handleStudentClaimReward = async (reward: PointReward) => {
+    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    const updated = await claimRewardWithPoints(reward, currentUser);
+    syncUpdatedStudentLocally(updated);
+    showNotice('success', `مبروك! حصلت على مكافأة "${reward.title}"!`);
   };
 
   const handleResetAllData = async (): Promise<boolean> => {
@@ -1040,7 +1230,7 @@ export default function App() {
     <div
       className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
     >
-      <NetworkStatusToast />
+      <NetworkStatusMonitor />
 
       {/* Non-blocking Cloud Sync Toast */}
       {syncNotice && (
@@ -1113,9 +1303,14 @@ export default function App() {
               lectures={lectures}
               quizzes={quizzes}
               attachments={attachments}
+              rewards={rewards}
               onBackToHome={() => setCurrentView('landing')}
               onOpenTeacherDashboard={() => handleNavigate('teacher')}
               onUpdateStudentProfile={handleUpdateStudentProfile}
+              onRedeemCode={handleStudentRedeemCode}
+              onUnlockLecture={handleStudentUnlockLecture}
+              onUnlockAttachment={handleStudentUnlockAttachment}
+              onClaimReward={handleStudentClaimReward}
             />
           </Suspense>
         )}
@@ -1144,6 +1339,14 @@ export default function App() {
               onBackToHome={() => setCurrentView('landing')}
               onOpenStudentPortal={() => handleNavigate('student')}
               onResetAllData={handleResetAllData}
+              redeemCodes={redeemCodes}
+              rewards={rewards}
+              onCreateRedeemCode={handleCreateRedeemCode}
+              onCreateRedeemCodesBatch={handleCreateRedeemCodesBatch}
+              onToggleRedeemCode={handleToggleRedeemCode}
+              onDeleteRedeemCode={handleDeleteRedeemCode}
+              onSaveReward={handleSaveReward}
+              onDeleteReward={handleDeleteReward}
             />
           </Suspense>
         )}

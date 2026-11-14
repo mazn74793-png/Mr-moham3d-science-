@@ -54,6 +54,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   );
   const [fileChapter, setFileChapter] = useState('العناصر الانتقالية');
   const [fileSize, setFileSize] = useState('3.5 MB');
+  const [filePointsCost, setFilePointsCost] = useState<number>(0);
 
   const [fileFormError, setFileFormError] = useState<string | null>(null);
   const [fileFormSuccess, setFileFormSuccess] = useState<string | null>(null);
@@ -150,6 +151,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       downloadUrl: handoutCloudUrl,
       pageCount: 24,
       dateAdded: new Date().toISOString().split('T')[0],
+      pointsCost: Math.max(0, Math.round(Number(filePointsCost) || 0)),
     };
 
     setSavingAttachment(true);
@@ -162,6 +164,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       setFileFormSuccess('تمت إضافة المذكرة بنجاح إلى مكتبة ملفات الطلاب وتم تحديث مساحة التخزين فورياً! 📚');
       setTimeout(() => setFileFormSuccess(null), 4000);
       setFileTitle('');
+      setFilePointsCost(0);
       setHandoutFile(null);
       if (localPreviewUrl) {
         URL.revokeObjectURL(localPreviewUrl);
@@ -379,6 +382,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
               className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
             />
           </div>
+
+          <div className="space-y-1 sm:col-span-3">
+            <label className="text-xs font-bold text-amber-700 dark:text-amber-300">
+              تكلفة الفتح بالنقاط (0 = مذكرة مجانية للجميع)
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={filePointsCost}
+              onChange={(e) => setFilePointsCost(Math.max(0, Number(e.target.value)))}
+              className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
+            />
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-2">
@@ -430,6 +447,11 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold">
                       {file.fileSize}
                     </span>
+                    {(file.pointsCost || 0) > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 font-bold">
+                        {file.pointsCost} نقطة
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -17,6 +17,7 @@ export interface Lecture {
   dateAdded: string;
   sessionOrder?: number; // Sequence number (1, 2, 3...)
   quizId?: string; // Connected quiz ID
+  pointsCost?: number; // 0 or undefined = regular/free; >0 = unlockable via student points
 }
 
 export interface QuizQuestion {
@@ -50,11 +51,44 @@ export interface AttachmentFile {
   downloadUrl: string;
   pageCount?: number;
   dateAdded: string;
+  pointsCost?: number; // 0 or undefined = free; >0 = unlockable via student points
 }
 
 export interface CloudinaryConfig {
   cloudName: string;
   uploadPreset: string;
+}
+
+export interface PointsHistoryEntry {
+  id: string;
+  type: 'redeem' | 'unlock_lecture' | 'unlock_file' | 'claim_reward' | 'admin_grant';
+  title: string;
+  delta: number;
+  code?: string;
+  date: string;
+}
+
+export interface RedeemCode {
+  id: string;
+  code: string;
+  points: number;
+  maxUses: number;
+  usedCount: number;
+  active: boolean;
+  label?: string;
+  createdBy?: string;
+  createdAtDate: string;
+}
+
+export interface PointReward {
+  id: string;
+  title: string;
+  description: string;
+  pointsCost: number;
+  category: 'perk' | 'badge' | 'discount' | 'material';
+  grade: string; // 'all' or specific gradeId
+  active: boolean;
+  dateAdded: string;
 }
 
 export interface UserProfile {
@@ -73,4 +107,9 @@ export interface UserProfile {
   passedQuizIds?: string[];
   quizScores?: Record<string, number>;
   joinedAt?: string;
+  points?: number;
+  unlockedLectureIds?: string[];
+  unlockedAttachmentIds?: string[];
+  claimedRewardIds?: string[];
+  pointsHistory?: PointsHistoryEntry[];
 }

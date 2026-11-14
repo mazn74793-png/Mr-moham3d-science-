@@ -129,7 +129,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     if (getQuickNetworkStatus().level !== 'good') {
       probeNetworkQuality('auth').then((res) => {
         if (res.level !== 'good') {
-          setSlowAuthHint('الإنترنت ضعيف حالياً — قد يستغرق فتح نافذة Google بضع ثوانٍ إضافية.');
+          setSlowAuthHint(
+            `Internet Quality: زمن التأخير مرتفع (${res.rttMs ? `${res.rttMs} ms` : 'بطيء'}) — قد تتأخر نافذة Google.`
+          );
         }
       });
     }
@@ -137,11 +139,13 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     const slowWatchTimer = window.setTimeout(async () => {
       const probe = await probeNetworkQuality('auth');
       if (probe.level === 'offline') {
-        setSlowAuthHint('انقطع الاتصال بالإنترنت أثناء انتظار Google.');
+        setSlowAuthHint('Internet Quality: انقطع الاتصال بالإنترنت أثناء انتظار Google.');
       } else if (probe.level === 'slow') {
-        setSlowAuthHint('سرعة الإنترنت ضعيفة حالياً — جاري انتظار استجابة Google...');
+        setSlowAuthHint(
+          `Internet Quality: زمن التأخير مرتفع (${probe.rttMs ? `${probe.rttMs} ms` : 'بطيء'}) — جاري انتظار استجابة Google...`
+        );
       }
-    }, 6500);
+    }, 5500);
 
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -223,8 +227,15 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         }
       } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         const probe = await probeNetworkQuality('auth');
-        if (probe.level !== 'good') {
-          setAuthError('أُغلقت نافذة تسجيل الدخول أو تأخرت بسبب ضعف الإنترنت. تحقق من الشبكة ثم حاول مرة أخرى.');
+        if (probe.level === 'offline') {
+          setSlowAuthHint('Internet Quality: انقطع الاتصال بالإنترنت قبل إتمام تسجيل الدخول.');
+          setAuthError('انقطع الاتصال بالإنترنت أثناء تسجيل الدخول. تأكد من الشبكة ثم حاول مرة أخرى.');
+        } else if (probe.level === 'slow') {
+          const latencyTag = probe.rttMs ? ` (${probe.rttMs} ms)` : '';
+          setSlowAuthHint(`Internet Quality: زمن التأخير مرتفع${latencyTag} — اتصال الإنترنت ضعيف حالياً.`);
+          setAuthError(
+            `تأخرت نافذة تسجيل الدخول بسبب ارتفاع زمن التأخير${latencyTag}. يُرجى المحاولة مرة أخرى عند تحسن الشبكة.`
+          );
         } else {
           setAuthError('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية، يرجى المحاولة مرة أخرى.');
         }
@@ -233,9 +244,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           `النطاق (${window.location.hostname}) غير مضاف بعد في قائمة النطاقات المصرح بها لتسجيل الدخول.`
         );
       } else if (code === 'auth/network-request-failed') {
-        const msg = 'تعذر الاتصال بسبب ضعف أو انقطاع الإنترنت. تحقق من الشبكة ثم أعد المحاولة.';
+        const probe = await probeNetworkQuality('auth');
+        const latencyTag = probe.rttMs ? ` (${probe.rttMs} ms)` : '';
+        const msg = `Internet Quality: تعذر الاتصال بسبب ضعف الإنترنت${latencyTag}. تحقق من الشبكة ثم أعد المحاولة.`;
+        setSlowAuthHint(msg);
         setAuthError(msg);
-        emitNetworkAlert({ level: 'slow', message: msg, context: 'auth' });
+        emitNetworkAlert({ level: 'slow', rttMs: probe.rttMs, message: msg, context: 'auth' });
       } else {
         setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
       }

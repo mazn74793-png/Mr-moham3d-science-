@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
-  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink
+  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket
 } from 'lucide-react';
-import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile } from '../types';
+import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
@@ -14,6 +14,7 @@ import { AcademicYearsTab } from './teacher/AcademicYearsTab';
 import { CoAdminsTab } from './teacher/CoAdminsTab';
 import { CloudinaryTab } from './teacher/CloudinaryTab';
 import { SiteCustomizerTab } from './teacher/SiteCustomizerTab';
+import { PointsCodesTab } from './teacher/PointsCodesTab';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
@@ -37,11 +38,20 @@ interface TeacherDashboardProps {
   onBackToHome: () => void;
   onOpenStudentPortal: () => void;
   onResetAllData?: () => Promise<boolean> | boolean | void;
+  redeemCodes?: RedeemCode[];
+  rewards?: PointReward[];
+  onCreateRedeemCode?: (code: RedeemCode) => Promise<boolean>;
+  onCreateRedeemCodesBatch?: (codes: RedeemCode[]) => Promise<boolean>;
+  onToggleRedeemCode?: (codeId: string, active: boolean) => Promise<boolean>;
+  onDeleteRedeemCode?: (codeId: string) => Promise<boolean>;
+  onSaveReward?: (reward: PointReward) => Promise<boolean>;
+  onDeleteReward?: (rewardId: string) => Promise<boolean>;
 }
 
 export type TeacherDashboardTab =
   | 'overview'
   | 'all-students'
+  | 'points-codes'
   | 'upload-lecture'
   | 'lectures-list'
   | 'quizzes-bank'
@@ -75,6 +85,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onBackToHome,
   onOpenStudentPortal,
   onResetAllData,
+  redeemCodes = [],
+  rewards = [],
+  onCreateRedeemCode,
+  onCreateRedeemCodesBatch,
+  onToggleRedeemCode,
+  onDeleteRedeemCode,
+  onSaveReward,
+  onDeleteReward,
 }) => {
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -256,6 +274,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono">
                   {students.filter((s) => s.role !== 'teacher').length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('points-codes');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'points-codes'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Ticket className="w-4 h-4 text-amber-500" />
+                  <span>أكواد النقاط والمكافآت</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                  {redeemCodes.length}
                 </span>
               </button>
             </div>
@@ -573,6 +612,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <CloudinaryTab
               cloudinaryConfig={cloudinaryConfig}
               onSaveCloudinaryConfig={onSaveCloudinaryConfig}
+            />
+          )}
+
+          {activeTab === 'points-codes' && (
+            <PointsCodesTab
+              redeemCodes={redeemCodes}
+              rewards={rewards}
+              lectures={lectures}
+              attachments={attachments}
+              resolvedGrades={resolvedGrades}
+              onCreateRedeemCode={async (c) => (onCreateRedeemCode ? await onCreateRedeemCode(c) : false)}
+              onCreateRedeemCodesBatch={async (list) =>
+                onCreateRedeemCodesBatch ? await onCreateRedeemCodesBatch(list) : false
+              }
+              onToggleRedeemCode={async (id, active) =>
+                onToggleRedeemCode ? await onToggleRedeemCode(id, active) : false
+              }
+              onDeleteRedeemCode={async (id) =>
+                onDeleteRedeemCode ? await onDeleteRedeemCode(id) : false
+              }
+              onSaveReward={async (r) => (onSaveReward ? await onSaveReward(r) : false)}
+              onDeleteReward={async (id) => (onDeleteReward ? await onDeleteReward(id) : false)}
             />
           )}
 

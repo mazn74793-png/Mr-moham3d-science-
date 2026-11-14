@@ -85,6 +85,7 @@
         "dateAdded": { "type": "string", "maxLength": 50 },
         "sessionOrder": { "type": "number" },
         "quizId": { "type": "string", "maxLength": 128 },
+        "pointsCost": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -105,6 +106,7 @@
         "downloadUrl": { "type": "string", "maxLength": 2000 },
         "pageCount": { "type": "number" },
         "dateAdded": { "type": "string", "maxLength": 50 },
+        "pointsCost": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -129,7 +131,7 @@
     },
     "StudentProfile": {
       "title": "StudentProfile",
-      "description": "Private student profile containing PII (phone, parentPhone, email) and academic progress.",
+      "description": "Private student profile containing PII (phone, parentPhone, email), academic progress, points wallet, and unlocked items.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -148,10 +150,68 @@
         "passedQuizIds": { "type": "array", "description": "Up to 500 passed quiz IDs" },
         "quizScores": { "type": "object" },
         "joinedAt": { "type": "string", "maxLength": 50 },
+        "points": { "type": "number" },
+        "unlockedLectureIds": { "type": "array", "description": "Up to 500 unlocked lecture IDs" },
+        "unlockedAttachmentIds": { "type": "array", "description": "Up to 500 unlocked attachment IDs" },
+        "claimedRewardIds": { "type": "array", "description": "Up to 500 claimed reward IDs" },
+        "pointsHistory": { "type": "array", "description": "Up to 50 recent points transactions" },
+        "lastRedeemedCode": { "type": "string", "maxLength": 128 },
+        "lastSpendTargetType": { "type": "string", "enum": ["lecture", "attachment", "reward"] },
+        "lastSpendTargetId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "uid", "name", "role", "phone", "profileCompleted", "createdAt", "updatedAt"]
+    },
+    "RedeemCode": {
+      "title": "RedeemCode",
+      "description": "Admin-generated points voucher code with point value and usage cap.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "points": { "type": "number" },
+        "maxUses": { "type": "number" },
+        "usedCount": { "type": "number" },
+        "active": { "type": "boolean" },
+        "label": { "type": "string", "maxLength": 150 },
+        "createdBy": { "type": "string", "maxLength": 150 },
+        "createdAtDate": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "points", "maxUses", "usedCount", "active", "createdAtDate", "createdAt", "updatedAt"]
+    },
+    "CodeRedemption": {
+      "title": "CodeRedemption",
+      "description": "Per-student redemption receipt under a redeem code subcollection.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 200 },
+        "code": { "type": "string", "maxLength": 64 },
+        "points": { "type": "number" },
+        "redeemedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "studentName", "code", "points", "redeemedAt"]
+    },
+    "PointReward": {
+      "title": "PointReward",
+      "description": "Admin-configured custom point reward, perk, badge, or material unlockable by students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "pointsCost": { "type": "number" },
+        "category": { "type": "string", "enum": ["perk", "badge", "discount", "material"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "active": { "type": "boolean" },
+        "dateAdded": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "description", "pointsCost", "category", "grade", "active", "dateAdded", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -178,6 +238,18 @@
     "/students/{studentId}": {
       "schema": { "$ref": "#/entities/StudentProfile" },
       "description": "Private student profiles strictly isolated by owner UID or admin."
+    },
+    "/redeemCodes/{codeId}": {
+      "schema": { "$ref": "#/entities/RedeemCode" },
+      "description": "Points redeem codes created by admins; single get allowed for signed-in students, full list reserved for admins."
+    },
+    "/redeemCodes/{codeId}/redemptions/{studentUid}": {
+      "schema": { "$ref": "#/entities/CodeRedemption" },
+      "description": "Atomic redemption receipts preventing duplicate claims per student."
+    },
+    "/rewards/{rewardId}": {
+      "schema": { "$ref": "#/entities/PointReward" },
+      "description": "Admin-defined rewards & perks store redeemable with student points."
     }
   }
 }

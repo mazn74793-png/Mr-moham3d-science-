@@ -69,6 +69,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     () => lectures.filter((l) => l.grade === lecGrade).length + 1
   );
   const [lecQuizId, setLecQuizId] = useState<string>('');
+  const [lecPointsCost, setLecPointsCost] = useState<number>(0);
 
   const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
   const [uploadingEditThumb, setUploadingEditThumb] = useState(false);
@@ -229,6 +230,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       isFreePreview: lecIsFree,
       viewsCount: 0,
       dateAdded: new Date().toISOString().split('T')[0],
+      pointsCost: Math.max(0, Math.round(Number(lecPointsCost) || 0)),
     };
 
     setSavingLecture(true);
@@ -245,6 +247,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       setLecPdfTitle('');
       setLecDescription('');
       setLecQuizId('');
+      setLecPointsCost(0);
       setVideoFile(null);
       if (localVideoPreview) {
         URL.revokeObjectURL(localVideoPreview);
@@ -543,6 +546,38 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
               </select>
             </div>
 
+            <div className="space-y-1.5 md:col-span-2 p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="text-xs font-bold text-amber-900 dark:text-amber-200 font-kufi">
+                  فتح المحاضرة بالنقاط (Points Cost) — 0 يعني التسلسل العادي للمنصة
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[0, 25, 50, 100, 200].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setLecPointsCost(preset)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold font-mono cursor-pointer transition-colors ${
+                        lecPointsCost === preset
+                          ? 'bg-amber-400 text-slate-950'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-amber-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {preset === 0 ? 'مجاني/عادي (0)' : `${preset} نقطة`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={100000}
+                value={lecPointsCost}
+                onChange={(e) => setLecPointsCost(Math.max(0, Number(e.target.value)))}
+                className="w-full p-2.5 text-sm rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-right"
+              />
+            </div>
+
             <div className="space-y-1.5 flex items-center gap-3 pt-2 md:col-span-2">
               <input
                 type="checkbox"
@@ -666,6 +701,11 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                   {lec.isFreePreview && (
                     <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
                       مجانية
+                    </span>
+                  )}
+                  {(lec.pointsCost || 0) > 0 && (
+                    <span className="text-xs font-bold font-mono text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/70 px-2 py-0.5 rounded-md">
+                      {lec.pointsCost} نقطة
                     </span>
                   )}
                   {lec.quizId && (
@@ -931,6 +971,25 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
+                  تكلفة الفتح بالنقاط (0 = بدون نقاط)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  value={editingLecture.pointsCost ?? 0}
+                  onChange={(e) =>
+                    setEditingLecture({
+                      ...editingLecture,
+                      pointsCost: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
+                />
               </div>
 
               <div className="flex items-center gap-2 pt-2">

@@ -401,6 +401,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                 <th className="py-3 px-3">هاتف الطالب</th>
                 <th className="py-3 px-3">هاتف ولي الأمر</th>
                 <th className="py-3 px-3">الحصص المشاهدة</th>
+                <th className="py-3 px-3">النقاط</th>
                 <th className="py-3 px-3">التقييم</th>
                 <th className="py-3 px-3">حالة الحضور</th>
                 <th className="py-3 px-3 text-center">إجراءات الإدارة والمتابعة</th>
@@ -456,6 +457,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                           />
                         </div>
                       </div>
+                    </td>
+
+                    {/* Points */}
+                    <td className="py-3.5 px-3 font-mono font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                      {std.points ?? 0}
                     </td>
 
                     {/* Score */}
@@ -663,6 +669,44 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                   value={editingStudent.parentPhone || ''}
                   onChange={(e) => setEditingStudent({ ...editingStudent, parentPhone: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
+                    رصيد نقاط الطالب (Points)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {[25, 50, 100].map((bonus) => (
+                      <button
+                        key={bonus}
+                        type="button"
+                        onClick={() =>
+                          setEditingStudent({
+                            ...editingStudent,
+                            points: Math.max(0, (Number(editingStudent.points) || 0) + bonus),
+                          })
+                        }
+                        className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-mono font-bold cursor-pointer"
+                      >
+                        +{bonus}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000000}
+                  value={editingStudent.points ?? 0}
+                  onChange={(e) =>
+                    setEditingStudent({
+                      ...editingStudent,
+                      points: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  className="w-full p-2.5 rounded-xl border border-amber-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono font-bold"
                 />
               </div>
 
