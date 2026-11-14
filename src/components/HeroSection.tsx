@@ -162,6 +162,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                   <img
                     src={imgSrc}
                     alt={siteConfig.teacherName}
+                    decoding="async"
                     className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer rounded-3xl"
                     referrerPolicy="no-referrer"
                     onError={handleImageError}

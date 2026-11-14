@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
-import { 
-  Upload, Plus, Video, FileText, Image as ImageIcon, CheckCircle, 
-  Trash2, ExternalLink, Settings, Cloud, Copy, RefreshCw, AlertCircle, 
-  ChevronRight, Palette, Sparkles, KeyRound, Phone, User, Check, RefreshCcw, Type,
-  Award, Trophy, Users, Edit3, Film, X, Shield, ShieldCheck, GraduationCap,
-  LayoutDashboard, Menu, Link as LinkIcon, Compass, Eye
+import React, { useState, useEffect } from 'react';
+import {
+  Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
+  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink
 } from 'lucide-react';
-import { Lecture, AttachmentFile, GradeLevel, CloudinaryConfig, Quiz, UserProfile } from '../types';
-import { SiteConfig, DEFAULT_SITE_CONFIG, GradeItem, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
+import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile } from '../types';
+import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
-import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
-import { UploadProgressBar } from './UploadProgressBar';
+import { OverviewTab } from './teacher/OverviewTab';
+import { LecturesTab } from './teacher/LecturesTab';
+import { FilesTab } from './teacher/FilesTab';
+import { AcademicYearsTab } from './teacher/AcademicYearsTab';
+import { CoAdminsTab } from './teacher/CoAdminsTab';
+import { CloudinaryTab } from './teacher/CloudinaryTab';
+import { SiteCustomizerTab } from './teacher/SiteCustomizerTab';
 
 interface TeacherDashboardProps {
   lectures: Lecture[];
@@ -34,20 +36,22 @@ interface TeacherDashboardProps {
   onSaveSiteConfig: (newConfig: SiteConfig) => Promise<boolean> | boolean | void;
   onBackToHome: () => void;
   onOpenStudentPortal: () => void;
-  onResetAllData?: () => void;
+  onResetAllData?: () => Promise<boolean> | boolean | void;
 }
 
-export type TeacherDashboardTab = 
-  | 'overview' 
-  | 'all-students' 
-  | 'upload-lecture' 
-  | 'lectures-list' 
-  | 'quizzes-bank' 
-  | 'files' 
-  | 'academic-years' 
-  | 'co-admins' 
-  | 'site-customizer' 
+export type TeacherDashboardTab =
+  | 'overview'
+  | 'all-students'
+  | 'upload-lecture'
+  | 'lectures-list'
+  | 'quizzes-bank'
+  | 'files'
+  | 'academic-years'
+  | 'co-admins'
+  | 'site-customizer'
   | 'cloudinary';
+
+const CLOUDINARY_TOTAL_QUOTA_GB = 25.0;
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   lectures,
@@ -74,624 +78,64 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [adminNotice, setAdminNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [deleteAdminConfirmEmail, setDeleteAdminConfirmEmail] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [selectedAcademicTab, setSelectedAcademicTab] = useState<string>('first');
-  const [showAddGradeForm, setShowAddGradeForm] = useState(false);
-  const [newGradeBadgeAr, setNewGradeBadgeAr] = useState('');
-  const [newGradeBadgeEn, setNewGradeBadgeEn] = useState('');
-  const [newGradeTitleAr, setNewGradeTitleAr] = useState('');
-  const [newGradeTitleEn, setNewGradeTitleEn] = useState('');
-  const [newGradeYearLabelAr, setNewGradeYearLabelAr] = useState('دفعة 2026');
-  const [newGradeDescAr, setNewGradeDescAr] = useState('');
-  const [newGradeIsPopular, setNewGradeIsPopular] = useState(false);
-  const [gradeFormNotice, setGradeFormNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [deleteGradeConfirmId, setDeleteGradeConfirmId] = useState<string | null>(null);
-  const [newQuickLinkTitle, setNewQuickLinkTitle] = useState('');
-  const [newQuickLinkUrl, setNewQuickLinkUrl] = useState('');
-  
-  // Cloudinary settings state
-  const [cloudName, setCloudName] = useState(cloudinaryConfig.cloudName || 'chemistry-egypt');
-  const [uploadPreset, setUploadPreset] = useState(cloudinaryConfig.uploadPreset || 'chemistry_uploads');
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
-  React.useEffect(() => {
-    setCloudName(cloudinaryConfig.cloudName || 'chemistry-egypt');
-    setUploadPreset(cloudinaryConfig.uploadPreset || 'chemistry_uploads');
-  }, [cloudinaryConfig]);
-
-  // Cloudinary device video upload state
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [uploadingVideo, setUploadingVideo] = useState(false);
-  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
-  const [videoUploadMeta, setVideoUploadMeta] = useState<UploadProgressInfo | null>(null);
-  const [videoUploadSuccess, setVideoUploadSuccess] = useState(false);
-  const [videoUploadNotice, setVideoUploadNotice] = useState<string | null>(null);
-
-  // Cloudinary device file upload state
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const [fileUploadProgress, setFileUploadProgress] = useState(0);
-  const [fileUploadMeta, setFileUploadMeta] = useState<UploadProgressInfo | null>(null);
-  const [uploadedFileName, setUploadedFileName] = useState<string>('');
-  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  // Cloudinary device Handout / PDF direct upload state
-  const [handoutFile, setHandoutFile] = useState<File | null>(null);
-  const [uploadingHandout, setUploadingHandout] = useState(false);
-  const [handoutProgress, setHandoutProgress] = useState(0);
-  const [handoutUploadMeta, setHandoutUploadMeta] = useState<UploadProgressInfo | null>(null);
-  const [handoutCloudUrl, setHandoutCloudUrl] = useState<string>('');
-
-  // Storage Quota Calculation (Cloudinary Free Plan: 25.0 GB total storage)
-  const CLOUDINARY_TOTAL_QUOTA_GB = 25.0;
-
-  // Real calculations derived directly from live state
-  const calculateTotalUsedMB = () => {
-    let totalMB = 0;
-    // Calculate files & handouts
-    attachments.forEach((file) => {
-      const raw = (file.fileSize || '').trim().toLowerCase();
-      const num = parseFloat(raw);
-      if (!isNaN(num)) {
-        if (raw.includes('gb')) {
-          totalMB += num * 1024;
-        } else if (raw.includes('kb')) {
-          totalMB += num / 1024;
-        } else {
-          totalMB += num; // default MB
-        }
-      } else {
-        totalMB += 3.5;
-      }
-    });
-
-    // Calculate video lectures (avg HD lecture size ~ 125 MB)
-    lectures.forEach((lec) => {
-      if (lec.videoUrl) {
-        totalMB += 125.0;
-      }
-    });
-
-    return totalMB;
-  };
-
-  const totalUsedMB = calculateTotalUsedMB();
-  const totalUsedGB = Number((totalUsedMB / 1024).toFixed(2));
-  const remainingGB = Number(Math.max(0, CLOUDINARY_TOTAL_QUOTA_GB - totalUsedGB).toFixed(2));
-  const usedPercentage = Number(Math.min(100, (totalUsedGB / CLOUDINARY_TOTAL_QUOTA_GB) * 100).toFixed(1));
-
-  // Feedback states (Zero Popups)
-  const [lectureFormError, setLectureFormError] = useState<string | null>(null);
-  const [lectureFormSuccess, setLectureFormSuccess] = useState<string | null>(null);
-  const [fileFormError, setFileFormError] = useState<string | null>(null);
-  const [fileFormSuccess, setFileFormSuccess] = useState<string | null>(null);
-  const [copiedUrlSuccess, setCopiedUrlSuccess] = useState(false);
-
-  // Editing Lecture & Confirmations
-  const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
-  const [deleteConfirmLecId, setDeleteConfirmLecId] = useState<string | null>(null);
-  const [deleteConfirmFileId, setDeleteConfirmFileId] = useState<string | null>(null);
-
-  // New Lecture Form State
-  const [lecTitle, setLecTitle] = useState('');
-  const [lecGrade, setLecGrade] = useState<GradeLevel>('third');
-  const [lecChapter, setLecChapter] = useState('الباب الأول: العناصر الانتقالية');
-  const [lecDuration, setLecDuration] = useState('45 دقيقة');
-  const [lecVideoUrl, setLecVideoUrl] = useState('');
-  const [lecThumbnail, setLecThumbnail] = useState('/images/chemistry_lab_visual_1794141316456.jpg');
-  const [lecPdfTitle, setLecPdfTitle] = useState('');
-  const [lecDescription, setLecDescription] = useState('');
-  const [lecIsFree, setLecIsFree] = useState(false);
-  const [lecSessionOrder, setLecSessionOrder] = useState<number>(() => {
-    return lectures.filter(l => l.grade === 'third').length + 1;
-  });
-  const [lecQuizId, setLecQuizId] = useState<string>('');
-
-  // New File/PDF Form State
-  const [fileTitle, setFileTitle] = useState('');
-  const [fileGrade, setFileGrade] = useState<GradeLevel>('third');
-  const [fileChapter, setFileChapter] = useState('العناصر الانتقالية');
-  const [fileSize, setFileSize] = useState('3.5 MB');
-
-  // Site Customizer Sub-Tab & Form State
-  const [customizerSubTab, setCustomizerSubTab] = useState<'general' | 'images' | 'fonts-colors' | 'features' | 'footer' | 'contact' | 'tech' | 'credits'>('general');
   const [siteForm, setSiteForm] = useState<SiteConfig>(siteConfig);
-  const [siteSaveSuccess, setSiteSaveSuccess] = useState(false);
-  const [uploadingTeacherPhoto, setUploadingTeacherPhoto] = useState(false);
-  const [teacherPhotoProgress, setTeacherPhotoProgress] = useState(0);
-  const [teacherPhotoMeta, setTeacherPhotoMeta] = useState<UploadProgressInfo | null>(null);
-
-  // Sync siteForm when siteConfig updates from props
-  React.useEffect(() => {
+  useEffect(() => {
     setSiteForm(siteConfig);
   }, [siteConfig]);
 
   const resolvedGrades = getResolvedGrades(siteForm);
-  const activeAcademicGrade =
-    resolvedGrades.find((g) => g.id === selectedAcademicTab) || resolvedGrades[0];
 
-  const handleUpdateGradeItem = (gradeId: string, patch: Partial<GradeItem>) => {
-    const nextGrades = resolvedGrades.map((g) => (g.id === gradeId ? { ...g, ...patch } : g));
-    const nextConfig: SiteConfig = { ...siteForm, grades: nextGrades };
-
-    if (gradeId === 'first') {
-      if (patch.titleAr !== undefined) nextConfig.gradeFirstTitleAr = patch.titleAr;
-      if (patch.titleEn !== undefined) nextConfig.gradeFirstTitleEn = patch.titleEn;
-      if (patch.badgeAr !== undefined) nextConfig.gradeFirstBadgeAr = patch.badgeAr;
-      if (patch.descAr !== undefined) nextConfig.gradeFirstDescAr = patch.descAr;
-    } else if (gradeId === 'second') {
-      if (patch.titleAr !== undefined) nextConfig.gradeSecondTitleAr = patch.titleAr;
-      if (patch.titleEn !== undefined) nextConfig.gradeSecondTitleEn = patch.titleEn;
-      if (patch.badgeAr !== undefined) nextConfig.gradeSecondBadgeAr = patch.badgeAr;
-      if (patch.descAr !== undefined) nextConfig.gradeSecondDescAr = patch.descAr;
-    } else if (gradeId === 'third') {
-      if (patch.titleAr !== undefined) nextConfig.gradeThirdTitleAr = patch.titleAr;
-      if (patch.titleEn !== undefined) nextConfig.gradeThirdTitleEn = patch.titleEn;
-      if (patch.badgeAr !== undefined) nextConfig.gradeThirdBadgeAr = patch.badgeAr;
-      if (patch.descAr !== undefined) nextConfig.gradeThirdDescAr = patch.descAr;
-    }
-
-    setSiteForm(nextConfig);
-  };
-
-  const handleAddNewGrade = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGradeFormNotice(null);
-
-    if (!newGradeBadgeAr.trim() || !newGradeTitleAr.trim()) {
-      setGradeFormNotice({ type: 'error', message: 'يرجى إدخال اسم السنة الدراسية والعنوان بالعربية.' });
-      return;
-    }
-
-    const newId = `grade_${Date.now()}`;
-    const newItem: GradeItem = {
-      id: newId,
-      badgeAr: newGradeBadgeAr.trim(),
-      badgeEn: newGradeBadgeEn.trim() || newGradeBadgeAr.trim(),
-      titleAr: newGradeTitleAr.trim(),
-      titleEn: newGradeTitleEn.trim() || newGradeTitleAr.trim(),
-      yearLabelAr: newGradeYearLabelAr.trim() || 'دفعة 2026',
-      yearLabelEn: 'Class of 2026',
-      descAr: newGradeDescAr.trim() || `منهج ${newGradeBadgeAr.trim()} المتكامل للمحاضرات والامتحانات والمذكرات.`,
-      descEn: '',
-      isPopular: newGradeIsPopular,
-    };
-
-    const nextGrades = [...resolvedGrades, newItem];
-    const updatedConfig: SiteConfig = { ...siteForm, grades: nextGrades };
-    setSiteForm(updatedConfig);
-
-    const saved = await onSaveSiteConfig(updatedConfig);
-    if (saved === false) {
-      setGradeFormNotice({ type: 'error', message: 'تعذر حفظ السنة الجديدة في قاعدة البيانات السحابية. تحقق من تسجيل الدخول.' });
-      return;
-    }
-
-    setSelectedAcademicTab(newId);
-    setShowAddGradeForm(false);
-    setNewGradeBadgeAr('');
-    setNewGradeBadgeEn('');
-    setNewGradeTitleAr('');
-    setNewGradeTitleEn('');
-    setNewGradeYearLabelAr('دفعة 2026');
-    setNewGradeDescAr('');
-    setNewGradeIsPopular(false);
-    setGradeFormNotice({ type: 'success', message: `تمت إضافة السنة الدراسية (${newItem.badgeAr}) وحفظها في الرئيسية بنجاح! 🎓` });
-    setTimeout(() => setGradeFormNotice(null), 4000);
-  };
-
-  const handleDeleteCustomGrade = async (gradeId: string) => {
-    if (resolvedGrades.length <= 1) {
-      setGradeFormNotice({ type: 'error', message: 'يجب الإبقاء على سنة دراسية واحدة على الأقل.' });
-      return;
-    }
-    const nextGrades = resolvedGrades.filter((g) => g.id !== gradeId);
-    const updatedConfig: SiteConfig = { ...siteForm, grades: nextGrades };
-    setSiteForm(updatedConfig);
-    setDeleteGradeConfirmId(null);
-
-    const saved = await onSaveSiteConfig(updatedConfig);
-    if (saved === false) {
-      setGradeFormNotice({ type: 'error', message: 'تعذر حذف السنة من قاعدة البيانات السحابية.' });
-      return;
-    }
-
-    setSelectedAcademicTab(nextGrades[0]?.id || 'first');
-    setGradeFormNotice({ type: 'success', message: 'تم حذف السنة الدراسية بنجاح.' });
-    setTimeout(() => setGradeFormNotice(null), 3500);
-  };
-
-  // Handle adding new Co-Admin with full permissions
-  const handleAddCoAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAdminNotice(null);
-    const email = newAdminEmail.trim().toLowerCase();
-    if (!email || !email.includes('@') || !email.includes('.')) {
-      setAdminNotice({ type: 'error', message: 'يرجى إدخال بريد إلكتروني صحيح.' });
-      return;
-    }
-    const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
-    if (currentAdmins.includes(email)) {
-      setAdminNotice({ type: 'error', message: 'هذا البريد مسجل كمدير ومسؤول بالفعل!' });
-      return;
-    }
-    const updatedAdmins = [...currentAdmins, email];
-    const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
-    setSiteForm(updatedConfig);
-    const saved = await onSaveSiteConfig(updatedConfig);
-    if (saved === false) {
-      setAdminNotice({ type: 'error', message: 'تعذر حفظ صلاحيات المشرف في السحابة، يرجى التحقق من الاتصال والصلاحيات.' });
-      return;
-    }
-    setNewAdminEmail('');
-    setAdminNotice({ type: 'success', message: `تمت إضافة المشرف والمدير المساعد (${email}) بنجاح وبكامل الصلاحيات! 🛡️` });
-    setTimeout(() => setAdminNotice(null), 4000);
-  };
-
-  // Handle removing a Co-Admin
-  const handleRemoveCoAdmin = async (emailToRemove: string) => {
-    if (emailToRemove === 'mizoo2y2@gmail.com') return; // Cannot delete primary owner
-    const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
-    const updatedAdmins = currentAdmins.filter(em => em !== emailToRemove);
-    const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
-    setSiteForm(updatedConfig);
-    const saved = await onSaveSiteConfig(updatedConfig);
-    setDeleteAdminConfirmEmail(null);
-    if (saved === false) {
-      setAdminNotice({ type: 'error', message: 'تعذر تحديث قائمة المشرفين في قاعدة البيانات.' });
-      return;
-    }
-    setAdminNotice({ type: 'success', message: `تم حذف المدير المساعد (${emailToRemove}) بنجاح.` });
-    setTimeout(() => setAdminNotice(null), 4000);
-  };
-
-  // Handle adding new Footer Quick Link
-  const handleAddQuickLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newQuickLinkTitle.trim() || !newQuickLinkUrl.trim()) return;
-    const currentLinks = siteForm.footerQuickLinks || [];
-    const newLink = {
-      id: `link-${Date.now()}`,
-      title: newQuickLinkTitle.trim(),
-      url: newQuickLinkUrl.trim()
-    };
-    const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: [...currentLinks, newLink] };
-    setSiteForm(updatedConfig);
-    await onSaveSiteConfig(updatedConfig);
-    setNewQuickLinkTitle('');
-    setNewQuickLinkUrl('');
-  };
-
-  // Handle removing a Footer Quick Link
-  const handleRemoveQuickLink = async (idToRemove: string) => {
-    const currentLinks = siteForm.footerQuickLinks || [];
-    const updatedConfig: SiteConfig = { ...siteForm, footerQuickLinks: currentLinks.filter(l => l.id !== idToRemove) };
-    setSiteForm(updatedConfig);
-    await onSaveSiteConfig(updatedConfig);
-  };
-
-  // Handle Cloudinary settings save
-  const handleSaveConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSaveCloudinaryConfig({ cloudName, uploadPreset });
-    setSaveSuccessMsg(true);
-    setTimeout(() => setSaveSuccessMsg(false), 3000);
-  };
-
-  // Direct Device Upload via Cloudinary REST API with real-time progress
-  const handleDeviceFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setUploadingFile(true);
-    setFileUploadProgress(0);
-    setFileUploadMeta(null);
-    setUploadedFileName(file.name);
-    setUploadError(null);
-
-    const isPdfOrDoc = !file.type.startsWith('image/');
-    try {
-      const result = await uploadMediaFile(file, {
-        cloudName,
-        uploadPreset,
-        resourceType: isPdfOrDoc ? 'auto' : 'image',
-        onProgress: (percent, info) => {
-          setFileUploadProgress(percent);
-          setFileUploadMeta(info);
-        },
-      });
-      setUploadedUrl(result.url);
-      if (file.type.startsWith('image/')) {
-        setLecThumbnail(result.url);
-      }
-      setUploadError(
-        result.source === 'cloudinary'
-          ? 'تم رفع الملف إلى Cloudinary وحفظ الرابط بنجاح ☁️'
-          : 'تم رفع الملف وحفظه بنجاح ☁️'
-      );
-    } catch (err: any) {
-      setUploadError(err?.message || 'حدث خطأ أثناء رفع الملف');
-    } finally {
-      setUploadingFile(false);
-    }
-  };
-
-  // Upload teacher photo via Cloudinary with real-time progress
-  const handleTeacherPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    setUploadingTeacherPhoto(true);
-    setTeacherPhotoProgress(0);
-    setTeacherPhotoMeta(null);
-    setAdminNotice(null);
-
-    try {
-      const result = await uploadMediaFile(file, {
-        cloudName,
-        uploadPreset,
-        resourceType: 'image',
-        onProgress: (percent, info) => {
-          setTeacherPhotoProgress(percent);
-          setTeacherPhotoMeta(info);
-        },
-      });
-      const url = result.url;
-      const updatedConfig: SiteConfig = { ...siteConfig, ...siteForm, profileImageUrl: url };
-      setSiteForm(updatedConfig);
-      const saved = await onSaveSiteConfig(updatedConfig);
-      if (saved === false) {
-        setAdminNotice({ type: 'error', message: 'تم رفع الصورة ولكن تعذر حفظ التعديل في السحابة.' });
+  // Storage quota calculations
+  const totalUsedMB = (() => {
+    let total = 0;
+    attachments.forEach((file) => {
+      const raw = (file.fileSize || '').trim().toLowerCase();
+      const num = parseFloat(raw);
+      if (!isNaN(num)) {
+        if (raw.includes('gb')) total += num * 1024;
+        else if (raw.includes('kb')) total += num / 1024;
+        else total += num;
       } else {
-        setAdminNotice({
-          type: 'success',
-          message:
-            result.source === 'cloudinary'
-              ? 'تم رفع وتثبيت صورة الأستاذ من كلاودنري بنجاح دائم! ☁️'
-              : 'تم رفع وتثبيت صورة الأستاذ وحفظها بنجاح! ☁️',
-        });
+        total += 3.5;
       }
-    } catch (err: any) {
-      setAdminNotice({ type: 'error', message: err?.message || 'فشل رفع الصورة' });
-    } finally {
-      setUploadingTeacherPhoto(false);
-    }
-  };
+    });
+    lectures.forEach((lec) => {
+      if (lec.videoUrl) total += 125.0;
+    });
+    return total;
+  })();
 
-  // Cloudinary Direct Video Upload from Device with real-time progress
-  const handleCloudinaryVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    setVideoFile(file);
-    setUploadingVideo(true);
-    setVideoUploadProgress(0);
-    setVideoUploadMeta(null);
-    setVideoUploadSuccess(false);
-    setVideoUploadNotice(null);
-    setLectureFormError(null);
-
-    try {
-      const result = await uploadMediaFile(file, {
-        cloudName,
-        uploadPreset,
-        resourceType: 'video',
-        onProgress: (percent, info) => {
-          setVideoUploadProgress(percent);
-          setVideoUploadMeta(info);
-        },
-      });
-      setLecVideoUrl(result.url);
-      if (result.durationSeconds) {
-        const mins = Math.max(1, Math.round(result.durationSeconds / 60));
-        setLecDuration(`${mins} دقيقة`);
-      }
-      setVideoUploadSuccess(true);
-      setVideoUploadNotice(
-        result.source === 'cloudinary'
-          ? 'تم رفع الفيديو على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡'
-          : 'تم رفع الفيديو وحفظه بنجاح للبث المباشر ⚡'
-      );
-    } catch (err: any) {
-      setLectureFormError(err?.message || 'تعذر رفع الفيديو، يرجى التحقق من إعدادات Cloudinary واتصال الشبكة.');
-    } finally {
-      setUploadingVideo(false);
-    }
-  };
-
-  // Submit new lecture
-  const handleCreateLecture = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLectureFormError(null);
-    setLectureFormSuccess(null);
-
-    if (uploadingVideo) {
-      setLectureFormError('يرجى الانتظار حتى يكتمل رفع الفيديو بنسبة 100%.');
-      return;
-    }
-
-    if (!lecTitle.trim()) {
-      setLectureFormError('يرجى إدخال عنوان المحاضرة');
-      return;
-    }
-
-    if (!lecVideoUrl.trim()) {
-      setLectureFormError('يرجى رفع فيديو المحاضرة من جهازك أو إدخال رابط الفيديو أولاً.');
-      return;
-    }
-
-    const newLec: Lecture = {
-      id: `lec-${Date.now()}`,
-      sessionOrder: Number(lecSessionOrder) || (lectures.filter(l => l.grade === lecGrade).length + 1),
-      quizId: lecQuizId || undefined,
-      title: lecTitle.trim(),
-      grade: lecGrade,
-      gradeLabel: lecGrade === 'first' ? 'الصف الأول الثانوي' : lecGrade === 'second' ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي',
-      chapter: lecChapter,
-      duration: lecDuration || '50 دقيقة',
-      videoUrl: lecVideoUrl.trim(),
-      thumbnailUrl: lecThumbnail || '/images/chemistry_lab_visual_1794141316456.jpg',
-      pdfTitle: lecPdfTitle ? `${lecPdfTitle}.pdf` : undefined,
-      description: lecDescription || 'شرح تفاعلي لموضوع الدرس مع أمثلة وتدريبات تطبيقية.',
-      isFreePreview: lecIsFree,
-      viewsCount: 0,
-      dateAdded: new Date().toISOString().split('T')[0],
-    };
-
-    onAddLecture(newLec);
-    setLectureFormSuccess('تم نشر المحاضرة بنجاح وأصبحت متاحة للطلاب في المنصة! 🚀');
-    setTimeout(() => setLectureFormSuccess(null), 4000);
-    setLecTitle('');
-    setLecVideoUrl('');
-    setLecPdfTitle('');
-    setLecDescription('');
-    setLecQuizId('');
-    setVideoFile(null);
-    setVideoUploadSuccess(false);
-    setVideoUploadProgress(0);
-    setVideoUploadMeta(null);
-  };
-
-  // Save edited lecture
-  const handleSaveEditedLecture = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingLecture) return;
-    if (onUpdateLecture) {
-      onUpdateLecture(editingLecture);
-      setLectureFormSuccess('تم تحديث وتعديل المحاضرة بنجاح! ⚡');
-      setTimeout(() => setLectureFormSuccess(null), 3500);
-    }
-    setEditingLecture(null);
-  };
-
-  // Handle Direct Handout Upload to Cloudinary with Real-Time Progress
-  const handleSelectHandoutFile = async (file: File) => {
-    setHandoutFile(file);
-    const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-    if (!fileTitle) {
-      setFileTitle(nameWithoutExt);
-    }
-    const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-    setFileSize(`${sizeInMB} MB`);
-
-    setUploadingHandout(true);
-    setHandoutProgress(0);
-    setHandoutUploadMeta(null);
-    setFileFormError(null);
-
-    try {
-      const result = await uploadMediaFile(file, {
-        cloudName,
-        uploadPreset,
-        resourceType: 'auto',
-        onProgress: (percent, info) => {
-          setHandoutProgress(percent);
-          setHandoutUploadMeta(info);
-        },
-      });
-      setHandoutCloudUrl(result.url);
-      setFileFormSuccess(`تم رفع المذكرة بنجاح (${file.name} · ${sizeInMB} MB) ☁️`);
-      setTimeout(() => setFileFormSuccess(null), 4000);
-    } catch (err: any) {
-      setFileFormError(err?.message || 'فشل رفع المذكرة، يرجى التحقق من إعدادات Cloudinary.');
-    } finally {
-      setUploadingHandout(false);
-    }
-  };
-
-  // Submit new PDF file
-  const handleCreateAttachment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFileFormError(null);
-    setFileFormSuccess(null);
-
-    if (uploadingHandout) {
-      setFileFormError('يرجى الانتظار حتى يكتمل رفع المذكرة.');
-      return;
-    }
-
-    if (!fileTitle.trim()) {
-      setFileFormError('يرجى إدخال اسم المذكرة أو الملف');
-      return;
-    }
-
-    const newFile: AttachmentFile = {
-      id: `att-${Date.now()}`,
-      title: fileTitle,
-      grade: fileGrade,
-      gradeLabel: getGradeDisplayName(fileGrade, siteForm, 'ar'),
-      chapter: fileChapter,
-      fileSize: fileSize || '3.0 MB',
-      fileType: 'pdf',
-      downloadUrl: handoutCloudUrl || uploadedUrl || '#',
-      pageCount: 24,
-      dateAdded: new Date().toISOString().split('T')[0],
-    };
-
-    const saved = await onAddAttachment(newFile);
-    if (saved === false) {
-      setFileFormError('تعذر نشر المذكرة في السحابة. يرجى التحقق من جلسة المشرف وصلاحيات الحساب.');
-      return;
-    }
-    setFileFormSuccess('تمت إضافة المذكرة بنجاح إلى مكتبة ملفات الطلاب وتم تحديث مساحة التخزين فورياً! 📚');
-    setTimeout(() => setFileFormSuccess(null), 4000);
-    setFileTitle('');
-    setHandoutFile(null);
-    setHandoutCloudUrl('');
-    setHandoutProgress(0);
-  };
-
-  // Save Site Configuration (verifies actual cloud persistence before displaying green success)
-  const handleSaveSiteConfigSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGradeFormNotice(null);
-    const saved = await onSaveSiteConfig(siteForm);
-    if (saved === false) {
-      setSiteSaveSuccess(false);
-      setGradeFormNotice({
-        type: 'error',
-        message: 'تعذر حفظ التعديلات على السحابة. يرجى التحقق من اتصال الحساب وصلاحيات الإدارة.',
-      });
-      return;
-    }
-    setSiteSaveSuccess(true);
-    setTimeout(() => setSiteSaveSuccess(false), 3000);
-  };
-
-  // Reset to original defaults
-  const handleResetSiteDefaults = async () => {
-    setSiteForm(DEFAULT_SITE_CONFIG);
-    const saved = await onSaveSiteConfig(DEFAULT_SITE_CONFIG);
-    if (saved === false) return;
-    setSiteSaveSuccess(true);
-    setTimeout(() => setSiteSaveSuccess(false), 2500);
-  };
+  const totalUsedGB = Number((totalUsedMB / 1024).toFixed(2));
+  const remainingGB = Number(Math.max(0, CLOUDINARY_TOTAL_QUOTA_GB - totalUsedGB).toFixed(2));
+  const usedPercentage = Number(
+    Math.min(100, (totalUsedGB / CLOUDINARY_TOTAL_QUOTA_GB) * 100).toFixed(1)
+  );
 
   return (
     <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden">
-      
       {/* Top Admin Header */}
       <header className="bg-gradient-to-r from-teal-900 via-slate-900 to-teal-950 text-white border-b border-teal-800/60 shadow-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
           <div className="flex items-center justify-between gap-3">
-            
             <div className="flex items-center gap-3">
-              {/* Mobile Sidebar Toggle Button */}
               <button
-                onClick={() => setIsMobileSidebarOpen(prev => !prev)}
+                type="button"
+                onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
                 className="lg:hidden p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                 aria-label="القائمة الجانبية"
               >
-                {isMobileSidebarOpen ? <X className="w-5 h-5 text-amber-300" /> : <Menu className="w-5 h-5" />}
+                {isMobileSidebarOpen ? (
+                  <X className="w-5 h-5 text-amber-300" />
+                ) : (
+                  <Menu className="w-5 h-5" />
+                )}
               </button>
 
               <button
+                type="button"
                 onClick={onBackToHome}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
                 title="العودة للرئيسية"
@@ -715,6 +159,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setActiveTab('site-customizer')}
                 className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'site-customizer'
@@ -727,6 +172,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={onOpenStudentPortal}
                 className="px-3 py-1.5 text-xs font-bold rounded-xl bg-teal-500 hover:bg-teal-600 text-white shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
               >
@@ -734,26 +180,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <ExternalLink className="w-3 h-3" />
               </button>
             </div>
-
           </div>
         </div>
       </header>
 
-      {/* Modern Two-Column Layout: Responsive Sidebar on Side + Main Content */}
       <div className="flex flex-col lg:flex-row min-h-[calc(100vh-65px)] w-full">
-        
-        {/* Sidebar Navigation on the side */}
-        <aside className={`w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 lg:p-5 flex flex-col justify-between ${isMobileSidebarOpen ? 'block' : 'hidden lg:flex'}`}>
+        {/* Sidebar */}
+        <aside
+          className={`w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 lg:p-5 flex flex-col justify-between ${
+            isMobileSidebarOpen ? 'block' : 'hidden lg:flex'
+          }`}
+        >
           <div className="space-y-6">
-            
-            {/* Quick Profile Pill in Sidebar */}
             <div className="p-3 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/60 dark:border-teal-900/40 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-teal-600 shrink-0 border border-teal-400/40">
                 <img
                   src={siteForm.profileImageUrl || '/images/teacher_placeholder.svg'}
                   alt={siteForm.teacherName}
+                  decoding="async"
                   className="w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.src = '/images/teacher_placeholder.svg'; }}
+                  onError={(e) => {
+                    e.currentTarget.src = '/images/teacher_placeholder.svg';
+                  }}
                 />
               </div>
               <div className="min-w-0">
@@ -766,14 +214,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </div>
             </div>
 
-            {/* Section 1: Overview & Students */}
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                 الرئيسية والمتابعة
               </div>
-              
+
               <button
-                onClick={() => { setActiveTab('overview'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('overview');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'overview'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -788,7 +239,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('all-students'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('all-students');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'all-students'
                     ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
@@ -800,19 +255,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span>سجل وقائمة الطلاب</span>
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono">
-                  {students.filter(s => s.role !== 'teacher').length}
+                  {students.filter((s) => s.role !== 'teacher').length}
                 </span>
               </button>
             </div>
 
-            {/* Section 2: Educational Content */}
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                 المحتوى التعليمي
               </div>
 
               <button
-                onClick={() => { setActiveTab('upload-lecture'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('upload-lecture');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'upload-lecture'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -827,7 +285,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('lectures-list'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('lectures-list');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'lectures-list'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -844,7 +306,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('quizzes-bank'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('quizzes-bank');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'quizzes-bank'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -861,7 +327,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('files'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('files');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'files'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -878,14 +348,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
             </div>
 
-            {/* Section 3: System Administration & Customization */}
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                 إدارة المنصة وهوية الموقع
               </div>
 
               <button
-                onClick={() => { setActiveTab('academic-years'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('academic-years');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'academic-years'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -900,7 +373,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('co-admins'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('co-admins');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'co-admins'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -917,7 +394,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('site-customizer'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('site-customizer');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'site-customizer'
                     ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
@@ -932,7 +413,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('cloudinary'); setIsMobileSidebarOpen(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTab('cloudinary');
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'cloudinary'
                     ? 'bg-teal-600 text-white shadow-sm'
@@ -946,10 +431,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <span className="text-[10px] text-slate-400 font-mono">25 GB</span>
               </button>
             </div>
-
           </div>
 
-          {/* Sidebar Bottom Cloudinary Storage Monitor */}
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5 mt-6">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -964,7 +447,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  usedPercentage > 85 ? 'bg-rose-500' : usedPercentage > 60 ? 'bg-amber-400' : 'bg-emerald-500'
+                  usedPercentage > 85
+                    ? 'bg-rose-500'
+                    : usedPercentage > 60
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-500'
                 }`}
                 style={{ width: `${Math.max(4, usedPercentage)}%` }}
               />
@@ -972,702 +459,47 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
               <span>{totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`} مستخدمة</span>
-              <span>من 25 GB</span>
+              <span>من {CLOUDINARY_TOTAL_QUOTA_GB} GB</span>
             </div>
           </div>
         </aside>
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
-
-          {/* ========================================================
-              TAB 0: MODERN DASHBOARD OVERVIEW & QUICK LAUNCHPADS
-          ======================================================== */}
           {activeTab === 'overview' && (
-            <div className="space-y-6">
-              
-              {/* Header Greeting */}
-              <div className="p-6 rounded-3xl bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white shadow-md relative overflow-hidden">
-                <div className="relative z-10 space-y-2 max-w-2xl">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-mono">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>المنظومة السحابية المحدثة · دفعة 2026</span>
-                  </div>
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold font-kufi">
-                    أهلاً بك يا أستاذ {siteConfig.teacherName} ⚗️
-                  </h2>
-                  <p className="text-xs sm:text-sm text-teal-100/90 leading-relaxed font-sans">
-                    لوحة التحكم المركزية تتيح لك إدارة المحاضرات، بنك الأسئلة، الطلاب، المذكرات السحابية عبر Cloudinary، وتخصيص أسماء السنوات الدراسية وإضافة مشرفين بكل سلاسة.
-                  </p>
-                </div>
-              </div>
-
-              {/* KPI Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div 
-                  onClick={() => setActiveTab('lectures-list')}
-                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-teal-500 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
-                    <span>المحاضرات</span>
-                    <Video className="w-4 h-4 text-teal-600" />
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-bold text-teal-600 font-mono tabular-nums">{lectures.length}</div>
-                  <div className="text-[11px] text-teal-700 dark:text-teal-400">محاضرة منشورة ومفعلة</div>
-                </div>
-
-                <div 
-                  onClick={() => setActiveTab('files')}
-                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-amber-500 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
-                    <span>المذكرات والملفات</span>
-                    <FileText className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-bold text-amber-500 font-mono tabular-nums">{attachments.length}</div>
-                  <div className="text-[11px] text-amber-600 dark:text-amber-400">PDF على Cloudinary</div>
-                </div>
-
-                <div 
-                  onClick={() => setActiveTab('all-students')}
-                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-emerald-500 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
-                    <span>الطلاب المشتركون</span>
-                    <Users className="w-4 h-4 text-emerald-500" />
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
-                    {students.filter(s => s.role !== 'teacher').length}
-                  </div>
-                  <div className="text-[11px] text-emerald-600 font-semibold">حسابات حقيقية مسجلة</div>
-                </div>
-
-                <div 
-                  onClick={() => setActiveTab('co-admins')}
-                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-sky-500 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
-                    <span>فريق الإدارة (Admins)</span>
-                    <ShieldCheck className="w-4 h-4 text-sky-500" />
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-bold text-sky-600 font-mono tabular-nums">
-                    {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length}
-                  </div>
-                  <div className="text-[11px] text-sky-600 font-semibold">بكامل الصلاحيات الإدارية</div>
-                </div>
-              </div>
-
-              {/* Cloudinary Live Storage Monitor Card */}
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-950 to-teal-950 text-white border border-teal-800/50 shadow-lg space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-bold text-teal-300 font-mono">سعة تخزين كلاودنري السحابية (Cloudinary Live Storage)</span>
-                    </div>
-                    <h3 className="text-xl font-bold font-kufi">
-                      المساحة المتبقية: <span className="text-amber-300 font-mono">{remainingGB} GB</span> من إجمالي {CLOUDINARY_TOTAL_QUOTA_GB} GB
-                    </h3>
-                  </div>
-
-                  <div className="text-left sm:text-right font-mono">
-                    <div className="text-xs text-slate-400">المستهلك الفعلي:</div>
-                    <div className="text-lg font-bold text-teal-300">
-                      {totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`}
-                      <span className="text-xs text-slate-400 font-normal mr-1.5">({usedPercentage}%)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Visual Storage Progress Bar */}
-                <div className="space-y-1.5">
-                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        usedPercentage > 85 ? 'bg-rose-500' : usedPercentage > 60 ? 'bg-amber-400' : 'bg-emerald-400'
-                      }`}
-                      style={{ width: `${Math.max(3, usedPercentage)}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                    <span>0 GB</span>
-                    <span>المستخدم: {totalUsedGB} GB ({lectures.length} فيديو + {attachments.length} ملزمة)</span>
-                    <span>الحد الأقصى المجاني: {CLOUDINARY_TOTAL_QUOTA_GB} GB</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Fast Action Launchpads */}
-              <div className="space-y-3">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
-                  روابط التشغيل السريعة:
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <button
-                    onClick={() => setActiveTab('upload-lecture')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <Plus className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">رفع محاضرة</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">فيديو وكويز مباشر</div>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('all-students')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <Users className="w-6 h-6 text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">سجل الطلاب</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">جميع السنوات</div>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('files')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <FileText className="w-6 h-6 text-rose-500 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">رفع مذكرة PDF</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">تحديث سعة التخزين</div>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('academic-years')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <GraduationCap className="w-6 h-6 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">أسماء السنوات</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">تعديل كروت الرئيسية</div>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('co-admins')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <ShieldCheck className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">إضافة مدير مساعد</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">صلاحيات كاملة فورية</div>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('site-customizer')}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-500 hover:shadow-sm text-right transition-all group cursor-pointer"
-                  >
-                    <Palette className="w-6 h-6 text-purple-500 mb-2 group-hover:scale-110 transition-transform" />
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">هوية الموقع والفوتر</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">الروابط ونبذة المعلم</div>
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick Preview of Recent Lectures */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
-                    آخر المحاضرات المنشورة ({lectures.length}):
-                  </h3>
-                  <button
-                    onClick={() => setActiveTab('lectures-list')}
-                    className="text-xs text-teal-600 hover:underline font-bold cursor-pointer"
-                  >
-                    عرض وإدارة جميع المحاضرات ←
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {lectures.slice(0, 3).map(lec => (
-                    <div key={lec.id} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center gap-3">
-                      <img 
-                        src={lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'} 
-                        alt={lec.title} 
-                        className="w-14 h-14 rounded-xl object-cover shrink-0" 
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{lec.title}</div>
-                        <div className="text-[11px] text-teal-600 font-mono mt-0.5">{lec.duration} · حصة {lec.sessionOrder}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Zero-Out / Reset Data Control */}
-              <div className="bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/80 dark:border-rose-900/50 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-sm">
-                    <Trash2 className="w-4 h-4" />
-                    <span>إدارة وتصفير بيانات المنصة (Clear All Data):</span>
-                  </div>
-                  <p className="text-xs text-rose-600/90 dark:text-rose-400/80 max-w-xl leading-relaxed">
-                    تصفير جميع المحاضرات والاختبارات والمذكرات والطلاب والبدء من 0 بقيم حسابية حقيقية تماماً.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setResetConfirmOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm shadow-rose-700/20 flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
-                >
-                  <RefreshCcw className="w-4 h-4" />
-                  <span>تصفير وإفراغ كل البيانات</span>
-                </button>
-              </div>
-
-            </div>
+            <OverviewTab
+              siteConfig={siteConfig}
+              siteForm={siteForm}
+              lectures={lectures}
+              attachments={attachments}
+              students={students}
+              totalUsedMB={totalUsedMB}
+              totalUsedGB={totalUsedGB}
+              remainingGB={remainingGB}
+              usedPercentage={usedPercentage}
+              totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
+              onNavigateTab={setActiveTab}
+              onOpenResetModal={() => setResetConfirmOpen(true)}
+            />
           )}
 
-          {/* ========================================================
-              TAB: CUSTOMIZE ACADEMIC YEARS (Reflecting on Landing Page)
-              Requested by user: "واعدل اسماء السنوات وتبان بره في الرئيسيه"
-          ======================================================== */}
           {activeTab === 'academic-years' && (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="p-1.5 rounded-xl bg-indigo-500 text-white">
-                      <GraduationCap className="w-5 h-5" />
-                    </span>
-                    <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                      إدارة وتخصيص السنوات الدراسية 🎓
-                    </h2>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-500">
-                    أضف سنوات دراسية جديدة أو عدّل أسماء ووصف وشارات أي سنة، وستنعكس فوراً في الرئيسية وبوابة الطالب.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {siteSaveSuccess && (
-                    <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-300">
-                      <Check className="w-4 h-4" />
-                      تم تطبيق الأسماء والحفظ في السحابة!
-                    </span>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddGradeForm((prev) => !prev);
-                      setGradeFormNotice(null);
-                    }}
-                    className="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {showAddGradeForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                    <span>{showAddGradeForm ? 'إغلاق نموذج الإضافة' : 'إضافة سنة دراسية جديدة +'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {gradeFormNotice && (
-                <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-2 ${
-                  gradeFormNotice.type === 'success'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-800 dark:text-emerald-200'
-                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 text-rose-800 dark:text-rose-200'
-                }`}>
-                  <span>{gradeFormNotice.message}</span>
-                  <button type="button" onClick={() => setGradeFormNotice(null)} className="text-slate-400 hover:text-slate-700">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* Add New Grade Inline Form */}
-              {showAddGradeForm && (
-                <form onSubmit={handleAddNewGrade} className="p-6 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border-2 border-teal-400/50 space-y-4">
-                  <div className="font-bold text-sm text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-teal-600" />
-                    <span>إضافة سنة أو مرحلة دراسية جديدة للمنصة</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">اسم السنة / الشارة بالعربية *</label>
-                      <input
-                        type="text"
-                        required
-                        value={newGradeBadgeAr}
-                        onChange={(e) => setNewGradeBadgeAr(e.target.value)}
-                        placeholder="مثال: الشهادة الإعدادية أو مراجعات الأزهر"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الاسم بالإنجليزية (اختياري)</label>
-                      <input
-                        type="text"
-                        value={newGradeBadgeEn}
-                        onChange={(e) => setNewGradeBadgeEn(e.target.value)}
-                        placeholder="e.g. Prep 3 Science"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">عنوان الكارت الرئيسي بالعربية *</label>
-                      <input
-                        type="text"
-                        required
-                        value={newGradeTitleAr}
-                        onChange={(e) => setNewGradeTitleAr(e.target.value)}
-                        placeholder="مثال: تالتة إعدادي · التأسيس المتكامل في العلوم"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وسم الدفعة (Badge Year Label)</label>
-                      <input
-                        type="text"
-                        value={newGradeYearLabelAr}
-                        onChange={(e) => setNewGradeYearLabelAr(e.target.value)}
-                        placeholder="مثال: دفعة 2026"
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وصف السنة في الصفحة الرئيسية</label>
-                    <textarea
-                      rows={2}
-                      value={newGradeDescAr}
-                      onChange={(e) => setNewGradeDescAr(e.target.value)}
-                      placeholder="وصف مختصر لما يشمله الكورس والمنهج لهذه السنة..."
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newGradeIsPopular}
-                        onChange={(e) => setNewGradeIsPopular(e.target.checked)}
-                        className="w-4 h-4 accent-amber-500 rounded"
-                      />
-                      <span>تمييز كسنة رئيسية / شهادة (Popular 🔥)</span>
-                    </label>
-
-                    <button
-                      type="submit"
-                      className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>حفظ وإضافة السنة للمنصة</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Dynamic Grades Switcher Sub-tabs */}
-              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
-                {resolvedGrades.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => setSelectedAcademicTab(g.id)}
-                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      activeAcademicGrade?.id === g.id
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>{g.badgeAr}</span>
-                    {g.isPopular && <span className="w-2 h-2 rounded-full bg-amber-400" />}
-                  </button>
-                ))}
-              </div>
-
-              {/* Active Grade Customization Form */}
-              {activeAcademicGrade && (
-                <form onSubmit={handleSaveSiteConfigSubmit} className="space-y-6">
-                  <div className="p-6 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-sm text-indigo-900 dark:text-indigo-200 font-kufi flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-indigo-600" />
-                        <span>تعديل بيانات: {activeAcademicGrade.badgeAr}</span>
-                      </div>
-
-                      {resolvedGrades.length > 1 && (
-                        deleteGradeConfirmId === activeAcademicGrade.id ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-rose-600">تأكيد الحذف؟</span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCustomGrade(activeAcademicGrade.id)}
-                              className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
-                            >
-                              نعم احذف
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteGradeConfirmId(null)}
-                              className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] cursor-pointer"
-                            >
-                              إلغاء
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setDeleteGradeConfirmId(activeAcademicGrade.id)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center gap-1 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>حذف هذه السنة</span>
-                          </button>
-                        )
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالعربية</label>
-                        <input
-                          type="text"
-                          value={activeAcademicGrade.titleAr || ''}
-                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { titleAr: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">العنوان بالإنجليزية (Title En)</label>
-                        <input
-                          type="text"
-                          value={activeAcademicGrade.titleEn || ''}
-                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { titleEn: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 dir-ltr text-right"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الشارة العلوية / اسم الصف (Badge)</label>
-                        <input
-                          type="text"
-                          value={activeAcademicGrade.badgeAr || ''}
-                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { badgeAr: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">وسم الدفعة (مثل: دفعة 2026)</label>
-                        <input
-                          type="text"
-                          value={activeAcademicGrade.yearLabelAr || ''}
-                          onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { yearLabelAr: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الوصف والشرح المختصر للكارت في الرئيسية</label>
-                      <textarea
-                        rows={3}
-                        value={activeAcademicGrade.descAr || ''}
-                        onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { descAr: e.target.value })}
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(activeAcademicGrade.isPopular)}
-                        onChange={(e) => handleUpdateGradeItem(activeAcademicGrade.id, { isPopular: e.target.checked })}
-                        className="w-4 h-4 accent-amber-500 rounded"
-                      />
-                      <span>تمييز هذه السنة كشهادة رئيسية / مميزة في الواجهة</span>
-                    </label>
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
-                    <button
-                      type="submit"
-                      className="px-8 py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md shadow-indigo-700/20 transition-all flex items-center gap-2 cursor-pointer"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>حفظ وتحديث السنوات الدراسية الآن</span>
-                    </button>
-
-                    {siteSaveSuccess && (
-                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                        <Check className="w-4 h-4" />
-                        تم حفظ التعديلات بنجاح!
-                      </span>
-                    )}
-                  </div>
-                </form>
-              )}
-            </div>
+            <AcademicYearsTab
+              resolvedGrades={resolvedGrades}
+              siteForm={siteForm}
+              setSiteForm={setSiteForm}
+              onSaveSiteConfig={onSaveSiteConfig}
+            />
           )}
 
-          {/* ========================================================
-              TAB: CO-ADMINS & PERMISSIONS MANAGEMENT
-              Requested by user: "واقدر اخلي في ادمن معايا ليه صلاحيات يرفع ويحذف زي انا بالظبط"
-          ======================================================== */}
           {activeTab === 'co-admins' && (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="p-1.5 rounded-xl bg-teal-600 text-white">
-                      <ShieldCheck className="w-5 h-5" />
-                    </span>
-                    <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                      إدارة المشرفين والمدراء المساعدين (Co-Admins) 🛡️
-                    </h2>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-500">
-                    أضف بريد أي مساعد أو مدير ترغب في منحه نفس صلاحياتك بالكامل (رفع المحاضرات، حذف وتعديل الملفات، وإدارة الطلاب).
-                  </p>
-                </div>
-
-                <div className="px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-800 dark:text-teal-300 font-mono">
-                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length} مدراء نشطون
-                </div>
-              </div>
-
-              {/* Notification Notice (No Browser Popups) */}
-              {adminNotice && (
-                <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center gap-2 ${
-                  adminNotice.type === 'success'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-                }`}>
-                  {adminNotice.type === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-                  <span>{adminNotice.message}</span>
-                </div>
-              )}
-
-              {/* Add New Co-Admin Form */}
-              <form onSubmit={handleAddCoAdmin} className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 font-kufi flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-teal-600" />
-                  <span>إضافة بريد إلكتروني لمدير مساعد جديد:</span>
-                </label>
-
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <input
-                    type="email"
-                    required
-                    value={newAdminEmail}
-                    onChange={(e) => setNewAdminEmail(e.target.value)}
-                    placeholder="assistant@science.com أو gmail الخاص به"
-                    className="w-full sm:flex-1 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-right"
-                  />
-
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>منح صلاحيات الإدارة كاملة</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  بمجرد تسجيل هذا الحساب الدخول عبر Google أو بريده الإلكتروني، سيعامله النظام كأدمن مباشر ويفتح له لوحة التحكم وصلاحيات الرفع والحذف فوراً.
-                </p>
-              </form>
-
-              {/* List of Active Administrators */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white font-kufi">
-                  قائمة المدراء والمشرفين المسجلين في النظام:
-                </h3>
-
-                <div className="space-y-2">
-                  {/* Primary Owner */}
-                  <div className="p-4 rounded-2xl border-2 border-teal-500/50 bg-teal-50/50 dark:bg-teal-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                        👑
-                      </div>
-                      <div>
-                        <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono flex items-center gap-2">
-                          <span>mizoo2y2@gmail.com</span>
-                          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold font-kufi">
-                            المالك والمؤسس الرئيسي
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-teal-700 dark:text-teal-400">
-                          كافة الصلاحيات السيادية (غير قابل للحذف)
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-1 rounded-lg self-start sm:self-auto">
-                      نشط دائم ✓
-                    </span>
-                  </div>
-
-                  {/* Added Co-Admins */}
-                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com'])
-                    .filter(email => email !== 'mizoo2y2@gmail.com')
-                    .map((email) => (
-                      <div key={email} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-teal-600 flex items-center justify-center font-bold text-xs shrink-0">
-                            <ShieldCheck className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono">
-                              {email}
-                            </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              مدير مساعد · صلاحيات كاملة للرفع والتعديل والحذف وإدارة الطلاب
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 self-end sm:self-auto">
-                          {deleteAdminConfirmEmail === email ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] text-rose-600 font-bold">تأكيد الحذف؟</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCoAdmin(email)}
-                                className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
-                              >
-                                نعم، احذف
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteAdminConfirmEmail(null)}
-                                className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] cursor-pointer"
-                              >
-                                إلغاء
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setDeleteAdminConfirmEmail(email)}
-                              className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer text-xs flex items-center gap-1"
-                              title="إلغاء صلاحيات هذا المدير"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              <span className="text-xs font-bold">إزالة</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-
-                  {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).filter(e => e !== 'mizoo2y2@gmail.com').length === 0 && (
-                    <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-                      لم تتم إضافة أي مدراء مساعدين بعد. أدخل بريد مساعدك في الحقل أعلاه لمنحه صلاحيات كاملة.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
+            <CoAdminsTab
+              siteForm={siteForm}
+              setSiteForm={setSiteForm}
+              onSaveSiteConfig={onSaveSiteConfig}
+            />
           )}
 
-          {/* ========================================================
-              TAB: ALL STUDENTS DIRECTORY & MANAGEMENT
-              Requested by user: "تالت حاجه عايز قايمه الطلاب لجميع السنوات واقدر اضيف واحذف"
-          ======================================================== */}
           {activeTab === 'all-students' && (
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3">
@@ -1678,7 +510,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </span>
                 </div>
                 <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">
-                  {students.filter(s => s.role !== 'teacher').length} طالب مسجل
+                  {students.filter((s) => s.role !== 'teacher').length} طالب مسجل
                 </span>
               </div>
 
@@ -1694,1752 +526,65 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
-        {/* ========================================================
-            TAB 1: UPLOAD NEW LECTURE
-        ======================================================== */}
-        {activeTab === 'upload-lecture' && (
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                رفع ونشر محاضرة تعليمية جديدة
-              </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                أدخل تفاصيل الدرس، رابط الفيديو، والمذكرات ليتم إتاحتها فوراً لطلاب الدفعة.
-              </p>
-            </div>
-
-            {/* Inline Notifications (Zero Popups) */}
-            {lectureFormSuccess && (
-              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-sm font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>{lectureFormSuccess}</span>
-              </div>
-            )}
-
-            {lectureFormError && (
-              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-sm font-bold text-rose-800 dark:text-rose-200 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                <span>{lectureFormError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateLecture} className="space-y-6">
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Title */}
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    عنوان المحاضرة الكيميائية *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={lecTitle}
-                    onChange={(e) => setLecTitle(e.target.value)}
-                    placeholder="مثال: الباب الأول - الخواص المغناطيسية والنشاط الحفزي لعناصر 3d"
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-
-                {/* Grade Level */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    السنة الدراسية *
-                  </label>
-                  <select
-                    value={lecGrade}
-                    onChange={(e) => setLecGrade(e.target.value as GradeLevel)}
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    {resolvedGrades.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.badgeAr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Chapter Name */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    اسم الباب أو الفصل *
-                  </label>
-                  <input
-                    type="text"
-                    value={lecChapter}
-                    onChange={(e) => setLecChapter(e.target.value)}
-                    placeholder="مثال: الباب الأول: العناصر الانتقالية"
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-
-                {/* Cloudinary Fast Device Video Uploader Card */}
-                <div className="md:col-span-2 p-5 rounded-3xl bg-gradient-to-br from-teal-50/80 via-emerald-50/40 to-teal-100/30 dark:from-slate-800/80 dark:to-teal-950/30 border-2 border-teal-200 dark:border-teal-800 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center shadow-sm">
-                        <Film className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-teal-950 dark:text-teal-200 font-kufi">
-                          رفع فيديو المحاضرة مباشرة من جهازك (Cloudinary ⚡)
-                        </h4>
-                        <p className="text-xs text-teal-700/80 dark:text-teal-400">
-                          رفع فائق السرعة والخفة بدقة عالية ومعالجة تلقائية للبث السحابي المباشر.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-300">
-                        Cloud: {cloudName || 'chemistry-egypt'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* File input trigger */}
-                  <div className="border-2 border-dashed border-teal-400/80 dark:border-teal-600 rounded-2xl p-6 text-center bg-white/70 dark:bg-slate-900/60 hover:bg-white transition-colors relative cursor-pointer group">
-                    <input
-                      type="file"
-                      accept="video/mp4,video/webm,video/ogg,video/quicktime,video/*"
-                      onChange={handleCloudinaryVideoUpload}
-                      disabled={uploadingVideo}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
-                    />
-                    <div className="flex flex-col items-center justify-center space-y-2 pointer-events-none">
-                      <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300 flex items-center justify-center group-hover:scale-105 transition-transform">
-                        {uploadingVideo ? (
-                          <RefreshCw className="w-6 h-6 animate-spin text-teal-600" />
-                        ) : (
-                          <Upload className="w-6 h-6 text-teal-600" />
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-slate-800 dark:text-slate-100 font-kufi">
-                        {uploadingVideo ? 'جاري رفع ومعالجة الفيديو إلى Cloudinary...' : 'اضغط لاختيار فيديو المحاضرة من جهازك أو اسحبه هنا'}
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        يدعم جميع الصيغ (MP4, MKV, MOV, WEBM) · يتم توليد رابط البث السحابي المباشر فوراً
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Active Video Upload Progress Bar */}
-                  {uploadingVideo && (
-                    <UploadProgressBar
-                      label="جاري رفع الفيديو إلى Cloudinary..."
-                      progress={videoUploadProgress}
-                      meta={videoUploadMeta}
-                      fileName={videoFile?.name}
-                    />
-                  )}
-
-                  {/* Video Upload Success Notice */}
-                  {videoUploadSuccess && (
-                    <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5 font-kufi">
-                          <CheckCircle className="w-4 h-4 text-emerald-600" />
-                          {videoUploadNotice || 'تم تجهيز الفيديو بنجاح وأصبح جاهزاً للبث!'}
-                        </span>
-                        <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-md">
-                          {lecDuration}
-                        </span>
-                      </div>
-                      <div className="text-xs font-mono text-slate-600 dark:text-slate-300 truncate bg-white dark:bg-slate-900 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800 dir-ltr">
-                        {lecVideoUrl}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Video URL */}
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    رابط بث الفيديو (تم تعبئته تلقائياً من كلاودنري أو الصق رابط YouTube Embed) *
-                  </label>
-                  <input
-                    type="text"
-                    value={lecVideoUrl}
-                    onChange={(e) => setLecVideoUrl(e.target.value)}
-                    placeholder="https://www.youtube.com/embed/..."
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono dir-ltr"
-                  />
-                </div>
-
-                {/* Duration */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    مدة المحاضرة
-                  </label>
-                  <input
-                    type="text"
-                    value={lecDuration}
-                    onChange={(e) => setLecDuration(e.target.value)}
-                    placeholder="مثال: 55 دقيقة"
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-
-                {/* Attached Handout Name */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    اسم المذكرة المرفقة مع الدرس (اختياري)
-                  </label>
-                  <input
-                    type="text"
-                    value={lecPdfTitle}
-                    onChange={(e) => setLecPdfTitle(e.target.value)}
-                    placeholder="مثال: شيت تدريبات الباب الأول وحالات التأكسد"
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-
-                {/* Session Sequence Order */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    ترتيب الحصة في التسلسل (رقم الحصة) *
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={lecSessionOrder}
-                    onChange={(e) => setLecSessionOrder(Number(e.target.value))}
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono text-right"
-                  />
-                  <p className="text-[10px] text-slate-500">يستخدم لتطبيق نظام القفل المتسلسل للحصص (1 ثم 2 ثم 3...)</p>
-                </div>
-
-                {/* Associated Quiz for Unlocking */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    الكويز الإجباري المرتبط (مطلوب اجتيازه لفتح الحصة التالية)
-                  </label>
-                  <select
-                    value={lecQuizId}
-                    onChange={(e) => setLecQuizId(e.target.value)}
-                    className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="">بدون كويز إجباري</option>
-                    {quizzes
-                      .filter((q) => q.grade === lecGrade)
-                      .map((q) => (
-                        <option key={q.id} value={q.id}>
-                          {q.title} ({q.questions.length} أسئلة - {q.durationMinutes} دقيقة)
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Free Preview Toggle */}
-                <div className="space-y-1.5 flex items-center gap-3 pt-6 md:col-span-2">
-                  <input
-                    type="checkbox"
-                    id="isFree"
-                    checked={lecIsFree}
-                    onChange={(e) => setLecIsFree(e.target.checked)}
-                    className="w-5 h-5 accent-teal-600 rounded cursor-pointer"
-                  />
-                  <label htmlFor="isFree" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                    محاضرة تجريبية مجانية (مفتوحة لجميع زوار الموقع)
-                  </label>
-                </div>
-
-              </div>
-
-              {/* Description */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  وصف المحاضرة وأهم النقاط المشروحة
-                </label>
-                <textarea
-                  rows={3}
-                  value={lecDescription}
-                  onChange={(e) => setLecDescription(e.target.value)}
-                  placeholder="اكتب نبذة عن القوانين والمعادلات التي تم تغطيتها في الحصة..."
-                  className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              {/* Submit button */}
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={uploadingVideo}
-                  className="px-8 py-3.5 rounded-xl font-bold text-sm text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-md shadow-teal-700/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>{uploadingVideo ? 'جاري انتظار اكتمال رفع الفيديو...' : 'نشر المحاضرة الآن على المنصة'}</span>
-                </button>
-              </div>
-
-            </form>
-          </div>
-        )}
-
-        {/* ========================================================
-            TAB 2: LECTURES LIST (VIEW, EDIT & DELETE)
-        ======================================================== */}
-        {activeTab === 'lectures-list' && (
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                  المحاضرات المنشورة على المنصة ({lectures.length})
-                </h2>
-                <p className="text-sm text-slate-500">
-                  يمكنك مراجعة جميع الدروس وتعديل تفاصيلها أو حذفها بكل سهولة وبدون تعقيد.
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('upload-lecture')}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-              >
-                <Plus className="w-4 h-4" />
-                <span>إضافة درس جديد</span>
-              </button>
-            </div>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {lectures.map((lec) => (
-                <div key={lec.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
-                        {lec.gradeLabel}
-                      </span>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        حصة رقم {lec.sessionOrder || 1}
-                      </span>
-                      <span className="text-xs text-slate-500 font-mono">{lec.duration}</span>
-                      {lec.isFreePreview && (
-                        <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
-                          مجانية
-                        </span>
-                      )}
-                      {lec.quizId && (
-                        <span className="text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-md">
-                          مرتبطة بكويز إجباري
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi">
-                      {lec.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 line-clamp-1">{lec.description}</p>
-                    <div className="text-[11px] font-mono text-slate-400 truncate max-w-md dir-ltr">
-                      {lec.videoUrl}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() => setEditingLecture(lec)}
-                      className="px-3 py-1.5 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="تعديل المحاضرة"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>تعديل</span>
-                    </button>
-
-                    {deleteConfirmLecId === lec.id ? (
-                      <div className="flex items-center gap-1.5 p-1 bg-rose-50 dark:bg-rose-950/80 rounded-xl border border-rose-300 dark:border-rose-800">
-                        <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 px-1">حذف نهائي؟</span>
-                        <button
-                          onClick={() => {
-                            onDeleteLecture(lec.id);
-                            setDeleteConfirmLecId(null);
-                          }}
-                          className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          تأكيد
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmLecId(null)}
-                          className="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors cursor-pointer"
-                        >
-                          إلغاء
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteConfirmLecId(lec.id)}
-                        className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
-                        title="حذف المحاضرة"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {lectures.length === 0 && (
-                <div className="py-12 text-center text-slate-400">
-                  لا توجد محاضرات منشورة حالياً. ابدأ برفع أول محاضرة الآن!
-                </div>
-              )}
-            </div>
-
-            {/* Edit Lecture Modal */}
-            {editingLecture && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
-                        <Edit3 className="w-4 h-4" />
-                      </div>
-                      <h3 className="text-lg font-bold font-kufi text-slate-900 dark:text-white">
-                        تعديل تفاصيل المحاضرة
-                      </h3>
-                    </div>
-                    <button
-                      onClick={() => setEditingLecture(null)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleSaveEditedLecture} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        عنوان المحاضرة *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingLecture.title}
-                        onChange={(e) => setEditingLecture({ ...editingLecture, title: e.target.value })}
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                          السنة الدراسية
-                        </label>
-                        <select
-                          value={editingLecture.grade}
-                          onChange={(e) => {
-                            const g = e.target.value as GradeLevel;
-                            setEditingLecture({
-                              ...editingLecture,
-                              grade: g,
-                              gradeLabel: getGradeDisplayName(g, siteForm, 'ar'),
-                            });
-                          }}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        >
-                          {resolvedGrades.map((g) => (
-                            <option key={g.id} value={g.id}>
-                              {g.badgeAr}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                          اسم الباب أو الفصل
-                        </label>
-                        <input
-                          type="text"
-                          value={editingLecture.chapter}
-                          onChange={(e) => setEditingLecture({ ...editingLecture, chapter: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                          مدة المحاضرة
-                        </label>
-                        <input
-                          type="text"
-                          value={editingLecture.duration}
-                          onChange={(e) => setEditingLecture({ ...editingLecture, duration: e.target.value })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                          ترتيب الحصة في المنصة (Session Order)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={editingLecture.sessionOrder || 1}
-                          onChange={(e) => setEditingLecture({ ...editingLecture, sessionOrder: Number(e.target.value) })}
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        رابط الفيديو (Cloudinary URL أو YouTube Embed) *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingLecture.videoUrl}
-                        onChange={(e) => setEditingLecture({ ...editingLecture, videoUrl: e.target.value })}
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        الكويز الإجباري المرتبط
-                      </label>
-                      <select
-                        value={editingLecture.quizId || ''}
-                        onChange={(e) => setEditingLecture({ ...editingLecture, quizId: e.target.value || undefined })}
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      >
-                        <option value="">بدون كويز إجباري</option>
-                        {quizzes.map((q) => (
-                          <option key={q.id} value={q.id}>{q.title}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2">
-                      <input
-                        type="checkbox"
-                        id="editIsFree"
-                        checked={editingLecture.isFreePreview || false}
-                        onChange={(e) => setEditingLecture({ ...editingLecture, isFreePreview: e.target.checked })}
-                        className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
-                      />
-                      <label htmlFor="editIsFree" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                        محاضرة تجريبية مجانية لجميع الزوار
-                      </label>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        وصف المحاضرة
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={editingLecture.description}
-                        onChange={(e) => setEditingLecture({ ...editingLecture, description: e.target.value })}
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setEditingLecture(null)}
-                        className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
-                      >
-                        إلغاء
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer"
-                      >
-                        حفظ التعديلات
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================
-            TAB: QUESTION BANK & MCQs CREATOR
-        ======================================================== */}
-        {activeTab === 'quizzes-bank' && (
-          <TeacherQuizManager
-            quizzes={quizzes}
-            lectures={lectures}
-            cloudinaryConfig={cloudinaryConfig}
-            grades={resolvedGrades}
-            onAddQuiz={onAddQuiz}
-            onDeleteQuiz={onDeleteQuiz}
-          />
-        )}
-
-        {/* ========================================================
-            TAB 3: FILES & HANDOUTS MANAGEMENT (CLOUDINARY POWERED)
-        ======================================================== */}
-        {activeTab === 'files' && (
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-600">
-                    <Cloud className="w-5 h-5" />
-                  </span>
-                  <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                    رفع وإدارة المذكرات عبر Cloudinary ☁️
-                  </h2>
-                </div>
-                <p className="text-sm text-slate-500">
-                  ارفع ملازم الشرح والشيتات من جهازك مباشرة إلى كلاودنري مع متابعة المساحة الحقيقية المتبقية.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/70 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 font-mono">
-                  {attachments.length} ملفات منشورة
-                </span>
-              </div>
-            </div>
-
-            {/* REAL-TIME CLOUDINARY STORAGE QUOTA MONITOR CARD */}
-            <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-950 to-teal-950 text-white border border-teal-800/50 shadow-lg space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-xs font-bold text-teal-300 font-mono">سعة تخزين كلاودنري السحابية (Cloudinary Live Storage)</span>
-                  </div>
-                  <h3 className="text-xl font-bold font-kufi">
-                    المساحة المتبقية: <span className="text-amber-300 font-mono">{remainingGB} GB</span> من إجمالي {CLOUDINARY_TOTAL_QUOTA_GB} GB
-                  </h3>
-                </div>
-
-                <div className="text-left sm:text-right font-mono">
-                  <div className="text-xs text-slate-400">المستهلك الفعلي:</div>
-                  <div className="text-lg font-bold text-teal-300">
-                    {totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`}
-                    <span className="text-xs text-slate-400 font-normal mr-1.5">({usedPercentage}%)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Visual Storage Progress Bar */}
-              <div className="space-y-1.5">
-                <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      usedPercentage > 85 ? 'bg-rose-500' : usedPercentage > 60 ? 'bg-amber-400' : 'bg-emerald-400'
-                    }`}
-                    style={{ width: `${Math.max(3, usedPercentage)}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                  <span>0 GB</span>
-                  <span>المستخدم: {totalUsedGB} GB ({lectures.length} فيديو + {attachments.length} ملزمة)</span>
-                  <span>الحد الأقصى المجاني: {CLOUDINARY_TOTAL_QUOTA_GB} GB</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-xs text-teal-200 flex items-center justify-between gap-2 flex-wrap">
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>تحديث لايف: يمكنك حذف أي مذكرة أو ملف فائض لتفريغ المساحة فوراً بدون إعادة تحميل الصفحة!</span>
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">حساب: {cloudName}</span>
-              </div>
-            </div>
-
-            {/* Inline Notifications */}
-            {fileFormSuccess && (
-              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-sm font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>{fileFormSuccess}</span>
-              </div>
-            )}
-
-            {fileFormError && (
-              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-sm font-bold text-rose-800 dark:text-rose-200 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                <span>{fileFormError}</span>
-              </div>
-            )}
-
-            {/* DIRECT CLOUDINARY DEVICE FILE UPLOADER */}
-            <form onSubmit={handleCreateAttachment} className="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-teal-200/80 dark:border-slate-700 space-y-5">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi flex items-center gap-2">
-                <Plus className="w-5 h-5 text-teal-600" />
-                <span>رفع مذكرة أو ملزمة جديدة من جهازك إلى كلاودنري 📂</span>
-              </h3>
-
-              {/* Direct File Picker Dropzone */}
-              <div className="p-6 rounded-2xl border-2 border-dashed border-teal-300 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-950/20 text-center space-y-3 relative">
-                <input
-                  type="file"
-                  id="handoutFileInput"
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    e.target.value = '';
-                    if (f) handleSelectHandoutFile(f);
-                  }}
-                />
-
-                <div className="w-12 h-12 rounded-2xl bg-teal-600 text-white flex items-center justify-center mx-auto shadow-md">
-                  <Upload className="w-6 h-6" />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="handoutFileInput"
-                    className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer transition-colors inline-block shadow-sm"
-                  >
-                    اختر ملف المذكرة من الجهاز (PDF, Word, صور)
-                  </label>
-                  <p className="text-xs text-slate-500 mt-2">
-                    يتم رفع الملف مباشرة إلى حساب Cloudinary الخاص بك وحساب حجمه الدقيق
-                  </p>
-                </div>
-
-                {/* Live Progress Bar for Handout Upload */}
-                {uploadingHandout && (
-                  <div className="max-w-md mx-auto pt-2">
-                    <UploadProgressBar
-                      label="جاري رفع المذكرة إلى Cloudinary..."
-                      progress={handoutProgress}
-                      meta={handoutUploadMeta}
-                      fileName={handoutFile?.name}
-                    />
-                  </div>
-                )}
-
-                {handoutFile && !uploadingHandout && (
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 text-xs font-bold font-mono">
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    <span>تم تحديد: {handoutFile.name} ({fileSize})</span>
-                  </div>
-                )}
-              </div>
-
-              {/* File Metadata Form */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">عنوان المذكرة *</label>
-                  <input
-                    type="text"
-                    required
-                    value={fileTitle}
-                    onChange={(e) => setFileTitle(e.target.value)}
-                    placeholder="مثال: مذكرة الكيمياء العضوية الشاملة"
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الصف الدراسي</label>
-                  <select
-                    value={fileGrade}
-                    onChange={(e) => setFileGrade(e.target.value as GradeLevel)}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                  >
-                    {resolvedGrades.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.badgeAr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">الباب أو الوحدة</label>
-                  <input
-                    type="text"
-                    value={fileChapter}
-                    onChange={(e) => setFileChapter(e.target.value)}
-                    placeholder="مثال: الباب الأول: العناصر الانتقالية"
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-xs text-slate-500 font-mono">
-                  الحجم المسجل: <span className="font-bold text-teal-600">{fileSize}</span>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={uploadingHandout}
-                  className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-2"
-                >
-                  <Cloud className="w-4 h-4" />
-                  <span>تأكيد ونشر المذكرة في مكتبة الطلاب</span>
-                </button>
-              </div>
-            </form>
-
-            {/* List of attachments with Space Reclamation Button */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white font-kufi">
-                  المذكرات والملفات المنشورة حالياً ({attachments.length}):
-                </h4>
-                <span className="text-xs text-slate-500 font-mono">
-                  احذف أي ملف لتفريغ المساحة فوراً
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {attachments.map((file) => (
-                  <div key={file.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-teal-300 transition-all flex items-center justify-between gap-3 shadow-xs">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
-                        <FileText className="w-5 h-5" />
-                      </div>
-                      <div className="truncate">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{file.title}</div>
-                        <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2 mt-0.5">
-                          <span className="text-teal-600 font-semibold">{file.gradeLabel}</span>
-                          <span>•</span>
-                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold">{file.fileSize}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {file.downloadUrl && file.downloadUrl !== '#' && (
-                        <a
-                          href={file.downloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/50 rounded-lg transition-colors inline-flex items-center justify-center"
-                          title="معاينة الملف"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      )}
-
-                      {deleteConfirmFileId === file.id ? (
-                        <div className="flex items-center gap-1.5 p-1 bg-rose-50 dark:bg-rose-950/80 rounded-xl border border-rose-300 dark:border-rose-800">
-                          <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 px-1">تفريغ المساحة؟</span>
-                          <button
-                            onClick={() => {
-                              onDeleteAttachment(file.id);
-                              setDeleteConfirmFileId(null);
-                              setFileFormSuccess('تم حذف الملف وتفريغ المساحة السحابية بنجاح! 🗑️');
-                              setTimeout(() => setFileFormSuccess(null), 3000);
-                            }}
-                            className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                          >
-                            تأكيد
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmFileId(null)}
-                            className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors cursor-pointer"
-                          >
-                            إلغاء
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleteConfirmFileId(file.id)}
-                          className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer text-[11px] font-bold flex items-center gap-1 border border-rose-200 dark:border-rose-900/50"
-                          title="حذف المذكرة لتفريغ مساحة التخزين"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>حذف وتفريغ</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {attachments.length === 0 && (
-                  <div className="md:col-span-2 py-10 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-                    لا توجد مذكرات مرفوعة حالياً. مساحتك السحابية جاهزة بالكامل (25 GB متاحة).
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ========================================================
-            TAB 4: CLOUDINARY UPLOADER & CONFIG
-        ======================================================== */}
-        {activeTab === 'cloudinary' && (
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-8">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-600">
-                  <Cloud className="w-5 h-5" />
-                </span>
-                <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                  إعدادات ورفع وسائط Cloudinary ☁️
-                </h2>
-              </div>
-              <p className="text-sm text-slate-500">
-                ارفع الصور والمذكرات مباشرة من جهازك باستخدام الـ Upload Preset والـ Cloud Name الخاصين بك.
-              </p>
-            </div>
-
-            {/* Cloudinary Configuration Form */}
-            <form onSubmit={handleSaveConfig} className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 font-kufi">
-                  بيانات حساب كلاودنري (Cloudinary Credentials):
-                </h3>
-                {saveSuccessMsg && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    تم حفظ الإعدادات بنجاح!
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    اسم السحابة (Cloud Name) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={cloudName}
-                    onChange={(e) => setCloudName(e.target.value)}
-                    placeholder="مثال: chemistry-egypt"
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    إعداد الرفع غير الموقع (Upload Preset) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={uploadPreset}
-                    onChange={(e) => setUploadPreset(e.target.value)}
-                    placeholder="مثال: chemistry_uploads"
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors cursor-pointer"
-                >
-                  حفظ إعدادات كلاودنري
-                </button>
-                <span className="text-[11px] text-slate-500">
-                  تأكد من تفعيل "Unsigned" في إعدادات Upload Preset في لوحة Cloudinary.
-                </span>
-              </div>
-            </form>
-
-            {/* Direct Device File Uploader */}
-            <div className="space-y-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white font-kufi">
-                رفع صورة أو مذكرة من الجهاز إلى Cloudinary مباشرة:
-              </h3>
-
-              <div className="border-2 border-dashed border-teal-300 dark:border-teal-700 rounded-3xl p-8 text-center bg-[#fafffb] dark:bg-slate-900/60 hover:bg-teal-50/50 dark:hover:bg-slate-800 transition-colors relative">
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleDeviceFileUpload}
-                  disabled={uploadingFile}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                />
-
-                <div className="flex flex-col items-center justify-center space-y-3 pointer-events-none">
-                  <div className="w-14 h-14 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
-                    {uploadingFile ? (
-                      <RefreshCw className="w-6 h-6 animate-spin text-teal-600" />
-                    ) : (
-                      <Upload className="w-6 h-6" />
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="text-base font-bold text-slate-800 dark:text-slate-200 font-kufi">
-                      {uploadingFile ? 'جاري رفع الملف إلى Cloudinary...' : 'اضغط لاختيار صورة أو مذكرة من جهازك'}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      يدعم صور الشروحات (PNG, JPG, WEBP) والمستندات (PDF)
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Active File Upload Progress Bar */}
-              {uploadingFile && (
-                <UploadProgressBar
-                  label="جاري رفع الملف إلى Cloudinary..."
-                  progress={fileUploadProgress}
-                  meta={fileUploadMeta}
-                  fileName={uploadedFileName}
-                />
-              )}
-
-              {/* Upload Result & Preview */}
-              {uploadedUrl && (
-                <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-teal-800 dark:text-teal-300 font-kufi flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4 text-emerald-600" />
-                      تم رفع الملف بنجاح!
-                    </span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(uploadedUrl);
-                        setCopiedUrlSuccess(true);
-                        setTimeout(() => setCopiedUrlSuccess(false), 2500);
-                      }}
-                      className="px-3 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1 text-slate-700 dark:text-slate-200 cursor-pointer"
-                    >
-                      {copiedUrlSuccess ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-600 font-bold">تم النسخ!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>نسخ الرابط</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-600 dark:text-slate-300 truncate dir-ltr">
-                    {uploadedUrl}
-                  </div>
-
-                  {/* Thumbnail preview if image */}
-                  <div className="flex items-center gap-4 pt-1">
-                    <img
-                      src={uploadedUrl}
-                      alt="معاينة الملف المرفوع"
-                      className="w-20 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
-                    <div className="text-xs text-slate-600 dark:text-slate-400">
-                      يمكنك الآن استخدام هذا الرابط كصورة مصغرة لأي محاضرة أو كمذكرة للطلاب.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {uploadError && (
-                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{uploadError}</span>
-                </div>
-              )}
-
-            </div>
-
-          </div>
-        )}
-
-        {/* ========================================================
-            TAB 5: PROFESSIONAL MASTER SITE CUSTOMIZER (Integrated)
-            Requested by user: "ادمج لو حد الادمن ورفع الفديوهات والدروس كله مع بعض مش لازم ادوس على © دي وخلي تعديل الموقع اكتر احترافيه"
-        ======================================================== */}
-        {activeTab === 'site-customizer' && (
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border-2 border-teal-500/40 dark:border-teal-500/30 shadow-lg space-y-6">
-            
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="p-1.5 rounded-xl bg-amber-400 text-slate-950">
-                    <Palette className="w-5 h-5" />
-                  </span>
-                  <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-                    لوحة تخصيص وهوية الموقع الاحترافية
-                  </h2>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-500">
-                  تحكم مباشر وفوري في كل نصوص وصور وألوان المنصة بدون الحاجة لرموز سرية!
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {siteSaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                    <Check className="w-4 h-4" />
-                    تم حفظ التغييرات وتطبيقها!
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={handleResetSiteDefaults}
-                  className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCcw className="w-3.5 h-3.5" />
-                  <span>استعادة الافتراضي</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Customizer Sub-Tabs */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('general')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'general' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Type className="w-3.5 h-3.5" />
-                <span>الاسم والعناوين</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('images')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'images' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                <span>صورة الأستاذ</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('fonts-colors')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'fonts-colors' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Palette className="w-3.5 h-3.5" />
-                <span>الخطوط والألوان</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('features')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'features' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>كروت المميزات (4)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('contact')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'contact' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>التواصل والمقرات</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('footer')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'footer' ? 'bg-amber-400 text-slate-950 shadow-xs font-extrabold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <LinkIcon className="w-3.5 h-3.5" />
-                <span>الفوتر والروابط والنبذة 🔗</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('tech')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'tech' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>Google Client ID</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCustomizerSubTab('credits')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  customizerSubTab === 'credits' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>حقوق المبرمج (Mazen)</span>
-              </button>
-            </div>
-
-            {/* Customizer Sub-Tab Content */}
-            <form onSubmit={handleSaveSiteConfigSubmit} className="space-y-6 pt-2">
-              
-              {/* SUB-TAB 1: GENERAL */}
-              {customizerSubTab === 'general' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        اسم المدرس
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.teacherName}
-                        onChange={(e) => setSiteForm({ ...siteForm, teacherName: e.target.value })}
-                        className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        اللقب / الشعار السريع
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.tagline}
-                        onChange={(e) => setSiteForm({ ...siteForm, tagline: e.target.value })}
-                        className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      شريط البادج في أعلى الهيرو
-                    </label>
-                    <input
-                      type="text"
-                      value={siteForm.heroBadge}
-                      onChange={(e) => setSiteForm({ ...siteForm, heroBadge: e.target.value })}
-                      className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      الوصف التعريفي في الهيرو
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={siteForm.heroDescription}
-                      onChange={(e) => setSiteForm({ ...siteForm, heroDescription: e.target.value })}
-                      className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 2: IMAGES */}
-              {customizerSubTab === 'images' && (
-                <div className="space-y-6">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      رابط صورة الأستاذ الشخصية (URL)
-                    </label>
-                    <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                      <input
-                        type="text"
-                        value={siteForm.profileImageUrl}
-                        onChange={(e) => setSiteForm({ ...siteForm, profileImageUrl: e.target.value })}
-                        placeholder="https://res.cloudinary.com/..."
-                        className="flex-1 p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono dir-ltr"
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const saved = await onSaveSiteConfig({ ...siteConfig, ...siteForm, profileImageUrl: siteForm.profileImageUrl });
-                          if (saved === false) {
-                            setAdminNotice({ type: 'error', message: 'تعذر حفظ رابط الصورة في السحابة، يرجى التحقق من الاتصال والصلاحيات.' });
-                          } else {
-                            setAdminNotice({ type: 'success', message: 'تم حفظ وتثبيت رابط صورة الأستاذ في السحابة لجميع المستخدمين فورياً! ☁️' });
-                          }
-                        }}
-                        className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>حفظ وتثبيت للجميع الآن</span>
-                      </button>
-                      {siteForm.profileImageUrl && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setSiteForm({ ...siteForm, profileImageUrl: '' });
-                            const saved = await onSaveSiteConfig({ ...siteConfig, ...siteForm, profileImageUrl: '' });
-                            if (saved === false) {
-                              setAdminNotice({ type: 'error', message: 'تعذر مسح الصورة من السحابة.' });
-                            } else {
-                              setAdminNotice({ type: 'success', message: 'تم مسح صورة الأستاذ القديمة من المنصة بالكامل.' });
-                            }
-                          }}
-                          className="px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>مسح الصورة</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Device upload button */}
-                  <div className="p-5 rounded-2xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 space-y-2">
-                    <span className="text-xs font-bold text-teal-800 dark:text-teal-300 font-kufi flex items-center gap-1.5">
-                      <Cloud className="w-4 h-4" />
-                      <span>رفع صورة جديدة للأستاذ من جهازك مباشرة إلى Cloudinary:</span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleTeacherPhotoUpload}
-                      disabled={uploadingTeacherPhoto}
-                      className="text-xs text-slate-600 dark:text-slate-300"
-                    />
-                    {uploadingTeacherPhoto && (
-                      <div className="pt-2">
-                        <UploadProgressBar
-                          label="جاري رفع وتحديث صورة الأستاذ..."
-                          progress={teacherPhotoProgress}
-                          meta={teacherPhotoMeta}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Preview container */}
-                  <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-[#fafffb] dark:bg-slate-800/60">
-                    <img
-                      src={siteForm.profileImageUrl || '/images/teacher_placeholder.svg'}
-                      alt="معاينة الصورة"
-                      className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/teacher_placeholder.svg';
-                      }}
-                    />
-                    <div className="space-y-1">
-                      <div className="text-sm font-bold font-kufi text-slate-900 dark:text-white">
-                        معاينة صورة الأستاذ {siteForm.teacherName}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        تظهر هذه الصورة في كارت الهيرو الرئيسي مع التدرج اللوني البرتقالي الفخم.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 3: FONTS & COLORS */}
-              {customizerSubTab === 'fonts-colors' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        خط اسم المدرس والعناوين المزخرفة
-                      </label>
-                      <select
-                        value={siteForm.calligraphyFont}
-                        onChange={(e) => setSiteForm({ ...siteForm, calligraphyFont: e.target.value as any })}
-                        className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      >
-                        <option value="Reem Kufi">الخط الكوفي الحديث (Reem Kufi - المفضل)</option>
-                        <option value="Aref Ruqaa">الخط الرقعي الزخرفي (Aref Ruqaa)</option>
-                        <option value="Amiri">الخط الأميري التراثي (Amiri)</option>
-                        <option value="Cairo">خط كايرو العصري (Cairo)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        الخط العام لنصوص الموقع
-                      </label>
-                      <select
-                        value={siteForm.bodyFont}
-                        onChange={(e) => setSiteForm({ ...siteForm, bodyFont: e.target.value as any })}
-                        className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      >
-                        <option value="Cairo">خط كايرو (Cairo - افتراضي)</option>
-                        <option value="Tajawal">خط تجوال (Tajawal)</option>
-                        <option value="Almarai">خط المراعي (Almarai)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      اللون السيم الأساسي للموقع:
-                    </label>
-                    <div className="flex flex-wrap items-center gap-3">
-                      {[
-                        { name: 'التيل الكيميائي العميق (Deep Teal)', color: '#0d9488' },
-                        { name: 'الزمرد الأخضر (Emerald)', color: '#059669' },
-                        { name: 'الأزرق الملكي (Royal Blue)', color: '#1d4ed8' },
-                        { name: 'البنفسجي العلمي (Purple)', color: '#7c3aed' },
-                      ].map((c) => (
-                        <button
-                          key={c.color}
-                          type="button"
-                          onClick={() => setSiteForm({ ...siteForm, primaryColor: c.color })}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
-                            siteForm.primaryColor === c.color
-                              ? 'border-slate-900 dark:border-white shadow-md bg-slate-50 dark:bg-slate-800'
-                              : 'border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          <span className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
-                          <span>{c.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 4: FEATURES CARDS */}
-              {customizerSubTab === 'features' && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                    <div className="font-bold text-xs text-amber-600 font-kufi">كارت 1 (الجوائز والمكافآت)</div>
-                    <input
-                      type="text"
-                      value={siteForm.feature1Title}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature1Title: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                    <textarea
-                      rows={2}
-                      value={siteForm.feature1Desc}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature1Desc: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                  </div>
-
-                  <div className="p-4 rounded-2xl border border-teal-500 bg-teal-50/40 dark:bg-teal-950/40 space-y-2">
-                    <div className="font-bold text-xs text-teal-700 dark:text-teal-300 font-kufi">كارت 2 (شرح الكيمستري البارز)</div>
-                    <input
-                      type="text"
-                      value={siteForm.feature2Title}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature2Title: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                    <textarea
-                      rows={2}
-                      value={siteForm.feature2Desc}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature2Desc: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                  </div>
-
-                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                    <div className="font-bold text-xs text-teal-600 font-kufi">كارت 3 (التقييمات الدورية)</div>
-                    <input
-                      type="text"
-                      value={siteForm.feature3Title}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature3Title: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                    <textarea
-                      rows={2}
-                      value={siteForm.feature3Desc}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature3Desc: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                  </div>
-
-                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                    <div className="font-bold text-xs text-sky-600 font-kufi">كارت 4 (المتابعة المستمرة)</div>
-                    <input
-                      type="text"
-                      value={siteForm.feature4Title}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature4Title: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                    <textarea
-                      rows={2}
-                      value={siteForm.feature4Desc}
-                      onChange={(e) => setSiteForm({ ...siteForm, feature4Desc: e.target.value })}
-                      className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 5: CONTACT & BRANCHES */}
-              {customizerSubTab === 'contact' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        رقم هاتف الدعم الأول
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.phone1}
-                        onChange={(e) => setSiteForm({ ...siteForm, phone1: e.target.value })}
-                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        رقم هاتف الدعم الثاني
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.phone2}
-                        onChange={(e) => setSiteForm({ ...siteForm, phone2: e.target.value })}
-                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      رقم واتساب المباشر للطلاب وأولياء الأمور
-                    </label>
-                    <input
-                      type="text"
-                      value={siteForm.whatsappNumber}
-                      onChange={(e) => setSiteForm({ ...siteForm, whatsappNumber: e.target.value })}
-                      placeholder="2010XXXXXXXX"
-                      className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                      مقرات السنتر والفروع
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={siteForm.centerBranches}
-                      onChange={(e) => setSiteForm({ ...siteForm, centerBranches: e.target.value })}
-                      className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 6: GOOGLE CLIENT ID */}
-              {customizerSubTab === 'tech' && (
-                <div className="p-5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 space-y-3">
-                  <label className="text-sm font-bold text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-1.5">
-                    <KeyRound className="w-4 h-4 text-teal-600" />
-                    <span>معرف عميل جوجل (Google OAuth Client ID):</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={siteForm.googleClientId || ''}
-                    onChange={(e) => setSiteForm({ ...siteForm, googleClientId: e.target.value })}
-                    placeholder="xxxxxxxxxx.apps.googleusercontent.com"
-                    className="w-full p-3 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-left"
-                  />
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    هذا المعرف مسؤول عن فتح نافذة اختيار حسابات Google الحقيقية للطلاب دون أي قيود.
-                  </p>
-                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                    <span className="font-bold text-teal-700 dark:text-teal-300">إيميل المسؤول التلقائي: </span>
-                    <span className="font-mono text-amber-500">mizoo2y2@gmail.com</span>
-                    <span className="text-slate-400 mr-2">(يدخل كمسؤول ومدير النظام فوراً عند تسجيل الدخول)</span>
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB 7: DEVELOPER CREDITS */}
-              {customizerSubTab === 'credits' && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200">
-                    حقوق التصميم والبرمجة تظهر في الفوتر بوضوح: <strong>تصميم وبرمجة: Mazen Mohamed</strong>.
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        اسم المصمم والمبرمج
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.developerName}
-                        onChange={(e) => setSiteForm({ ...siteForm, developerName: e.target.value })}
-                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        اليوزر أو الحساب
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.developerHandle}
-                        onChange={(e) => setSiteForm({ ...siteForm, developerHandle: e.target.value })}
-                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                        رابط حساب المبرمج / البورتفوليو (Developer URL)
-                      </label>
-                      <input
-                        type="text"
-                        value={siteForm.developerUrl}
-                        onChange={(e) => setSiteForm({ ...siteForm, developerUrl: e.target.value })}
-                        placeholder="https://github.com/mazenmohamed"
-                        className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr text-right"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SUB-TAB: FOOTER CONTENT, BIO & QUICK LINKS */}
-              {customizerSubTab === 'footer' && (
-                <div className="space-y-6">
-                  {/* Bio in Footer */}
-                  <div className="p-5 rounded-2xl bg-teal-50/50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 space-y-3">
-                    <label className="text-xs font-bold text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-amber-500" />
-                      <span>نبذة الأستاذ في الفوتر (Footer Bio)</span>
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={siteForm.footerBio || ''}
-                      onChange={(e) => setSiteForm({ ...siteForm, footerBio: e.target.value })}
-                      placeholder="اكتب النبذة التي تظهر لجميع الزوار في أسفل الموقع..."
-                      className="w-full p-3 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 leading-relaxed"
-                    />
-                    <p className="text-[11px] text-slate-500">
-                      هذا النص يظهر في أول عمود بالفوتر أسفل اسم الأستاذ مباشرة.
-                    </p>
-                  </div>
-
-                  {/* Quick Links Manager */}
-                  <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-900 dark:text-white font-kufi flex items-center gap-1.5">
-                        <LinkIcon className="w-4 h-4 text-teal-600" />
-                        <span>روابط المنصة السريعة في الفوتر</span>
-                      </label>
-                      <span className="text-[11px] text-slate-500 font-mono">
-                        {(siteForm.footerQuickLinks || []).length} روابط
-                      </span>
-                    </div>
-
-                    {/* Existing Links List */}
-                    <div className="space-y-2">
-                      {(siteForm.footerQuickLinks || []).map((link) => (
-                        <div key={link.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{link.title}</span>
-                            <span className="text-slate-400 font-mono text-[10px] truncate dir-ltr">({link.url})</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveQuickLink(link.id)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
-                            title="حذف هذا الرابط"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Add New Link */}
-                    <div className="p-3 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 space-y-2">
-                      <div className="text-[11px] font-bold text-teal-800 dark:text-teal-300">إضافة رابط فوتر جديد:</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={newQuickLinkTitle}
-                          onChange={(e) => setNewQuickLinkTitle(e.target.value)}
-                          placeholder="عنوان الرابط (مثال: شروط الخدمة)"
-                          className="p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                        />
-                        <input
-                          type="text"
-                          value={newQuickLinkUrl}
-                          onChange={(e) => setNewQuickLinkUrl(e.target.value)}
-                          placeholder="الرابط (مثال: #terms أو https://...)"
-                          className="p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-right"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddQuickLink}
-                        className="px-4 py-1.5 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-700 text-white cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>إضافة الرابط للفوتر</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Designer & Developer Quick Settings */}
-                  <div className="p-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 space-y-3">
-                    <div className="text-xs font-bold text-amber-900 dark:text-amber-200 font-kufi flex items-center gap-1.5">
-                      <User className="w-4 h-4 text-amber-600" />
-                      <span>حقوق المصمم والمبرمج في أسفل الفوتر (Mazen Mohamed @mazenmohamed)</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">اسم المبرمج</label>
-                        <input
-                          type="text"
-                          value={siteForm.developerName}
-                          onChange={(e) => setSiteForm({ ...siteForm, developerName: e.target.value })}
-                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">اليوزر / المعرف</label>
-                        <input
-                          type="text"
-                          value={siteForm.developerHandle}
-                          onChange={(e) => setSiteForm({ ...siteForm, developerHandle: e.target.value })}
-                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr text-right"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">رابط الحساب / البورتفوليو</label>
-                        <input
-                          type="text"
-                          value={siteForm.developerUrl}
-                          onChange={(e) => setSiteForm({ ...siteForm, developerUrl: e.target.value })}
-                          className="w-full p-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono dir-ltr text-right"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Save Button for Site Customizer */}
-              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <button
-                  type="submit"
-                  className="px-8 py-3 rounded-xl font-bold text-sm text-white bg-teal-600 hover:bg-teal-700 active:scale-98 shadow-md shadow-teal-700/20 transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>حفظ وتحديث الموقع فوراً</span>
-                </button>
-
-                {siteSaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                    <Check className="w-4 h-4" />
-                    تم تطبيق التعديلات على الموقع!
-                  </span>
-                )}
-              </div>
-
-            </form>
-
-          </div>
-        )}
-
+          {(activeTab === 'upload-lecture' || activeTab === 'lectures-list') && (
+            <LecturesTab
+              mode={activeTab === 'upload-lecture' ? 'upload' : 'list'}
+              lectures={lectures}
+              quizzes={quizzes}
+              resolvedGrades={resolvedGrades}
+              siteForm={siteForm}
+              cloudinaryConfig={cloudinaryConfig}
+              onAddLecture={onAddLecture}
+              onUpdateLecture={onUpdateLecture}
+              onDeleteLecture={onDeleteLecture}
+              onSwitchMode={(m) => setActiveTab(m === 'upload' ? 'upload-lecture' : 'lectures-list')}
+            />
+          )}
+
+          {activeTab === 'quizzes-bank' && (
+            <TeacherQuizManager
+              quizzes={quizzes}
+              lectures={lectures}
+              cloudinaryConfig={cloudinaryConfig}
+              grades={resolvedGrades}
+              onAddQuiz={onAddQuiz}
+              onDeleteQuiz={onDeleteQuiz}
+            />
+          )}
+
+          {activeTab === 'files' && (
+            <FilesTab
+              attachments={attachments}
+              lectures={lectures}
+              resolvedGrades={resolvedGrades}
+              siteForm={siteForm}
+              cloudinaryConfig={cloudinaryConfig}
+              totalUsedMB={totalUsedMB}
+              totalUsedGB={totalUsedGB}
+              remainingGB={remainingGB}
+              usedPercentage={usedPercentage}
+              totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
+              onAddAttachment={onAddAttachment}
+              onDeleteAttachment={onDeleteAttachment}
+            />
+          )}
+
+          {activeTab === 'cloudinary' && (
+            <CloudinaryTab
+              cloudinaryConfig={cloudinaryConfig}
+              onSaveCloudinaryConfig={onSaveCloudinaryConfig}
+            />
+          )}
+
+          {activeTab === 'site-customizer' && (
+            <SiteCustomizerTab
+              siteConfig={siteConfig}
+              siteForm={siteForm}
+              setSiteForm={setSiteForm}
+              cloudinaryConfig={cloudinaryConfig}
+              onSaveSiteConfig={onSaveSiteConfig}
+            />
+          )}
         </main>
       </div>
 
@@ -3469,14 +614,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="flex items-center gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  onResetAllData?.();
-                  setResetConfirmOpen(false);
-                  setAdminNotice({ type: 'success', message: 'تم تصفير وإفراغ جميع بيانات المنصة بنجاح! المنصة الآن جاهزة لإضافة بيانات حقيقية.' });
+                disabled={resetting}
+                onClick={async () => {
+                  setResetting(true);
+                  try {
+                    await onResetAllData?.();
+                    setResetConfirmOpen(false);
+                  } finally {
+                    setResetting(false);
+                  }
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
               >
-                نعم، صفر كل البيانات الآن
+                {resetting ? 'جاري التصفير...' : 'نعم، صفر كل البيانات الآن'}
               </button>
               <button
                 type="button"
@@ -3489,7 +639,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </div>
       )}
-
     </div>
   );
 };

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Play,
   CheckCircle2,
   Clock,
   FileText,
@@ -11,19 +10,20 @@ import {
   ChevronLeft,
   Video,
   Check,
-  HelpCircle,
   Lock,
   AlertTriangle,
-  Trophy,
   Atom,
   LayoutDashboard,
-  ZoomIn,
-  X,
+  Eye,
 } from 'lucide-react';
 import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile } from '../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { useLanguage } from '../context/LanguageContext';
+import { MediaPreviewModal, detectMediaKind } from './MediaPreview';
+import { QuizRunner } from './student/QuizRunner';
+import { HandoutsTab } from './student/HandoutsTab';
+import { PeriodicTableTab } from './student/PeriodicTableTab';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -35,19 +35,6 @@ interface StudentPortalProps {
   onOpenTeacherDashboard: () => void;
   onUpdateStudentProfile?: (updatedUser: UserProfile) => void;
 }
-
-const TRANSITION_ELEMENTS = [
-  { sym: 'Sc', num: 21, name: 'سكانديوم', conf: '[Ar] 4s² 3d¹', ox: '+3', note: 'عنصر نادر شديد الصلابة وخفيف الوزن، يُستخدم في سبائك الطائرات المقاتلة.' },
-  { sym: 'Ti', num: 22, name: 'تيتانيوم', conf: '[Ar] 4s² 3d²', ox: '+2, +3, +4', note: 'لا يرفضه الجسم البشري، يُستخدم في زراعة الأسنان والمفاصل الصناعية.' },
-  { sym: 'V', num: 23, name: 'فاناديوم', conf: '[Ar] 4s² 3d³', ox: '+2, +3, +4, +5', note: 'يُضاف للصلب لصناعة زنبركات السيارات لمقاومة التآكل والصلابة العالية.' },
-  { sym: 'Cr', num: 24, name: 'كروم', conf: '[Ar] 4s¹ 3d⁵ (شاذ)', ox: '+2, +3, +6', note: 'شاذ في التوزيع الإلكتروني لأن المستوى 3d نصف ممتلئ يكون أكثر استقراراً.' },
-  { sym: 'Mn', num: 25, name: 'منجنيز', conf: '[Ar] 4s² 3d⁵', ox: '+2 إلى +7', note: 'هش جداً في حالته النقية لذلك يُستخدم دائماً في صورة سبائك مثل سبيكة خطوط السكك الحديدية.' },
-  { sym: 'Fe', num: 26, name: 'حديد', conf: '[Ar] 4s² 3d⁶', ox: '+2, +3', note: 'عصب الصناعات الثقيلة وأكثر عناصر السلسلة الانتقالية الأولى استخداماً.' },
-  { sym: 'Co', num: 27, name: 'كوبالت', conf: '[Ar] 4s² 3d⁷', ox: '+2, +3', note: 'يشبه الحديد في القابلية للتمغنط، ونظيره المشع الكوبالت 60 يُستخدم في حفظ الأغذية والكشف عن الأورام.' },
-  { sym: 'Ni', num: 28, name: 'نيكل', conf: '[Ar] 4s² 3d⁸', ox: '+2, +3', note: 'المجال التطبيقي: النيكل المجزأ عامل حفاز في هدرجة الزيوت النباتية.' },
-  { sym: 'Cu', num: 29, name: 'نحاس', conf: '[Ar] 4s¹ 3d¹⁰ (شاذ)', ox: '+1, +2', note: 'شاذ في التوزيع الإلكتروني لأن المستوى 3d تام الامتلاء يمنح الذرة استقراراً أعلى.' },
-  { sym: 'Zn', num: 30, name: 'خارصين', conf: '[Ar] 4s² 3d¹⁰', ox: '+2 فقط', note: 'يُستخدم في جلفنة المعادن لحمايتها من الصدأ (ليس عنصراً انتقالياً لانشغال 3d التام).' },
-];
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
   currentUser,
@@ -95,7 +82,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     filteredLectures[0] || lectures[0] || null
   );
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
-  const [selectedElementSym, setSelectedElementSym] = useState<string>('Cr');
+  const [lecturePdfPreviewOpen, setLecturePdfPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (filteredLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
@@ -103,14 +90,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     } else if (filteredLectures.length === 0) {
       setActiveLecture(null);
     }
-  }, [selectedGrade, filteredLectures]);
+  }, [selectedGrade, filteredLectures, activeLecture]);
 
   // Quiz state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [showQuizCelebration, setShowQuizCelebration] = useState<string | null>(null);
-  const [enlargedQuizImage, setEnlargedQuizImage] = useState<string | null>(null);
 
   // Per-lecture persistent quick notes
   const [studentNotes, setStudentNotes] = useState<string>('');
@@ -269,9 +255,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     filteredQuizzes[0] ||
     null;
 
-  const inspectedElement =
-    TRANSITION_ELEMENTS.find((el) => el.sym === selectedElementSym) || TRANSITION_ELEMENTS[0];
-
   if (!currentUser) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center font-cairo">
@@ -370,7 +353,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
         {/* Desktop Segmented Navigation & Teacher Grade Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Desktop Module Tabs (hidden on mobile because mobile uses Fixed Bottom Tab Bar) */}
+          {/* Desktop Module Tabs */}
           <div className="hidden lg:flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
             <button
               type="button"
@@ -467,9 +450,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           )}
         </div>
 
-        {/* Flex column with responsive ordering: On mobile, active learning workspace comes FIRST, summary strip goes below; on desktop, summary KPI strip sits neatly at top */}
         <div className="flex flex-col gap-6">
-          {/* Compact 4-Metric Quick Strip (Order 2 on mobile so student goes straight to video, Order 1 on desktop) */}
+          {/* Compact 4-Metric Quick Strip */}
           {!activeQuiz && (
             <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
               <button
@@ -542,17 +524,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
           )}
 
-          {/* PRIMARY WORKSPACE (Order 1 on mobile, Order 2 on desktop) */}
+          {/* PRIMARY WORKSPACE */}
           <div className="order-1 lg:order-2">
             {/* 1. LECTURES TAB */}
             {activeTab === 'lectures' && !activeQuiz && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Active Video Player Column */}
                 <div id="videoPlayerSection" className="lg:col-span-8 space-y-5">
                   {activeLecture ? (
                     isLectureUnlocked(activeLecture) ? (
                       <div className="space-y-4">
-                        {/* Modern Edge-to-Edge Mobile Video Stage */}
                         <SecureVideoPlayer
                           lecture={activeLecture}
                           currentUser={currentUser}
@@ -567,7 +547,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           }}
                         />
 
-                        {/* Clean Single-Elevation Lecture Info Card */}
                         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
                           <div className="space-y-1.5">
                             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
@@ -610,15 +589,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               </div>
 
                               {activeLecture.pdfUrl && activeLecture.pdfUrl !== '#' ? (
-                                <a
-                                  href={activeLecture.pdfUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2 shrink-0"
-                                >
-                                  <Download className="w-4 h-4" />
-                                  <span>تحميل المذكرة PDF</span>
-                                </a>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLecturePdfPreviewOpen(true)}
+                                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                    <span>معاينة</span>
+                                  </button>
+                                  <a
+                                    href={activeLecture.pdfUrl}
+                                    download
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    <span>تحميل المذكرة PDF</span>
+                                  </a>
+                                </div>
                               ) : (
                                 <span className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 shrink-0 cursor-not-allowed">
                                   <Download className="w-4 h-4" />
@@ -628,7 +618,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             </div>
                           )}
 
-                          {/* Quick Notes Section separated cleanly with hairline divider */}
+                          {/* Quick Notes Section */}
                           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
                             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                               <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -844,444 +834,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
             {/* 2. QUIZZES TAB & ACTIVE EXAM ENGINE */}
             {(activeTab === 'quizzes' || activeQuiz) && (
-              <div>
-                {!activeQuiz ? (
-                  <div className="space-y-4">
-                    <div>
-                      <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
-                        الامتحانات الإلكترونية
-                      </h2>
-                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                        تصحيح فوري وتفسير علمي لكل سؤال مع حفظ الدرجة في ملفك.
-                      </p>
-                    </div>
-
-                    {filteredQuizzes.length === 0 ? (
-                      <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                        <Award className="w-8 h-8 text-amber-500 mx-auto" />
-                        <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                          {lang === 'en'
-                            ? 'No quizzes created yet'
-                            : 'لا توجد اختبارات مضافة لهذا الصف بعد'}
-                        </h4>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredQuizzes.map((quiz) => {
-                          const quizScore = currentUser?.quizScores?.[quiz.id];
-                          const isPassed =
-                            currentUser?.passedQuizIds?.includes(quiz.id) ||
-                            (quizScore !== undefined && quizScore >= 60);
-
-                          return (
-                            <div
-                              key={quiz.id}
-                              className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4"
-                            >
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                                  <span className="font-semibold text-teal-700 dark:text-teal-400 truncate">
-                                    {quiz.chapter}
-                                  </span>
-                                  <span className="flex items-center gap-1 shrink-0">
-                                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                                    {quiz.durationMinutes} دقيقة
-                                  </span>
-                                </div>
-
-                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                                  {quiz.title}
-                                </h3>
-
-                                <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
-                                  <span>{quiz.questions.length} سؤال</span>
-                                  <span aria-hidden="true">·</span>
-                                  {quizScore !== undefined ? (
-                                    <span
-                                      className={`font-bold ${
-                                        isPassed
-                                          ? 'text-emerald-600 dark:text-emerald-400'
-                                          : 'text-rose-600 dark:text-rose-400'
-                                      }`}
-                                    >
-                                      درجتك {quizScore}% ({isPassed ? 'ناجح' : 'إعادة مطلوبة'})
-                                    </span>
-                                  ) : (
-                                    <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                                      لم يُحل بعد
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleStartQuiz(quiz)}
-                                className={`w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                                  isPassed
-                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                    : 'bg-teal-600 hover:bg-teal-700 text-white'
-                                }`}
-                              >
-                                <Award className="w-4 h-4" />
-                                <span>
-                                  {quizScore !== undefined ? 'إعادة الامتحان' : 'بدء الامتحان'}
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Active Quiz Runner */
-                  <div className="max-w-2xl mx-auto space-y-4">
-                    <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white truncate">
-                            {activeQuiz.title}
-                          </h3>
-                          <p className="text-xs text-slate-500 tabular-nums">
-                            السؤال {currentQuestionIndex + 1} من {activeQuiz.questions.length}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setActiveQuiz(null)}
-                          className="min-h-[40px] px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer shrink-0"
-                        >
-                          خروج
-                        </button>
-                      </div>
-
-                      <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-teal-600 rounded-full transition-all duration-200"
-                          style={{
-                            width: `${Math.round(
-                              ((currentQuestionIndex + 1) /
-                                Math.max(1, activeQuiz.questions.length)) *
-                                100
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {showQuizCelebration && (
-                      <div className="p-4 rounded-2xl bg-emerald-600 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2">
-                        <Trophy className="w-5 h-5 text-amber-300 shrink-0" />
-                        <span>{showQuizCelebration}</span>
-                      </div>
-                    )}
-
-                    {activeQuiz.questions[currentQuestionIndex] && (
-                      <div className="p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
-                        {activeQuiz.questions[currentQuestionIndex].imageUrl && (
-                          <div className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEnlargedQuizImage(
-                                  activeQuiz.questions[currentQuestionIndex].imageUrl || null
-                                )
-                              }
-                              className="group relative w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden cursor-zoom-in block"
-                            >
-                              <img
-                                src={activeQuiz.questions[currentQuestionIndex].imageUrl}
-                                alt={`صورة السؤال ${currentQuestionIndex + 1}`}
-                                className="w-full max-h-[420px] object-contain mx-auto"
-                              />
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/75 text-white text-[11px] font-bold absolute bottom-2.5 left-2.5 group-hover:bg-teal-600 transition-colors">
-                                <ZoomIn className="w-3.5 h-3.5" />
-                                <span>اضغط لتكبير الصورة</span>
-                              </span>
-                            </button>
-                          </div>
-                        )}
-
-                        {activeQuiz.questions[currentQuestionIndex].question?.trim() && (
-                          <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
-                            {activeQuiz.questions[currentQuestionIndex].question}
-                          </h4>
-                        )}
-
-                        {!quizSubmitted && activeQuiz.questions[currentQuestionIndex].formula?.trim() && (
-                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-mono text-teal-800 dark:text-teal-300 dir-ltr text-center font-bold">
-                            {activeQuiz.questions[currentQuestionIndex].formula}
-                          </div>
-                        )}
-
-                        <div className="space-y-2.5">
-                          {activeQuiz.questions[currentQuestionIndex].options.map((opt, oIdx) => {
-                            const qId = activeQuiz.questions[currentQuestionIndex].id;
-                            const isSelected = selectedAnswers[qId] === oIdx;
-                            const isCorrect =
-                              activeQuiz.questions[currentQuestionIndex].correctAnswer === oIdx;
-
-                            let optionStyle =
-                              'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 hover:border-teal-400';
-                            if (quizSubmitted) {
-                              if (isCorrect) {
-                                optionStyle =
-                                  'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold';
-                              } else if (isSelected && !isCorrect) {
-                                optionStyle =
-                                  'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200';
-                              }
-                            } else if (isSelected) {
-                              optionStyle =
-                                'border-teal-600 bg-teal-50 dark:bg-teal-950/50 text-teal-900 dark:text-teal-100 font-bold';
-                            }
-
-                            return (
-                              <button
-                                key={oIdx}
-                                type="button"
-                                onClick={() => handleSelectAnswer(qId, oIdx)}
-                                className={`w-full min-h-[52px] text-right p-3.5 rounded-xl border transition-colors flex items-center justify-between gap-3 cursor-pointer ${optionStyle}`}
-                              >
-                                <span className="text-sm sm:text-base">{opt}</span>
-                                <span className="w-7 h-7 rounded-lg border border-slate-300 dark:border-slate-600 flex items-center justify-center text-xs shrink-0 font-mono">
-                                  {String.fromCharCode(65 + oIdx)}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {quizSubmitted && (
-                          <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1.5 text-right">
-                            <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                              <HelpCircle className="w-4 h-4 shrink-0" />
-                              <span>التفسير العلمي:</span>
-                            </div>
-                            <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                              {activeQuiz.questions[currentQuestionIndex].explanation}
-                            </p>
-                            {activeQuiz.questions[currentQuestionIndex].formula && (
-                              <div className="pt-1 text-xs font-mono text-amber-900 dark:text-amber-200 dir-ltr font-bold">
-                                {activeQuiz.questions[currentQuestionIndex].formula}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEnlargedQuizImage(null);
-                              setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1));
-                            }}
-                            disabled={currentQuestionIndex === 0}
-                            className="min-h-[44px] px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 cursor-pointer"
-                          >
-                            السابق
-                          </button>
-
-                          {!quizSubmitted ? (
-                            currentQuestionIndex === activeQuiz.questions.length - 1 ? (
-                              <button
-                                type="button"
-                                onClick={handleSubmitQuiz}
-                                className="min-h-[44px] px-5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl cursor-pointer"
-                              >
-                                تصحيح واعتماد النتيجة
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEnlargedQuizImage(null);
-                                  setCurrentQuestionIndex(
-                                    Math.min(
-                                      activeQuiz.questions.length - 1,
-                                      currentQuestionIndex + 1
-                                    )
-                                  );
-                                }}
-                                className="min-h-[44px] px-5 py-2 text-xs sm:text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl cursor-pointer"
-                              >
-                                التالي
-                              </button>
-                            )
-                          ) : (
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono tabular-nums">
-                                {calculateScore()} / {activeQuiz.questions.length} (
-                                {Math.round(
-                                  (calculateScore() / Math.max(1, activeQuiz.questions.length)) *
-                                    100
-                                )}
-                                %)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEnlargedQuizImage(null);
-                                  setActiveQuiz(null);
-                                  setActiveTab('lectures');
-                                }}
-                                className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 text-white cursor-pointer"
-                              >
-                                للحصص
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <QuizRunner
+                lang={lang}
+                currentUser={currentUser}
+                filteredQuizzes={filteredQuizzes}
+                activeQuiz={activeQuiz}
+                currentQuestionIndex={currentQuestionIndex}
+                selectedAnswers={selectedAnswers}
+                quizSubmitted={quizSubmitted}
+                showQuizCelebration={showQuizCelebration}
+                onStartQuiz={handleStartQuiz}
+                onExitQuiz={() => setActiveQuiz(null)}
+                onGoToLectures={() => {
+                  setActiveQuiz(null);
+                  setActiveTab('lectures');
+                }}
+                onQuestionIndexChange={setCurrentQuestionIndex}
+                onSelectAnswer={handleSelectAnswer}
+                onSubmitQuiz={handleSubmitQuiz}
+                calculateScore={calculateScore}
+              />
             )}
 
             {/* 3. FILES & ATTACHMENTS TAB */}
             {activeTab === 'files' && !activeQuiz && (
-              <div className="space-y-4">
-                <div>
-                  <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
-                    مذكرات {getGradeTitle(selectedGrade)}
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                    تحميل مباشر للمذكرات وبنوك الأسئلة بصيغة PDF.
-                  </p>
-                </div>
-
-                {filteredAttachments.length === 0 ? (
-                  <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                    <FileText className="w-8 h-8 text-teal-600 mx-auto" />
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                      {lang === 'en'
-                        ? 'No handouts or files added yet'
-                        : 'لا توجد مذكرات مضافة لهذا الصف بعد'}
-                    </h4>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredAttachments.map((file) => (
-                      <div
-                        key={file.id}
-                        className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="w-11 h-11 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                            <FileText className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0 space-y-1">
-                            <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug">
-                              {file.title}
-                            </h3>
-                            <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
-                              <span className="truncate">{file.chapter}</span>
-                              <span aria-hidden="true">·</span>
-                              <span className="shrink-0">{file.fileSize}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {file.downloadUrl && file.downloadUrl !== '#' ? (
-                          <a
-                            href={file.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
-                          >
-                            <Download className="w-4 h-4" />
-                            <span>تحميل PDF</span>
-                          </a>
-                        ) : (
-                          <span className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 cursor-not-allowed">
-                            <Download className="w-4 h-4" />
-                            <span>غير متاح للتحميل حالياً</span>
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <HandoutsTab
+                lang={lang}
+                gradeTitle={getGradeTitle(selectedGrade)}
+                filteredAttachments={filteredAttachments}
+              />
             )}
 
             {/* 4. INTERACTIVE PERIODIC TABLE */}
-            {activeTab === 'periodic-table' && !activeQuiz && (
-              <div className="space-y-4">
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-5">
-                  <div>
-                    <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
-                      مفاتيح السلسلة الانتقالية الأولى (3d)
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                      اضغط على أي عنصر لعرض التوزيع الإلكتروني وحالات التأكسد والملاحظة الامتحانية.
-                    </p>
-                  </div>
-
-                  {/* Active Element Inspector */}
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-14 h-14 rounded-xl bg-teal-600 text-white flex flex-col items-center justify-center shrink-0 font-mono tabular-nums">
-                        <span className="text-[10px] opacity-80 leading-none">
-                          {inspectedElement.num}
-                        </span>
-                        <span className="text-xl font-bold leading-tight">
-                          {inspectedElement.sym}
-                        </span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className="text-base font-bold text-slate-900 dark:text-white">
-                          {inspectedElement.name}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono dir-ltr text-right">
-                          {inspectedElement.conf} · حالات التأكسد: {inspectedElement.ox}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-md">
-                      {inspectedElement.note}
-                    </p>
-                  </div>
-
-                  {/* Interactive Elements Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                    {TRANSITION_ELEMENTS.map((elem) => {
-                      const active = elem.sym === inspectedElement.sym;
-                      return (
-                        <button
-                          key={elem.sym}
-                          type="button"
-                          onClick={() => setSelectedElementSym(elem.sym)}
-                          className={`min-h-[96px] p-3 rounded-xl border text-center transition-colors cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                            active
-                              ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-500 ring-1 ring-teal-500/30'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-400'
-                          }`}
-                        >
-                          <span className="text-[11px] text-slate-400 font-mono tabular-nums">
-                            {elem.num}
-                          </span>
-                          <span className="text-xl font-bold font-mono text-teal-600 dark:text-teal-400">
-                            {elem.sym}
-                          </span>
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            {elem.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeTab === 'periodic-table' && !activeQuiz && <PeriodicTableTab />}
           </div>
         </div>
       </div>
 
-      {/* Fixed Mobile Bottom Tab Bar (Natural thumb zone navigation, <= 15% aggregate sticky cap) */}
+      {/* Fixed Mobile Bottom Tab Bar */}
       <nav
         aria-label="التنقل الرئيسي للطالب"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)]"
@@ -1350,29 +940,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
       </nav>
 
-      {/* Enlarged Quiz Question Image Lightbox */}
-      {enlargedQuizImage && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setEnlargedQuizImage(null)}
-          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <button
-            type="button"
-            onClick={() => setEnlargedQuizImage(null)}
-            aria-label="إغلاق معاينة الصورة"
-            className="absolute top-4 left-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer"
-          >
-            <X className="w-6 h-6" />
-          </button>
-          <img
-            src={enlargedQuizImage}
-            alt="صورة السؤال مكبرة"
-            onClick={(e) => e.stopPropagation()}
-            className="max-w-full max-h-[88vh] rounded-2xl object-contain shadow-2xl"
-          />
-        </div>
+      {/* Lecture Attached PDF In-App Preview Modal */}
+      {activeLecture?.pdfUrl && activeLecture.pdfUrl !== '#' && (
+        <MediaPreviewModal
+          isOpen={lecturePdfPreviewOpen}
+          onClose={() => setLecturePdfPreviewOpen(false)}
+          url={activeLecture.pdfUrl}
+          title={activeLecture.pdfTitle || 'مذكرة الحصة'}
+          kind={detectMediaKind(activeLecture.pdfUrl, 'pdf')}
+        />
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import {
 import { SiteConfig, DEFAULT_SITE_CONFIG } from '../types/siteConfig';
 import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
 import { UploadProgressBar } from './UploadProgressBar';
+import { InlineMediaPreview } from './MediaPreview';
 
 interface SecretAdminCustomizerModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadMeta, setUploadMeta] = useState<UploadProgressInfo | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [localPhotoPreview, setLocalPhotoPreview] = useState<string | null>(null);
 
   React.useEffect(() => {
     setFormData(siteConfig);
@@ -84,6 +86,8 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
     e.target.value = '';
     if (!file) return;
 
+    const previewUrl = URL.createObjectURL(file);
+    setLocalPhotoPreview(previewUrl);
     setUploadError(null);
     setUploadingImage(true);
     setUploadProgress(1);
@@ -100,7 +104,6 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
         },
       });
       handleFieldChange('profileImageUrl', result.url);
-      // Immediately push to server database so all other devices & incognito see it
       const saved = await onSaveSiteConfig({ ...formData, profileImageUrl: result.url });
       if (saved === false) {
         setUploadError('تم رفع الصورة ولكن تعذر حفظ الرابط في السحابة.');
@@ -111,6 +114,8 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
     } catch (err: any) {
       setUploadError(err?.message || 'فشل رفع الصورة، يرجى المحاولة مرة أخرى.');
     } finally {
+      URL.revokeObjectURL(previewUrl);
+      setLocalPhotoPreview(null);
       setUploadingImage(false);
       setUploadProgress(0);
       setUploadMeta(null);
@@ -312,23 +317,6 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                       className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
                     />
                   </div>
-
-                  <div className="p-4 rounded-2xl bg-teal-50/60 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 space-y-2">
-                    <label className="text-xs font-bold text-teal-900 dark:text-teal-200 font-kufi flex items-center gap-1.5">
-                      <KeyRound className="w-4 h-4 text-teal-600" />
-                      <span>معرف عميل جوجل (Google OAuth Client ID) لتسجيل الدخول الفعلي:</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.googleClientId || ''}
-                      onChange={(e) => handleFieldChange('googleClientId', e.target.value)}
-                      placeholder="xxxxxxxxxx.apps.googleusercontent.com"
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr text-left"
-                    />
-                    <p className="text-[11px] text-slate-500">
-                      الصق هنا الـ Client ID الذي أنشأته من Google Cloud Console لتفعيل نافذة اختيار حسابات جوجل الحقيقية فوراً لجميع الطلاب.
-                    </p>
-                  </div>
                 </div>
               )}
 
@@ -375,25 +363,14 @@ export const SecretAdminCustomizerModal: React.FC<SecretAdminCustomizerModalProp
                     )}
                   </div>
 
-                  {/* Preview container */}
-                  <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-[#fafffb] dark:bg-slate-800/60">
-                    <img
-                      src={formData.profileImageUrl || '/images/teacher_placeholder.svg'}
-                      alt="معاينة الصورة"
-                      className="w-24 h-32 rounded-xl object-cover object-top border-2 border-amber-400 shadow-md"
-                      onError={(e) => {
-                        e.currentTarget.src = '/images/teacher_placeholder.svg';
-                      }}
+                  {(localPhotoPreview || formData.profileImageUrl) && (
+                    <InlineMediaPreview
+                      url={localPhotoPreview || formData.profileImageUrl}
+                      title={`صورة الأستاذ ${formData.teacherName}`}
+                      kind="image"
+                      compact
                     />
-                    <div className="space-y-1">
-                      <div className="text-sm font-bold font-kufi text-slate-900 dark:text-white">
-                        معاينة صورة الأستاذ {formData.teacherName}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        تظهر هذه الصورة في كارت الهيرو الرئيسي مع التدرج اللوني البرتقالي الفخم.
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
 

@@ -1,15 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { onAuthStateChanged, signOut, signInWithPopup, signInWithRedirect, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
+import { onAuthStateChanged, signOut, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
-import { StudentPortal } from './components/StudentPortal';
-import { TeacherDashboard } from './components/TeacherDashboard';
-import { StudentOnboardingModal } from './components/StudentOnboardingModal';
-import { AuthModals } from './components/AuthModals';
-import { SecretAdminCustomizerModal } from './components/SecretAdminCustomizerModal';
 import { Footer } from './components/Footer';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
 import { Lecture, AttachmentFile, Quiz, CloudinaryConfig, UserProfile, GradeLevel } from './types';
@@ -17,7 +12,6 @@ import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 import {
   auth,
   db,
-  googleProvider,
   savePublicSiteConfigToCloud,
   saveAdminConfigToCloud,
   saveLectureToCloud,
@@ -32,19 +26,45 @@ import {
   fetchAdminConfigIfAuthorized,
 } from './firebase';
 
+// Lazy-load heavy views and modals for ultra-fast initial landing page load
+const StudentPortal = lazy(() =>
+  import('./components/StudentPortal').then((m) => ({ default: m.StudentPortal }))
+);
+const TeacherDashboard = lazy(() =>
+  import('./components/TeacherDashboard').then((m) => ({ default: m.TeacherDashboard }))
+);
+const AuthModals = lazy(() =>
+  import('./components/AuthModals').then((m) => ({ default: m.AuthModals }))
+);
+const StudentOnboardingModal = lazy(() =>
+  import('./components/StudentOnboardingModal').then((m) => ({ default: m.StudentOnboardingModal }))
+);
+const SecretAdminCustomizerModal = lazy(() =>
+  import('./components/SecretAdminCustomizerModal').then((m) => ({
+    default: m.SecretAdminCustomizerModal,
+  }))
+);
+
 function sanitizeProfileImageUrl(url?: string): string {
   if (!url) return '';
   if (url.includes('teacher_mohamed_mostafa_1794141316649')) return '';
   return url;
 }
 
+const ViewLoadingFallback = () => (
+  <div className="min-h-[60vh] flex items-center justify-center p-8">
+    <div className="flex flex-col items-center gap-3 text-teal-600 dark:text-teal-400">
+      <div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-600 rounded-full animate-spin" />
+      <span className="text-xs font-bold font-kufi">جاري التحميل بسرعة فائقة...</span>
+    </div>
+  </div>
+);
+
 export default function App() {
-  // Theme state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('mm_theme') === 'dark';
   });
 
-  // Master Site Configuration state
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('mm_site_config');
     if (saved) {
@@ -62,15 +82,17 @@ export default function App() {
     return DEFAULT_SITE_CONFIG;
   });
 
-  // Firebase Auth user state
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  // Current logged in user
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('mm_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as UserProfile;
+        // Require a live Firebase Auth session for teacher/admin accounts — never trust stale local teacher state
+        if (parsed?.role === 'teacher') return null;
+        return parsed;
       } catch {
         return null;
       }
@@ -78,21 +100,16 @@ export default function App() {
     return null;
   });
 
-  // Non-blocking sync/auth banner for admin writes
   const [syncNotice, setSyncNotice] = useState<{
-    type: 'success' | 'error' | 'auth_needed';
+    type: 'success' | 'error';
     message: string;
   } | null>(null);
 
-  // View state: 'landing' | 'student' | 'teacher'
   const [currentView, setCurrentView] = useState<'landing' | 'student' | 'teacher'>('landing');
-
-  // Modals state
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [secretAdminOpen, setSecretAdminOpen] = useState(false);
 
-  // Curriculum & Uploads state (hydrated live from Firestore onSnapshot)
   const [lectures, setLectures] = useState<Lecture[]>(() => {
     const saved = localStorage.getItem('mm_lectures');
     try {
@@ -139,7 +156,6 @@ export default function App() {
   });
 
   const adminBootstrappedRef = useRef(false);
-  const pendingAdminActionRef = useRef<(() => Promise<void>) | null>(null);
   const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
   useEffect(() => {
     adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
@@ -156,13 +172,12 @@ export default function App() {
   const isUserAdmin = useCallback(
     (user: UserProfile | null) => {
       if (!user) return false;
-      if (user.role === 'teacher') return true;
-      return isEmailAdmin(user.email);
+      if (user.role === 'teacher') return Boolean(firebaseUser);
+      return Boolean(firebaseUser) && isEmailAdmin(user.email);
     },
-    [isEmailAdmin]
+    [isEmailAdmin, firebaseUser]
   );
 
-  // Sync theme to <html> tag
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -173,18 +188,17 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Helper to show transient sync notice
-  const showNotice = useCallback((type: 'success' | 'error' | 'auth_needed', message: string) => {
+  const showNotice = useCallback((type: 'success' | 'error', message: string) => {
     setSyncNotice({ type, message });
   }, []);
 
   useEffect(() => {
-    if (!syncNotice || syncNotice.type === 'auth_needed') return;
+    if (!syncNotice) return;
     const t = setTimeout(() => setSyncNotice(null), 4000);
     return () => clearTimeout(t);
   }, [syncNotice]);
 
-  // 1. Firebase Auth Listener + Redirect recovery: keeps session verified & bootstraps cloud config on first admin login
+  // 1. Unified Firebase Auth Listener + Redirect recovery
   useEffect(() => {
     getRedirectResult(auth).catch((err) => {
       if (err?.code) {
@@ -194,12 +208,10 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
+      setAuthReady(true);
 
       if (!fbUser) {
-        const isGisActive = sessionStorage.getItem('mm_gis_active') === 'true';
-        if (!isGisActive) {
-          setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
-        }
+        setCurrentUser((prev) => (prev && prev.role === 'teacher' ? null : prev));
         return;
       }
 
@@ -217,7 +229,6 @@ export default function App() {
         setSiteConfig((prev) => ({
           ...prev,
           adminEmails: mergedEmails,
-          googleClientId: adminCfg.googleClientId || prev.googleClientId,
         }));
         if (adminCfg.cloudName && adminCfg.uploadPreset) {
           const nextCloud: CloudinaryConfig = {
@@ -232,7 +243,6 @@ export default function App() {
       const isAdmin = Boolean(adminCfg) || isEmailAdmin(email);
 
       if (isAdmin) {
-        setSyncNotice((prev) => (prev?.type === 'auth_needed' ? null : prev));
         setCurrentUser((prev) => ({
           id: fbUser.uid,
           name: siteConfig.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
@@ -250,13 +260,6 @@ export default function App() {
           joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
         }));
 
-        if (pendingAdminActionRef.current) {
-          const pending = pendingAdminActionRef.current;
-          pendingAdminActionRef.current = null;
-          pending().catch((err) => console.warn('Pending admin action warning:', err));
-        }
-
-        // Bootstrap publicConfig/site & adminConfig/settings in Firestore once if they don't exist yet
         if (!adminBootstrappedRef.current) {
           adminBootstrappedRef.current = true;
           try {
@@ -274,8 +277,7 @@ export default function App() {
             if (!adminSnap.exists()) {
               await saveAdminConfigToCloud(
                 siteConfig.adminEmails || ['mizoo2y2@gmail.com'],
-                cloudinaryConfig,
-                siteConfig.googleClientId
+                cloudinaryConfig
               );
             }
           } catch (err) {
@@ -283,7 +285,6 @@ export default function App() {
           }
         }
       } else {
-        // Hydrate student profile from Firestore so onboarding & progress persist across all devices
         try {
           const cloudStudent = await getStudentFromCloud(fbUser.uid);
           if (cloudStudent) {
@@ -324,7 +325,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmailAdmin]);
 
-  // 2. Public Real-Time Firestore Listeners (Active for ALL visitors, logged in or not, incognito, mobile, shared URL)
+  // 2. Public Real-Time Firestore Listeners
   useEffect(() => {
     const unsubSite = onSnapshot(
       doc(db, 'publicConfig', 'site'),
@@ -345,15 +346,16 @@ export default function App() {
       }
     );
 
-    const lecturesQuery = query(
-      collection(db, 'lectures'),
-      where('grade', '!=', '')
-    );
+    const lecturesQuery = query(collection(db, 'lectures'), where('grade', '!=', ''));
     const unsubLectures = onSnapshot(
       lecturesQuery,
       (snap) => {
         const list = snap.docs.map((d) => d.data() as Lecture);
-        list.sort((a, b) => (a.sessionOrder ?? 9999) - (b.sessionOrder ?? 9999) || (b.dateAdded || '').localeCompare(a.dateAdded || ''));
+        list.sort(
+          (a, b) =>
+            (a.sessionOrder ?? 9999) - (b.sessionOrder ?? 9999) ||
+            (b.dateAdded || '').localeCompare(a.dateAdded || '')
+        );
         setLectures(list);
       },
       (error) => {
@@ -361,10 +363,7 @@ export default function App() {
       }
     );
 
-    const attachmentsQuery = query(
-      collection(db, 'attachments'),
-      where('grade', '!=', '')
-    );
+    const attachmentsQuery = query(collection(db, 'attachments'), where('grade', '!=', ''));
     const unsubAttachments = onSnapshot(
       attachmentsQuery,
       (snap) => {
@@ -377,10 +376,7 @@ export default function App() {
       }
     );
 
-    const quizzesQuery = query(
-      collection(db, 'quizzes'),
-      where('grade', '!=', '')
-    );
+    const quizzesQuery = query(collection(db, 'quizzes'), where('grade', '!=', ''));
     const unsubQuizzes = onSnapshot(
       quizzesQuery,
       (snap) => {
@@ -400,12 +396,11 @@ export default function App() {
     };
   }, []);
 
-  // 3. Authenticated Real-Time Firestore Listeners (Admin Config, Student Records)
+  // 3. Authenticated Real-Time Firestore Listeners
   useEffect(() => {
     if (!firebaseUser) return;
 
     const unsubscribers: Array<() => void> = [];
-
     const userIsAdmin = isEmailAdmin(firebaseUser.email) || currentUser?.role === 'teacher';
 
     if (userIsAdmin) {
@@ -418,7 +413,6 @@ export default function App() {
                 adminEmails?: string[];
                 cloudName?: string;
                 uploadPreset?: string;
-                googleClientId?: string;
               };
               if (data.cloudName && data.uploadPreset) {
                 const nextCloud: CloudinaryConfig = {
@@ -428,17 +422,18 @@ export default function App() {
                 setCloudinaryConfig(nextCloud);
                 localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
               }
-              if (Array.isArray(data.adminEmails) || data.googleClientId) {
-                const cleanEmails = Array.isArray(data.adminEmails) && data.adminEmails.length > 0
-                  ? Array.from(new Set(['mizoo2y2@gmail.com', ...data.adminEmails].map((e) => e.toLowerCase().trim()).filter(Boolean)))
-                  : undefined;
-                if (cleanEmails) {
-                  adminEmailsRef.current = cleanEmails;
-                }
+              if (Array.isArray(data.adminEmails) && data.adminEmails.length > 0) {
+                const cleanEmails = Array.from(
+                  new Set(
+                    ['mizoo2y2@gmail.com', ...data.adminEmails]
+                      .map((e) => e.toLowerCase().trim())
+                      .filter(Boolean)
+                  )
+                );
+                adminEmailsRef.current = cleanEmails;
                 setSiteConfig((prev) => ({
                   ...prev,
-                  adminEmails: cleanEmails || prev.adminEmails,
-                  googleClientId: data.googleClientId || prev.googleClientId,
+                  adminEmails: cleanEmails,
                 }));
               }
             }
@@ -489,7 +484,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [firebaseUser, isEmailAdmin, siteConfig.adminEmails, currentUser?.role]);
+  }, [firebaseUser, isEmailAdmin, currentUser?.role]);
 
   // Persist local cache
   useEffect(() => {
@@ -520,8 +515,9 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Strict route guard: lock student & teacher portals without login
+  // Strict route guard
   useEffect(() => {
+    if (!authReady) return;
     if (currentView === 'teacher' && !isUserAdmin(currentUser)) {
       setCurrentView('landing');
       setLoginModalOpen(true);
@@ -529,48 +525,16 @@ export default function App() {
       setCurrentView('landing');
       setLoginModalOpen(true);
     }
-  }, [currentView, currentUser, isUserAdmin]);
+  }, [authReady, currentView, currentUser, isUserAdmin]);
 
-  // Prompt Google sign-in if teacher session lacks live Firebase Auth token
-  const handleQuickAdminGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const email = result.user.email || '';
-      if (isEmailAdmin(email)) {
-        if (pendingAdminActionRef.current) {
-          const pending = pendingAdminActionRef.current;
-          pendingAdminActionRef.current = null;
-          await pending();
-        }
-        showNotice('success', 'تم تفعيل الاتصال السحابي وحفظ التعديلات للجميع بنجاح!');
-      } else {
-        showNotice('error', 'هذا البريد غير مسجل كمشرف في المنصة.');
-      }
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch {}
-      }
-      showNotice(
-        'error',
-        code === 'auth/unauthorized-domain'
-          ? `النطاق (${window.location.hostname}) غير مضاف في Authorized domains بمشروع Firebase.`
-          : `تعذر تأكيد دخول المشرف (${code || 'popup'}). يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.`
-      );
-    }
-  };
-
-  // Run an admin cloud operation safely
-  const executeAdminCloudWrite = async (action: () => Promise<void>, successMsg?: string): Promise<boolean> => {
+  // Execute an admin Firestore write reliably using live session
+  const executeAdminCloudWrite = async (
+    action: () => Promise<void>,
+    successMsg?: string
+  ): Promise<boolean> => {
     if (!auth.currentUser) {
-      pendingAdminActionRef.current = action;
-      showNotice(
-        'auth_needed',
-        'لحفظ التغييرات على قاعدة البيانات ومزامنتها فوراً لجميع المستخدمين، اضغط لتأكيد جلسة المشرف.'
-      );
+      setLoginModalOpen(true);
+      showNotice('error', 'انتهت جلسة المشرف، يرجى تسجيل الدخول بحساب Google مرة واحدة للمتابعة.');
       return false;
     }
 
@@ -580,17 +544,20 @@ export default function App() {
       if (adminCfg) {
         authorized = true;
         const merged = Array.from(
-          new Set(['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])].map((e) => e.toLowerCase().trim()).filter(Boolean))
+          new Set(
+            ['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])]
+              .map((e) => e.toLowerCase().trim())
+              .filter(Boolean)
+          )
         );
         adminEmailsRef.current = merged;
       }
     }
 
     if (!authorized) {
-      pendingAdminActionRef.current = action;
       showNotice(
-        'auth_needed',
-        'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين ثم أعد تسجيل الدخول.'
+        'error',
+        'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين.'
       );
       return false;
     }
@@ -603,12 +570,11 @@ export default function App() {
       return true;
     } catch (err) {
       console.error('Cloud write error:', err);
-      showNotice('error', 'حدث خطأ أثناء الحفظ في السحابة، يرجى التحقق من الاتصال والصلاحيات.');
+      showNotice('error', 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.');
       return false;
     }
   };
 
-  // Centralized navigation guard
   const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
     if (view === 'teacher') {
       if (!isUserAdmin(currentUser)) {
@@ -634,19 +600,22 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    let isAdmin = isUserAdmin(user);
+    let isAdmin = user.role === 'teacher' || isEmailAdmin(user.email);
     if (!isAdmin && auth.currentUser) {
       const adminCfg = await fetchAdminConfigIfAuthorized();
       if (adminCfg) {
         isAdmin = true;
         const mergedEmails = Array.from(
-          new Set(['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])].map((e) => e.toLowerCase().trim()).filter(Boolean))
+          new Set(
+            ['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])]
+              .map((e) => e.toLowerCase().trim())
+              .filter(Boolean)
+          )
         );
         adminEmailsRef.current = mergedEmails;
         setSiteConfig((prev) => ({
           ...prev,
           adminEmails: mergedEmails,
-          googleClientId: adminCfg.googleClientId || prev.googleClientId,
         }));
       }
     }
@@ -658,7 +627,6 @@ export default function App() {
       return;
     }
 
-    // Lookup existing student record (Firestore if Firebase signed in, else local)
     let matched: UserProfile | undefined = students.find(
       (s) =>
         (user.id && s.id === user.id) ||
@@ -678,7 +646,9 @@ export default function App() {
     const isMarkedDone =
       Boolean(user.profileCompleted) ||
       Boolean(matched?.profileCompleted) ||
-      Boolean(user.email && localStorage.getItem(`mm_profile_done_${user.email.toLowerCase().trim()}`) === 'true') ||
+      Boolean(
+        user.email && localStorage.getItem(`mm_profile_done_${user.email.toLowerCase().trim()}`) === 'true'
+      ) ||
       Boolean(user.id && localStorage.getItem(`mm_profile_done_${user.id}`) === 'true');
 
     const finalUser: UserProfile = matched
@@ -717,86 +687,118 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem('mm_gis_active');
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
     setCurrentUser(null);
     setCurrentView('landing');
   };
 
-  const handleAddLecture = (newLec: Lecture) => {
-    setLectures((prev) => [newLec, ...prev]);
-    return executeAdminCloudWrite(() => saveLectureToCloud(newLec), 'تم نشر المحاضرة وحفظها في السحابة!');
+  const handleAddLecture = async (newLec: Lecture): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveLectureToCloud(newLec),
+      'تم نشر المحاضرة وحفظها في السحابة!'
+    );
+    if (ok) {
+      setLectures((prev) => [newLec, ...prev.filter((l) => l.id !== newLec.id)]);
+    }
+    return ok;
   };
 
-  const handleDeleteLecture = (id: string) => {
-    setLectures((prev) => prev.filter((l) => l.id !== id));
-    return executeAdminCloudWrite(() => deleteLectureFromCloud(id));
+  const handleDeleteLecture = async (id: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deleteLectureFromCloud(id));
+    if (ok) {
+      setLectures((prev) => prev.filter((l) => l.id !== id));
+    }
+    return ok;
   };
 
-  const handleUpdateLecture = (updated: Lecture) => {
-    setLectures((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-    return executeAdminCloudWrite(() => saveLectureToCloud(updated), 'تم تحديث المحاضرة وحفظها في السحابة!');
+  const handleUpdateLecture = async (updated: Lecture): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveLectureToCloud(updated),
+      'تم تحديث المحاضرة وحفظها في السحابة!'
+    );
+    if (ok) {
+      setLectures((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    }
+    return ok;
   };
 
-  const handleAddAttachment = (newFile: AttachmentFile) => {
-    setAttachments((prev) => [newFile, ...prev]);
-    return executeAdminCloudWrite(() => saveAttachmentToCloud(newFile), 'تم نشر المذكرة وحفظها في السحابة!');
+  const handleAddAttachment = async (newFile: AttachmentFile): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveAttachmentToCloud(newFile),
+      'تم نشر المذكرة وحفظها في السحابة!'
+    );
+    if (ok) {
+      setAttachments((prev) => [newFile, ...prev.filter((a) => a.id !== newFile.id)]);
+    }
+    return ok;
   };
 
-  const handleDeleteAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-    return executeAdminCloudWrite(() => deleteAttachmentFromCloud(id));
+  const handleDeleteAttachment = async (id: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deleteAttachmentFromCloud(id));
+    if (ok) {
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    }
+    return ok;
   };
 
-  const handleAddQuiz = (newQuiz: Quiz) => {
-    setQuizzes((prev) => [newQuiz, ...prev]);
-    return executeAdminCloudWrite(() => saveQuizToCloud(newQuiz), 'تم حفظ ونشر الامتحان في السحابة!');
+  const handleAddQuiz = async (newQuiz: Quiz): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveQuizToCloud(newQuiz),
+      'تم حفظ ونشر الامتحان في السحابة!'
+    );
+    if (ok) {
+      setQuizzes((prev) => [newQuiz, ...prev.filter((q) => q.id !== newQuiz.id)]);
+    }
+    return ok;
   };
 
-  const handleDeleteQuiz = (id: string) => {
-    setQuizzes((prev) => prev.filter((q) => q.id !== id));
-    return executeAdminCloudWrite(() => deleteQuizFromCloud(id));
+  const handleDeleteQuiz = async (id: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deleteQuizFromCloud(id));
+    if (ok) {
+      setQuizzes((prev) => prev.filter((q) => q.id !== id));
+    }
+    return ok;
   };
 
-  const handleAdminDeleteStudent = (studentId: string) => {
-    setStudents((prev) => prev.filter((s) => s.id !== studentId));
-    return executeAdminCloudWrite(() => deleteStudentFromCloud(studentId));
+  const handleAdminDeleteStudent = async (studentId: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => deleteStudentFromCloud(studentId));
+    if (ok) {
+      setStudents((prev) => prev.filter((s) => s.id !== studentId));
+    }
+    return ok;
   };
 
-  const handleAdminAddStudent = (student: UserProfile) => {
-    setStudents((prev) => [student, ...prev]);
-    return executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+  const handleAdminAddStudent = async (student: UserProfile): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    if (ok) {
+      setStudents((prev) => [student, ...prev.filter((s) => s.id !== student.id)]);
+    }
+    return ok;
   };
 
-  const handleAdminUpdateStudent = (student: UserProfile) => {
-    setStudents((prev) => {
-      const idx = prev.findIndex((s) => s.id === student.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = student;
-        return copy;
-      }
-      return [student, ...prev];
-    });
-    return executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+  const handleAdminUpdateStudent = async (student: UserProfile): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(() => saveStudentToCloud(student, student.id));
+    if (ok) {
+      setStudents((prev) => {
+        const idx = prev.findIndex((s) => s.id === student.id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = student;
+          return copy;
+        }
+        return [student, ...prev];
+      });
+    }
+    return ok;
   };
 
-  const handleResetAllData = () => {
+  const handleResetAllData = async (): Promise<boolean> => {
     const lecIds = lectures.map((l) => l.id);
     const attIds = attachments.map((a) => a.id);
     const quizIds = quizzes.map((q) => q.id);
     const stuIds = students.map((s) => s.id);
 
-    setLectures([]);
-    setAttachments([]);
-    setQuizzes([]);
-    setStudents([]);
-    localStorage.setItem('mm_lectures', JSON.stringify([]));
-    localStorage.setItem('mm_attachments', JSON.stringify([]));
-    localStorage.setItem('mm_quizzes', JSON.stringify([]));
-    localStorage.setItem('mm_registered_students', JSON.stringify([]));
-
-    return executeAdminCloudWrite(async () => {
+    const ok = await executeAdminCloudWrite(async () => {
       await Promise.all([
         ...lecIds.map((id) => deleteLectureFromCloud(id)),
         ...attIds.map((id) => deleteAttachmentFromCloud(id)),
@@ -804,13 +806,29 @@ export default function App() {
         ...stuIds.map((id) => deleteStudentFromCloud(id)),
       ]);
     }, 'تم تصفير كافة الدروس والملفات والامتحانات في السحابة بنجاح.');
+
+    if (ok) {
+      setLectures([]);
+      setAttachments([]);
+      setQuizzes([]);
+      setStudents([]);
+      localStorage.setItem('mm_lectures', JSON.stringify([]));
+      localStorage.setItem('mm_attachments', JSON.stringify([]));
+      localStorage.setItem('mm_quizzes', JSON.stringify([]));
+      localStorage.setItem('mm_registered_students', JSON.stringify([]));
+    }
+    return ok;
   };
 
   const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
     const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
     setCurrentUser(finalized);
 
-    if (auth.currentUser && auth.currentUser.emailVerified && (auth.currentUser.uid === finalized.id || isUserAdmin(currentUser))) {
+    if (
+      auth.currentUser &&
+      auth.currentUser.emailVerified &&
+      (auth.currentUser.uid === finalized.id || isUserAdmin(currentUser))
+    ) {
       saveStudentToCloud(finalized, auth.currentUser.uid).catch((err) =>
         console.warn('Cloud student profile save warning:', err)
       );
@@ -845,16 +863,19 @@ export default function App() {
     });
   };
 
-  const handleSaveCloudinaryConfig = (config: CloudinaryConfig) => {
-    setCloudinaryConfig(config);
-    localStorage.setItem('mm_cloudinary', JSON.stringify(config));
-    return executeAdminCloudWrite(
-      () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config, siteConfig.googleClientId),
+  const handleSaveCloudinaryConfig = async (config: CloudinaryConfig): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config),
       'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
     );
+    if (ok) {
+      setCloudinaryConfig(config);
+      localStorage.setItem('mm_cloudinary', JSON.stringify(config));
+    }
+    return ok;
   };
 
-  const handleSaveSiteConfig = (newConfig: SiteConfig) => {
+  const handleSaveSiteConfig = async (newConfig: SiteConfig): Promise<boolean> => {
     const cleanEmails = Array.from(
       new Set(
         ['mizoo2y2@gmail.com', ...(newConfig.adminEmails || [])]
@@ -867,17 +888,18 @@ export default function App() {
       adminEmails: cleanEmails,
       profileImageUrl: sanitizeProfileImageUrl(newConfig.profileImageUrl),
     };
-    adminEmailsRef.current = cleanEmails;
-    setSiteConfig(sanitized);
-    localStorage.setItem('mm_site_config', JSON.stringify(sanitized));
-    return executeAdminCloudWrite(async () => {
+
+    const ok = await executeAdminCloudWrite(async () => {
       await savePublicSiteConfigToCloud(sanitized);
-      await saveAdminConfigToCloud(
-        cleanEmails,
-        cloudinaryConfig,
-        sanitized.googleClientId
-      );
+      await saveAdminConfigToCloud(cleanEmails, cloudinaryConfig);
     }, 'تم حفظ ونشر التعديلات مباشرة للجميع.');
+
+    if (ok) {
+      adminEmailsRef.current = cleanEmails;
+      setSiteConfig(sanitized);
+      localStorage.setItem('mm_site_config', JSON.stringify(sanitized));
+    }
+    return ok;
   };
 
   const handleScrollToSection = (sectionId: string) => {
@@ -912,11 +934,8 @@ export default function App() {
     setCurrentView('student');
   };
 
-  // Check if onboarding is needed
   const shouldShowOnboarding = Boolean(
-    currentUser &&
-      currentUser.role !== 'teacher' &&
-      !currentUser.profileCompleted
+    currentUser && currentUser.role !== 'teacher' && !currentUser.profileCompleted
   );
 
   const getBodyFontClass = () => {
@@ -925,42 +944,30 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}>
-      {/* Non-blocking Cloud Sync / Admin Verification Notice */}
+    <div
+      className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
+    >
+      {/* Non-blocking Cloud Sync Toast */}
       {syncNotice && (
         <div
           dir="rtl"
-          className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[100] p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex flex-col gap-2.5 animate-fade-in ${
+          className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[100] p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex items-start justify-between gap-3 animate-fade-in ${
             syncNotice.type === 'success'
               ? 'bg-emerald-900/95 border-emerald-500/40 text-white'
-              : syncNotice.type === 'auth_needed'
-              ? 'bg-amber-950/95 border-amber-500/50 text-amber-50'
               : 'bg-rose-950/95 border-rose-500/50 text-rose-50'
           }`}
         >
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-xs sm:text-sm font-bold leading-relaxed font-sans">{syncNotice.message}</p>
-            <button
-              type="button"
-              onClick={() => setSyncNotice(null)}
-              className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 shrink-0 cursor-pointer"
-            >
-              إغلاق
-            </button>
-          </div>
-          {syncNotice.type === 'auth_needed' && (
-            <button
-              type="button"
-              onClick={handleQuickAdminGoogleSignIn}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-kufi transition-colors cursor-pointer"
-            >
-              تسجيل الدخول بحساب Google للمشرف الآن
-            </button>
-          )}
+          <p className="text-xs sm:text-sm font-bold leading-relaxed font-sans">{syncNotice.message}</p>
+          <button
+            type="button"
+            onClick={() => setSyncNotice(null)}
+            className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 shrink-0 cursor-pointer"
+          >
+            إغلاق
+          </button>
         </div>
       )}
 
-      {/* Top Navbar */}
       <Navbar
         siteConfig={siteConfig}
         darkMode={darkMode}
@@ -974,11 +981,9 @@ export default function App() {
         onScrollToSection={handleScrollToSection}
       />
 
-      {/* Main Content Router */}
       <main className="flex-1 w-full max-w-full overflow-x-hidden">
         {currentView === 'landing' && (
           <>
-            {/* 1. Hero Section */}
             <HeroSection
               siteConfig={siteConfig}
               onJoinNow={() => {
@@ -991,10 +996,8 @@ export default function App() {
               onExploreLectures={() => handleScrollToSection('academic-years')}
             />
 
-            {/* 2. Features Section (4 modern cards) */}
             <FeaturesSection siteConfig={siteConfig} />
 
-            {/* 3. Academic Years Section */}
             <AcademicYearsSection
               siteConfig={siteConfig}
               lectures={lectures}
@@ -1008,46 +1011,49 @@ export default function App() {
         )}
 
         {currentView === 'student' && currentUser && (
-          <StudentPortal
-            currentUser={currentUser}
-            siteConfig={siteConfig}
-            lectures={lectures}
-            quizzes={quizzes}
-            attachments={attachments}
-            onBackToHome={() => setCurrentView('landing')}
-            onOpenTeacherDashboard={() => handleNavigate('teacher')}
-            onUpdateStudentProfile={handleUpdateStudentProfile}
-          />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <StudentPortal
+              currentUser={currentUser}
+              siteConfig={siteConfig}
+              lectures={lectures}
+              quizzes={quizzes}
+              attachments={attachments}
+              onBackToHome={() => setCurrentView('landing')}
+              onOpenTeacherDashboard={() => handleNavigate('teacher')}
+              onUpdateStudentProfile={handleUpdateStudentProfile}
+            />
+          </Suspense>
         )}
 
         {currentView === 'teacher' && isUserAdmin(currentUser) && (
-          <TeacherDashboard
-            lectures={lectures}
-            onAddLecture={handleAddLecture}
-            onDeleteLecture={handleDeleteLecture}
-            onUpdateLecture={handleUpdateLecture}
-            attachments={attachments}
-            onAddAttachment={handleAddAttachment}
-            onDeleteAttachment={handleDeleteAttachment}
-            quizzes={quizzes}
-            onAddQuiz={handleAddQuiz}
-            onDeleteQuiz={handleDeleteQuiz}
-            students={students}
-            onUpdateStudent={handleAdminUpdateStudent}
-            onDeleteStudent={handleAdminDeleteStudent}
-            onAddStudent={handleAdminAddStudent}
-            cloudinaryConfig={cloudinaryConfig}
-            onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
-            siteConfig={siteConfig}
-            onSaveSiteConfig={handleSaveSiteConfig}
-            onBackToHome={() => setCurrentView('landing')}
-            onOpenStudentPortal={() => handleNavigate('student')}
-            onResetAllData={handleResetAllData}
-          />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <TeacherDashboard
+              lectures={lectures}
+              onAddLecture={handleAddLecture}
+              onDeleteLecture={handleDeleteLecture}
+              onUpdateLecture={handleUpdateLecture}
+              attachments={attachments}
+              onAddAttachment={handleAddAttachment}
+              onDeleteAttachment={handleDeleteAttachment}
+              quizzes={quizzes}
+              onAddQuiz={handleAddQuiz}
+              onDeleteQuiz={handleDeleteQuiz}
+              students={students}
+              onUpdateStudent={handleAdminUpdateStudent}
+              onDeleteStudent={handleAdminDeleteStudent}
+              onAddStudent={handleAdminAddStudent}
+              cloudinaryConfig={cloudinaryConfig}
+              onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
+              siteConfig={siteConfig}
+              onSaveSiteConfig={handleSaveSiteConfig}
+              onBackToHome={() => setCurrentView('landing')}
+              onOpenStudentPortal={() => handleNavigate('student')}
+              onResetAllData={handleResetAllData}
+            />
+          </Suspense>
         )}
       </main>
 
-      {/* Footer (hidden on mobile in student portal for clean app-like bottom navigation) */}
       <div className={currentView === 'student' ? 'hidden lg:block' : ''}>
         <Footer
           siteConfig={siteConfig}
@@ -1058,46 +1064,51 @@ export default function App() {
         />
       </div>
 
-      {/* Auth Modals */}
-      <AuthModals
-        loginOpen={loginModalOpen}
-        registerOpen={registerModalOpen}
-        onClose={() => {
-          setLoginModalOpen(false);
-          setRegisterModalOpen(false);
-        }}
-        onLoginSuccess={handleLoginSuccess}
-        onSwitchToRegister={() => {
-          setLoginModalOpen(false);
-          setRegisterModalOpen(true);
-        }}
-        onSwitchToLogin={() => {
-          setRegisterModalOpen(false);
-          setLoginModalOpen(true);
-        }}
-        siteConfig={siteConfig}
-        onUpdateGoogleClientId={(id) => handleSaveSiteConfig({ ...siteConfig, googleClientId: id })}
-      />
-
-      {/* Student Onboarding & Data Completion Modal */}
-      {currentUser && (
-        <StudentOnboardingModal
-          isOpen={shouldShowOnboarding}
-          currentUser={currentUser}
-          siteConfig={siteConfig}
-          onSaveProfile={handleUpdateStudentProfile}
-        />
+      {(loginModalOpen || registerModalOpen) && (
+        <Suspense fallback={null}>
+          <AuthModals
+            loginOpen={loginModalOpen}
+            registerOpen={registerModalOpen}
+            onClose={() => {
+              setLoginModalOpen(false);
+              setRegisterModalOpen(false);
+            }}
+            onLoginSuccess={handleLoginSuccess}
+            onSwitchToRegister={() => {
+              setLoginModalOpen(false);
+              setRegisterModalOpen(true);
+            }}
+            onSwitchToLogin={() => {
+              setRegisterModalOpen(false);
+              setLoginModalOpen(true);
+            }}
+            siteConfig={siteConfig}
+          />
+        </Suspense>
       )}
 
-      {/* Secret Admin Master Customizer Modal (© symbol + PIN 2825) */}
-      <SecretAdminCustomizerModal
-        isOpen={secretAdminOpen}
-        onClose={() => setSecretAdminOpen(false)}
-        siteConfig={siteConfig}
-        onSaveSiteConfig={handleSaveSiteConfig}
-        cloudinaryConfig={cloudinaryConfig}
-      />
+      {currentUser && shouldShowOnboarding && (
+        <Suspense fallback={null}>
+          <StudentOnboardingModal
+            isOpen={shouldShowOnboarding}
+            currentUser={currentUser}
+            siteConfig={siteConfig}
+            onSaveProfile={handleUpdateStudentProfile}
+          />
+        </Suspense>
+      )}
+
+      {secretAdminOpen && (
+        <Suspense fallback={null}>
+          <SecretAdminCustomizerModal
+            isOpen={secretAdminOpen}
+            onClose={() => setSecretAdminOpen(false)}
+            siteConfig={siteConfig}
+            onSaveSiteConfig={handleSaveSiteConfig}
+            cloudinaryConfig={cloudinaryConfig}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
-

@@ -8,6 +8,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   serverTimestamp,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -227,6 +228,10 @@ export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
     } else {
       await updateDoc(ref, {
         ...clean,
+        pdfUrl: lecture.pdfUrl ? lecture.pdfUrl : deleteField(),
+        pdfTitle: lecture.pdfTitle ? lecture.pdfTitle : deleteField(),
+        sessionOrder: lecture.sessionOrder !== undefined ? Number(lecture.sessionOrder) : deleteField(),
+        quizId: lecture.quizId ? lecture.quizId : deleteField(),
         updatedAt: serverTimestamp(),
       });
     }
@@ -312,6 +317,7 @@ export async function saveQuizToCloud(quiz: Quiz): Promise<void> {
     } else {
       await updateDoc(ref, {
         ...clean,
+        lectureId: quiz.lectureId ? quiz.lectureId : deleteField(),
         updatedAt: serverTimestamp(),
       });
     }

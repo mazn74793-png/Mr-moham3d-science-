@@ -114,8 +114,22 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve uploaded media files publicly to all browsers & incognito sessions
-app.use('/uploads', express.static(UPLOADS_DIR));
+// Serve uploaded media files publicly with immutable browser caching across all sessions
+app.use(
+  '/uploads',
+  express.static(UPLOADS_DIR, {
+    maxAge: '365d',
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  })
+);
+
+const CHUNKS_ROOT = path.resolve(UPLOADS_DIR, '.chunks');
+if (!fs.existsSync(CHUNKS_ROOT)) {
+  fs.mkdirSync(CHUNKS_ROOT, { recursive: true });
+}
 
 // ==========================================
 // API ROUTES
@@ -138,11 +152,82 @@ app.get('/api/db/version', (_req, res) => {
   });
 });
 
-// 1.2a Raw Binary Stream Upload (Smooth byte-by-byte XHR progress without Base64 memory overhead)
+// 1.2a Fast Parallel Chunk Upload (Avoids single huge request RAM/proxy stalls)
+app.post(
+  '/api/upload-chunk',
+  express.raw({ type: 'application/octet-stream', limit: '10mb' }),
+  async (req, res) => {
+    try {
+      const uploadIdRaw = typeof req.query.uploadId === 'string' ? req.query.uploadId : '';
+      const uploadId = uploadIdRaw.replace(/[^a-zA-Z0-9_-]/g, '');
+      const index = Number(req.query.index);
+
+      if (!uploadId || !Number.isInteger(index) || index < 0) {
+        return res.status(400).json({ success: false, error: 'بيانات الجزء غير صالحة' });
+      }
+
+      const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+      if (chunkBuffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'جزء فارغ' });
+      }
+
+      const uploadDir = path.resolve(CHUNKS_ROOT, uploadId);
+      await fs.promises.mkdir(uploadDir, { recursive: true });
+      await fs.promises.writeFile(path.resolve(uploadDir, `part_${index}`), chunkBuffer);
+
+      return res.json({ success: true, index });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'فشل حفظ جزء الملف' });
+    }
+  }
+);
+
+app.post('/api/upload-complete', async (req, res) => {
+  try {
+    const uploadIdRaw = typeof req.body?.uploadId === 'string' ? req.body.uploadId : '';
+    const uploadId = uploadIdRaw.replace(/[^a-zA-Z0-9_-]/g, '');
+    const rawName = typeof req.body?.filename === 'string' ? req.body.filename : `upload_${Date.now()}`;
+    const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_') || `upload_${Date.now()}`;
+    const totalChunks = Number(req.body?.totalChunks);
+
+    if (!uploadId || !Number.isInteger(totalChunks) || totalChunks <= 0) {
+      return res.status(400).json({ success: false, error: 'بيانات دمج الملف غير مكتملة' });
+    }
+
+    const uploadDir = path.resolve(CHUNKS_ROOT, uploadId);
+    const uniqueName = `${Date.now()}_${safeName}`;
+    const targetPath = path.resolve(UPLOADS_DIR, uniqueName);
+
+    const writeStream = fs.createWriteStream(targetPath);
+    for (let i = 0; i < totalChunks; i++) {
+      const partPath = path.resolve(uploadDir, `part_${i}`);
+      const partData = await fs.promises.readFile(partPath);
+      if (!writeStream.write(partData)) {
+        await new Promise<void>((resolve) => writeStream.once('drain', resolve));
+      }
+    }
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('error', reject);
+      writeStream.end(() => resolve());
+    });
+
+    fs.promises.rm(uploadDir, { recursive: true, force: true }).catch(() => {});
+
+    return res.json({
+      success: true,
+      url: `/uploads/${uniqueName}`,
+      filename: uniqueName,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'فشل دمج الملف على السيرفر' });
+  }
+});
+
+// 1.2b Raw Binary Stream Upload (Small files <= 1.5 MB)
 app.post(
   '/api/upload-raw',
   express.raw({ type: 'application/octet-stream', limit: '250mb' }),
-  (req, res) => {
+  async (req, res) => {
     try {
       const rawName = typeof req.query.filename === 'string' ? req.query.filename : `upload_${Date.now()}`;
       const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_') || `upload_${Date.now()}`;
@@ -154,7 +239,7 @@ app.post(
 
       const uniqueName = `${Date.now()}_${safeName}`;
       const targetPath = path.resolve(UPLOADS_DIR, uniqueName);
-      fs.writeFileSync(targetPath, fileBuffer);
+      await fs.promises.writeFile(targetPath, fileBuffer);
 
       return res.json({
         success: true,
@@ -168,7 +253,7 @@ app.post(
 );
 
 // 1.2 Universal Direct File Upload (Legacy JSON/Base64 support)
-app.post('/api/upload', (req, res) => {
+app.post('/api/upload', async (req, res) => {
   try {
     const { filename, dataUrl, base64 } = req.body;
     let fileBuffer: Buffer;
@@ -190,7 +275,7 @@ app.post('/api/upload', (req, res) => {
 
     const uniqueName = `${Date.now()}_${safeName}`;
     const targetPath = path.resolve(UPLOADS_DIR, uniqueName);
-    fs.writeFileSync(targetPath, fileBuffer);
+    await fs.promises.writeFile(targetPath, fileBuffer);
 
     const publicUrl = `/uploads/${uniqueName}`;
     return res.json({

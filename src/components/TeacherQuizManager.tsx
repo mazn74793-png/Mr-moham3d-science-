@@ -7,14 +7,15 @@ import { Quiz, QuizQuestion, GradeLevel, Lecture, CloudinaryConfig } from '../ty
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
 import { UploadProgressBar } from './UploadProgressBar';
+import { InlineMediaPreview } from './MediaPreview';
 
 interface TeacherQuizManagerProps {
   quizzes: Quiz[];
   lectures: Lecture[];
   cloudinaryConfig?: CloudinaryConfig;
   grades?: GradeItem[];
-  onAddQuiz: (newQuiz: Quiz) => void;
-  onDeleteQuiz: (quizId: string) => void;
+  onAddQuiz: (newQuiz: Quiz) => Promise<boolean> | boolean | void;
+  onDeleteQuiz: (quizId: string) => Promise<boolean> | boolean | void;
 }
 
 export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
@@ -46,8 +47,10 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   // Question image upload state
   const [uploadingQuestionIdx, setUploadingQuestionIdx] = useState<number | null>(null);
+  const [questionLocalPreviews, setQuestionLocalPreviews] = useState<Record<number, string>>({});
   const [questionUploadProgress, setQuestionUploadProgress] = useState<number>(0);
   const [questionUploadMeta, setQuestionUploadMeta] = useState<UploadProgressInfo | null>(null);
+  const [savingQuiz, setSavingQuiz] = useState(false);
 
   // Questions Builder State
   const [questions, setQuestions] = useState<QuizQuestion[]>([
@@ -114,6 +117,8 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
   const handleQuestionImageUpload = async (qIdx: number, file: File) => {
     setQuizError(null);
+    const localUrl = URL.createObjectURL(file);
+    setQuestionLocalPreviews((prev) => ({ ...prev, [qIdx]: localUrl }));
     setUploadingQuestionIdx(qIdx);
     setQuestionUploadProgress(0);
     setQuestionUploadMeta(null);
@@ -132,6 +137,12 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     } catch (err: any) {
       setQuizError(err?.message || `فشل رفع صورة السؤال رقم ${qIdx + 1}`);
     } finally {
+      URL.revokeObjectURL(localUrl);
+      setQuestionLocalPreviews((prev) => {
+        const copy = { ...prev };
+        delete copy[qIdx];
+        return copy;
+      });
       setUploadingQuestionIdx(null);
       setQuestionUploadProgress(0);
       setQuestionUploadMeta(null);
@@ -146,7 +157,7 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     });
   };
 
-  const handleSubmitQuiz = (e: React.FormEvent) => {
+  const handleSubmitQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     setQuizError(null);
 
@@ -182,26 +193,34 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
       chapter: quizChapter.trim() || 'كيمياء عامة',
       durationMinutes: Number(quizDuration) || 15,
       lectureId: selectedLectureId || undefined,
-      questions: questions,
+      questions,
     };
 
-    onAddQuiz(newQuiz);
-    setQuizSuccess('تم حفظ وإضافة الامتحان بنجاح إلى بنك الأسئلة والمنصة! 🎯');
-    setTimeout(() => setQuizSuccess(null), 4000);
+    setSavingQuiz(true);
+    try {
+      const saved = await onAddQuiz(newQuiz);
+      if (saved === false) {
+        setQuizError('تعذر حفظ الامتحان في قاعدة البيانات. تحقق من الاتصال وصلاحيات المشرف.');
+        return;
+      }
+      setQuizSuccess('تم حفظ وإضافة الامتحان بنجاح إلى بنك الأسئلة والمنصة! 🎯');
+      setTimeout(() => setQuizSuccess(null), 4000);
 
-    // Reset Form
-    setQuizTitle('');
-    setShowAddForm(false);
-    setQuestions([
-      {
-        id: `q-${Date.now()}-1`,
-        question: '',
-        options: ['', '', '', ''],
-        correctAnswer: 0,
-        explanation: '',
-        formula: '',
-      },
-    ]);
+      setQuizTitle('');
+      setShowAddForm(false);
+      setQuestions([
+        {
+          id: `q-${Date.now()}-1`,
+          question: '',
+          options: ['', '', '', ''],
+          correctAnswer: 0,
+          explanation: '',
+          formula: '',
+        },
+      ]);
+    } finally {
+      setSavingQuiz(false);
+    }
   };
 
   return (
@@ -434,12 +453,13 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                       />
                     )}
 
-                    {q.imageUrl && (
+                    {(questionLocalPreviews[qIdx] || q.imageUrl) && (
                       <div className="pt-1">
-                        <img
-                          src={q.imageUrl}
-                          alt={`معاينة السؤال ${qIdx + 1}`}
-                          className="max-h-56 w-auto rounded-xl border border-slate-200 dark:border-slate-700 object-contain bg-slate-50 dark:bg-slate-950"
+                        <InlineMediaPreview
+                          url={questionLocalPreviews[qIdx] || q.imageUrl}
+                          title={`صورة السؤال رقم ${qIdx + 1}`}
+                          kind="image"
+                          compact
                         />
                       </div>
                     )}
@@ -561,10 +581,11 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
 
             <button
               type="submit"
-              className="px-7 py-3 rounded-2xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-teal-600 to-teal-800 hover:from-teal-700 hover:to-teal-900 shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+              disabled={savingQuiz || uploadingQuestionIdx !== null}
+              className="px-7 py-3 rounded-2xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-teal-600 to-teal-800 hover:from-teal-700 hover:to-teal-900 shadow-md flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>حفظ ونشر الامتحان على المنصة 🚀</span>
+              <span>{savingQuiz ? 'جاري حفظ الامتحان...' : 'حفظ ونشر الامتحان على المنصة 🚀'}</span>
             </button>
           </div>
 

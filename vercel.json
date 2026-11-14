@@ -1,7 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/__/auth/(.*)",
+      "destination": "https://gen-lang-client-0306518459.firebaseapp.com/__/auth/$1"
+    },
+    {
+      "source": "/((?!sw\\.js|assets/|images/|uploads/|favicon\\.svg|logo\\.svg).*)",
       "destination": "/index.html"
     }
   ]
