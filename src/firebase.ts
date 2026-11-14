@@ -15,7 +15,16 @@ import firebaseConfig from '../firebase-applet-config.json';
 import { Lecture, AttachmentFile, Quiz, UserProfile, CloudinaryConfig } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 
-const app = initializeApp(firebaseConfig);
+const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+const useSameOriginAuthDomain =
+  currentHost === 'moham3d-mostafa.vercel.app' || currentHost.endsWith('.vercel.app');
+
+const runtimeFirebaseConfig = {
+  ...firebaseConfig,
+  authDomain: useSameOriginAuthDomain ? currentHost : firebaseConfig.authDomain,
+};
+
+const app = initializeApp(runtimeFirebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

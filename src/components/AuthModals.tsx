@@ -9,7 +9,6 @@ import {
   Sparkles,
   AlertCircle,
   Loader2,
-  ExternalLink,
   WifiOff,
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
@@ -37,13 +36,6 @@ function isTopLevelWindow(): boolean {
   } catch {
     return false;
   }
-}
-
-function isMobileOrInAppBrowser(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|WhatsApp|Telegram/i.test(
-    navigator.userAgent
-  );
 }
 
 export const AuthModals: React.FC<AuthModalsProps> = ({
@@ -78,7 +70,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [regParentPhone, setRegParentPhone] = useState('');
 
   const [authError, setAuthError] = useState<string | null>(null);
-  const [showRedirectFallback, setShowRedirectFallback] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [slowAuthHint, setSlowAuthHint] = useState<string | null>(null);
 
@@ -120,7 +111,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     return Boolean(record?.profileCompleted);
   };
 
-  const handleGoogleRedirectLogin = async () => {
+  // Single unified Google Sign-In directly via Firebase Auth (1 login = full live session)
+  const handleGoogleLogin = async () => {
+    if (googleLoading) return;
+    setAuthError(null);
+    setSlowAuthHint(null);
+
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const msg = 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.';
       setAuthError(msg);
@@ -128,48 +124,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
-    setAuthError(null);
-    setSlowAuthHint(null);
     setGoogleLoading(true);
-    try {
-      sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
-      sessionStorage.setItem(REDIRECT_TS_KEY, String(Date.now()));
-      await signInWithRedirect(auth, googleProvider);
-    } catch (err: any) {
-      sessionStorage.removeItem(REDIRECT_PENDING_KEY);
-      setGoogleLoading(false);
-      if (err?.code === 'auth/unauthorized-domain') {
-        setAuthError(
-          `هذا النطاق (${window.location.hostname}) غير مضاف بعد في قائمة Authorized domains داخل Firebase Authentication.`
-        );
-      } else {
-        setAuthError('تعذر فتح صفحة تسجيل الدخول، يرجى التحقق من اتصال الإنترنت ثم المحاولة.');
-      }
-    }
-  };
-
-  // Single unified Google Sign-In directly via Firebase Auth (1 login = full live session)
-  const handleGoogleLogin = async () => {
-    if (googleLoading) return;
-    setAuthError(null);
-    setSlowAuthHint(null);
-    setShowRedirectFallback(false);
-
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const msg = 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الواي فاي أو باقة الهاتف ثم أعد المحاولة.';
-      setAuthError(msg);
-      emitNetworkAlert({ level: 'offline', message: msg, context: 'auth' });
-      return;
-    }
-
-    setGoogleLoading(true);
-    const attemptStartedAt = Date.now();
 
     if (getQuickNetworkStatus().level !== 'good') {
       probeNetworkQuality('auth').then((res) => {
         if (res.level !== 'good') {
-          setSlowAuthHint('الإنترنت ضعيف الآن — إذا تأخرت النافذة يمكنك الدخول في نفس الصفحة.');
-          setShowRedirectFallback(true);
+          setSlowAuthHint('الإنترنت ضعيف حالياً — قد يستغرق فتح نافذة Google بضع ثوانٍ إضافية.');
         }
       });
     }
@@ -179,16 +139,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       if (probe.level === 'offline') {
         setSlowAuthHint('انقطع الاتصال بالإنترنت أثناء انتظار Google.');
       } else if (probe.level === 'slow') {
-        setSlowAuthHint(
-          'الإنترنت ضعيف حالياً — يمكنك إغلاق النافذة المنبثقة واستخدام «تسجيل الدخول في نفس الصفحة» بالأسفل.'
-        );
-      } else {
-        setSlowAuthHint(
-          'تأخرت نافذة Google في الرد — جرب «تسجيل الدخول في نفس الصفحة» بالأسفل.'
-        );
+        setSlowAuthHint('سرعة الإنترنت ضعيفة حالياً — جاري انتظار استجابة Google...');
       }
-      setShowRedirectFallback(true);
-    }, 6000);
+    }, 6500);
 
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -249,54 +202,40 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     } catch (err: any) {
       window.clearTimeout(slowWatchTimer);
       const code = err?.code || '';
-      const elapsedMs = Date.now() - attemptStartedAt;
       const lastRedirectTs = Number(sessionStorage.getItem(REDIRECT_TS_KEY) || '0');
-      const canAutoRedirect =
-        isTopLevelWindow() && Date.now() - lastRedirectTs > 30000;
+      const canAutoRedirect = isTopLevelWindow() && Date.now() - lastRedirectTs > 30000;
 
       if (
         (code === 'auth/popup-blocked' ||
           code === 'auth/operation-not-supported-in-this-environment') &&
         canAutoRedirect
       ) {
-        await handleGoogleRedirectLogin();
-        return;
-      }
-
-      if (
-        (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') &&
-        canAutoRedirect &&
-        (elapsedMs < 1800 || isMobileOrInAppBrowser())
-      ) {
-        // Browser / mobile auto-severed popup opener across origins — immediately switch to same-tab redirect
-        await handleGoogleRedirectLogin();
-        return;
-      }
-
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        try {
+          sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
+          sessionStorage.setItem(REDIRECT_TS_KEY, String(Date.now()));
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch {
+          sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+          setAuthError('حجب المتصفح نافذة تسجيل الدخول، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
+        }
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         const probe = await probeNetworkQuality('auth');
-        setShowRedirectFallback(true);
         if (probe.level !== 'good') {
-          setAuthError(
-            'أُغلقت نافذة Google أو تأخرت بسبب ضعف الإنترنت. يمكنك المحاولة مباشرة في نفس الصفحة بالزر بالأسفل.'
-          );
+          setAuthError('أُغلقت نافذة تسجيل الدخول أو تأخرت بسبب ضعف الإنترنت. تحقق من الشبكة ثم حاول مرة أخرى.');
         } else {
-          setAuthError(
-            'أُغلقت نافذة تسجيل الدخول أو حجب المتصفح التواصل معها. اضغط "المتابعة في نفس الصفحة" بالأسفل لإتمام الدخول فوراً.'
-          );
+          setAuthError('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية، يرجى المحاولة مرة أخرى.');
         }
       } else if (code === 'auth/unauthorized-domain') {
         setAuthError(
-          `النطاق (${window.location.hostname}) غير مضاف في Firebase Authentication → Settings → Authorized domains.`
+          `النطاق (${window.location.hostname}) غير مضاف بعد في قائمة النطاقات المصرح بها لتسجيل الدخول.`
         );
       } else if (code === 'auth/network-request-failed') {
-        const msg = 'تعذر الاتصال بخوادم Google بسبب ضعف أو انقطاع الإنترنت. تحقق من الشبكة ثم أعد المحاولة.';
+        const msg = 'تعذر الاتصال بسبب ضعف أو انقطاع الإنترنت. تحقق من الشبكة ثم أعد المحاولة.';
         setAuthError(msg);
         emitNetworkAlert({ level: 'slow', message: msg, context: 'auth' });
-        setShowRedirectFallback(true);
       } else {
-        setShowRedirectFallback(true);
-        setAuthError('تعذر تسجيل الدخول بالنافذة المنبثقة، جرب المتابعة في نفس الصفحة بالأسفل.');
+        setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
       }
     } finally {
       setGoogleLoading(false);
@@ -510,7 +449,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           </div>
         )}
 
-        <div className="space-y-2.5 mb-5">
+        <div className="space-y-3 mb-5">
           <button
             type="button"
             disabled={googleLoading}
@@ -531,17 +470,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               {googleLoading ? 'جاري تسجيل الدخول بحساب Google...' : 'المتابعة السريعة بحساب Google'}
             </span>
           </button>
-
-          {isTopLevelWindow() && (showRedirectFallback || isMobileOrInAppBrowser()) && (
-            <button
-              type="button"
-              onClick={handleGoogleRedirectLogin}
-              className="w-full py-2.5 px-3 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-              <span>تسجيل الدخول في نفس الصفحة (للهواتف والنت الضعيف)</span>
-            </button>
-          )}
         </div>
 
         <div className="relative flex py-2 items-center mb-5">
