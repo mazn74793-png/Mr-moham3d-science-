@@ -40,10 +40,15 @@ export const Navbar: React.FC<NavbarProps> = ({
     ? `${nameParts[0].charAt(0)}.${nameParts[1].charAt(0)}` 
     : nameParts[0].slice(0, 2);
 
-  const isTeacherOrAdmin = 
-    currentUser?.email?.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
-    currentUser?.role === 'teacher' ||
-    Boolean(currentUser?.email && siteConfig.adminEmails?.some(e => e.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
+  const isTeacherOrAdmin =
+    currentUser?.role === 'teacher' &&
+    Boolean(
+      currentUser?.email &&
+        (currentUser.email.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
+          siteConfig.adminEmails?.some(
+            (e) => e.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()
+          ))
+    );
 
   const teacherDisplayName = lang === 'en' 
     ? 'Mr. Mohamed Mostafa' 

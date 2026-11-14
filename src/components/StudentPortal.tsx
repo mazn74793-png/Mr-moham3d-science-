@@ -53,9 +53,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   );
   const currentUserEmail = currentUser?.email?.toLowerCase().trim() || '';
   const isTeacher =
-    currentUserEmail === 'mizoo2y2@gmail.com' ||
-    (currentUserEmail !== '' && adminEmailList.includes(currentUserEmail)) ||
-    currentUser?.role === 'teacher';
+    currentUser?.role === 'teacher' &&
+    (currentUserEmail === 'mizoo2y2@gmail.com' ||
+      (currentUserEmail !== '' && adminEmailList.includes(currentUserEmail)));
 
   const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(
     currentUser?.grade || resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'

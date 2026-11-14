@@ -133,18 +133,37 @@ export interface AdminCloudConfig {
 }
 
 /**
- * Queries protected adminConfig/settings inside try/catch.
- * Returns the config if the signed-in user is Primary Admin OR an authorized Co-Admin,
- * or null silently for students / unauthenticated users.
+ * Queries protected adminConfig/settings inside try/catch and explicitly verifies
+ * that the signed-in user's verified email is in the allowed adminEmails list.
+ * Returns null immediately for any non-admin or unverified account.
  */
 export async function fetchAdminConfigIfAuthorized(): Promise<AdminCloudConfig | null> {
-  if (!auth.currentUser) return null;
+  const user = auth.currentUser;
+  if (!user || !user.email || !user.emailVerified) return null;
+  const currentEmail = user.email.toLowerCase().trim();
+
   try {
     const snap = await getDoc(doc(db, 'adminConfig', 'settings'));
     if (snap.exists()) {
-      return snap.data() as AdminCloudConfig;
+      const data = snap.data() as AdminCloudConfig;
+      const allowedList = Array.from(
+        new Set(
+          ['mizoo2y2@gmail.com', ...(data.adminEmails || [])]
+            .map((e) => String(e).toLowerCase().trim())
+            .filter(Boolean)
+        )
+      );
+      if (!allowedList.includes(currentEmail)) {
+        return null;
+      }
+      return {
+        ...data,
+        adminEmails: allowedList,
+      };
     }
-    return null;
+    return currentEmail === 'mizoo2y2@gmail.com'
+      ? { adminEmails: ['mizoo2y2@gmail.com'] }
+      : null;
   } catch {
     return null;
   }

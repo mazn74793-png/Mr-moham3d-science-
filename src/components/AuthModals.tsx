@@ -73,12 +73,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [googleLoading, setGoogleLoading] = useState(false);
   const [slowAuthHint, setSlowAuthHint] = useState<string | null>(null);
 
-  const checkIsAdminEmail = (emailStr?: string, extraEmails?: string[]) => {
+  const checkIsAdminEmail = (emailStr?: string, cloudAllowedEmails?: string[]) => {
     if (!emailStr) return false;
     const clean = emailStr.toLowerCase().trim();
     if (clean === 'mizoo2y2@gmail.com') return true;
-    const list = [...(siteConfig?.adminEmails || ['mizoo2y2@gmail.com']), ...(extraEmails || [])];
-    return list.some((e) => e.toLowerCase().trim() === clean);
+    if (!cloudAllowedEmails || cloudAllowedEmails.length === 0) return false;
+    return cloudAllowedEmails.some((e) => e.toLowerCase().trim() === clean);
   };
 
   const getExistingStudentRecord = (id?: string, email?: string): UserProfile | null => {
@@ -151,9 +151,11 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       const defaultGrade =
         resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
 
-      // Verify Admin / Co-Admin permissions directly from live Firestore adminConfig
+      // Verify Admin / Co-Admin permissions strictly by verified email in live Firestore adminConfig
       const adminCfg = await fetchAdminConfigIfAuthorized();
-      const isAdmin = Boolean(adminCfg) || checkIsAdminEmail(email, adminCfg?.adminEmails);
+      const isAdmin =
+        Boolean(fbUser.emailVerified) &&
+        checkIsAdminEmail(email, adminCfg?.adminEmails);
 
       if (isAdmin) {
         onLoginSuccess({

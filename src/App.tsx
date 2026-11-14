@@ -173,9 +173,9 @@ export default function App() {
 
   const isUserAdmin = useCallback(
     (user: UserProfile | null) => {
-      if (!user) return false;
-      if (user.role === 'teacher') return Boolean(firebaseUser);
-      return Boolean(firebaseUser) && isEmailAdmin(user.email);
+      if (!firebaseUser || !firebaseUser.email || !firebaseUser.emailVerified) return false;
+      if (!user || user.role !== 'teacher') return false;
+      return isEmailAdmin(firebaseUser.email);
     },
     [isEmailAdmin, firebaseUser]
   );
@@ -265,9 +265,18 @@ export default function App() {
           setCloudinaryConfig(nextCloud);
           localStorage.setItem('mm_cloudinary', JSON.stringify(nextCloud));
         }
+      } else {
+        adminEmailsRef.current = ['mizoo2y2@gmail.com'];
+        setSiteConfig((prev) => ({
+          ...prev,
+          adminEmails: ['mizoo2y2@gmail.com'],
+        }));
       }
 
-      const isAdmin = Boolean(adminCfg) || isEmailAdmin(email);
+      const isAdmin =
+        Boolean(fbUser.emailVerified) &&
+        (email.toLowerCase().trim() === 'mizoo2y2@gmail.com' ||
+          Boolean(adminCfg && isEmailAdmin(email, adminCfg.adminEmails)));
 
       if (wasRedirectPending) {
         setCurrentView(isAdmin ? 'teacher' : 'student');
@@ -316,38 +325,49 @@ export default function App() {
           }
         }
       } else {
+        setCurrentView((v) => (v === 'teacher' ? 'student' : v));
+        const fallbackStudent: UserProfile = {
+          id: fbUser.uid,
+          name: fbUser.displayName || email.split('@')[0] || 'طالب منصة',
+          email,
+          role: 'student',
+          grade: 'third',
+          phone: '',
+          parentPhone: '',
+          governorate: 'القاهرة',
+          avatarUrl: fbUser.photoURL || '',
+          score: 0,
+          profileCompleted: false,
+          watchedLectureIds: [],
+          passedQuizIds: [],
+          quizScores: {},
+          joinedAt: new Date().toISOString().split('T')[0],
+        };
         try {
           const cloudStudent = await getStudentFromCloud(fbUser.uid);
           if (cloudStudent) {
             setCurrentUser({
               ...cloudStudent,
+              role: 'student',
               avatarUrl: fbUser.photoURL || cloudStudent.avatarUrl || '',
               profileCompleted: Boolean(cloudStudent.profileCompleted),
             });
           } else {
             setCurrentUser((prev) => {
-              if (prev && prev.id === fbUser.uid) return prev;
-              return {
-                id: fbUser.uid,
-                name: fbUser.displayName || email.split('@')[0] || 'طالب منصة',
-                email,
-                role: 'student',
-                grade: 'third',
-                phone: '',
-                parentPhone: '',
-                governorate: 'القاهرة',
-                avatarUrl: fbUser.photoURL || '',
-                score: 0,
-                profileCompleted: false,
-                watchedLectureIds: [],
-                passedQuizIds: [],
-                quizScores: {},
-                joinedAt: new Date().toISOString().split('T')[0],
-              };
+              if (prev && prev.id === fbUser.uid) {
+                return { ...prev, role: 'student' };
+              }
+              return fallbackStudent;
             });
           }
         } catch (err) {
           console.warn('Student cloud fetch warning:', err);
+          setCurrentUser((prev) => {
+            if (prev && prev.id === fbUser.uid) {
+              return { ...prev, role: 'student' };
+            }
+            return fallbackStudent;
+          });
         }
       }
     });
@@ -432,7 +452,8 @@ export default function App() {
     if (!firebaseUser) return;
 
     const unsubscribers: Array<() => void> = [];
-    const userIsAdmin = isEmailAdmin(firebaseUser.email) || currentUser?.role === 'teacher';
+    const userIsAdmin =
+      Boolean(firebaseUser.emailVerified) && isEmailAdmin(firebaseUser.email);
 
     if (userIsAdmin) {
       unsubscribers.push(
@@ -644,11 +665,11 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    let isAdmin = user.role === 'teacher' || isEmailAdmin(user.email);
-    if (!isAdmin && auth.currentUser) {
+    let isAdmin = false;
+    if (auth.currentUser && auth.currentUser.emailVerified && auth.currentUser.email) {
+      const liveEmail = auth.currentUser.email.toLowerCase().trim();
       const adminCfg = await fetchAdminConfigIfAuthorized();
       if (adminCfg) {
-        isAdmin = true;
         const mergedEmails = Array.from(
           new Set(
             ['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])]
@@ -661,21 +682,41 @@ export default function App() {
           ...prev,
           adminEmails: mergedEmails,
         }));
+        isAdmin = mergedEmails.includes(liveEmail);
+      } else {
+        adminEmailsRef.current = ['mizoo2y2@gmail.com'];
+        setSiteConfig((prev) => ({
+          ...prev,
+          adminEmails: ['mizoo2y2@gmail.com'],
+        }));
+        isAdmin = liveEmail === 'mizoo2y2@gmail.com';
       }
     }
 
     if (isAdmin) {
-      const finalAdmin: UserProfile = { ...user, role: 'teacher', profileCompleted: true };
+      const finalAdmin: UserProfile = {
+        ...user,
+        email: auth.currentUser?.email || user.email,
+        role: 'teacher',
+        profileCompleted: true,
+      };
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
       return;
     }
 
+    const sanitizedStudentInput: UserProfile = {
+      ...user,
+      role: 'student',
+    };
+
     let matched: UserProfile | undefined = students.find(
       (s) =>
-        (user.id && s.id === user.id) ||
-        (user.email && s.email && s.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
-        (user.phone && s.phone && s.phone === user.phone)
+        (sanitizedStudentInput.id && s.id === sanitizedStudentInput.id) ||
+        (sanitizedStudentInput.email &&
+          s.email &&
+          s.email.toLowerCase().trim() === sanitizedStudentInput.email.toLowerCase().trim()) ||
+        (sanitizedStudentInput.phone && s.phone && s.phone === sanitizedStudentInput.phone)
     );
 
     if (!matched && auth.currentUser) {
@@ -688,22 +729,30 @@ export default function App() {
     }
 
     const isMarkedDone =
-      Boolean(user.profileCompleted) ||
+      Boolean(sanitizedStudentInput.profileCompleted) ||
       Boolean(matched?.profileCompleted) ||
       Boolean(
-        user.email && localStorage.getItem(`mm_profile_done_${user.email.toLowerCase().trim()}`) === 'true'
+        sanitizedStudentInput.email &&
+          localStorage.getItem(
+            `mm_profile_done_${sanitizedStudentInput.email.toLowerCase().trim()}`
+          ) === 'true'
       ) ||
-      Boolean(user.id && localStorage.getItem(`mm_profile_done_${user.id}`) === 'true');
+      Boolean(
+        sanitizedStudentInput.id &&
+          localStorage.getItem(`mm_profile_done_${sanitizedStudentInput.id}`) === 'true'
+      );
 
     const finalUser: UserProfile = matched
       ? {
           ...matched,
-          avatarUrl: user.avatarUrl || matched.avatarUrl,
-          name: matched.name || user.name,
+          role: 'student',
+          avatarUrl: sanitizedStudentInput.avatarUrl || matched.avatarUrl,
+          name: matched.name || sanitizedStudentInput.name,
           profileCompleted: isMarkedDone,
         }
       : {
-          ...user,
+          ...sanitizedStudentInput,
+          role: 'student',
           profileCompleted: isMarkedDone,
         };
 
