@@ -23,9 +23,11 @@ interface TeacherDashboardProps {
   onUpdateLecture?: (updated: Lecture) => Promise<boolean> | boolean | void;
   attachments: AttachmentFile[];
   onAddAttachment: (newFile: AttachmentFile) => Promise<boolean> | boolean | void;
+  onUpdateAttachment?: (updated: AttachmentFile) => Promise<boolean> | boolean | void;
   onDeleteAttachment: (id: string) => Promise<boolean> | boolean | void;
   quizzes: Quiz[];
   onAddQuiz: (newQuiz: Quiz) => Promise<boolean> | boolean | void;
+  onUpdateQuiz?: (updatedQuiz: Quiz) => Promise<boolean> | boolean | void;
   onDeleteQuiz: (quizId: string) => Promise<boolean> | boolean | void;
   students: UserProfile[];
   onUpdateStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
@@ -70,9 +72,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onUpdateLecture,
   attachments,
   onAddAttachment,
+  onUpdateAttachment,
   onDeleteAttachment,
   quizzes,
   onAddQuiz,
+  onUpdateQuiz,
   onDeleteQuiz,
   students,
   onUpdateStudent,
@@ -587,6 +591,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               cloudinaryConfig={cloudinaryConfig}
               grades={resolvedGrades}
               onAddQuiz={onAddQuiz}
+              onUpdateQuiz={onUpdateQuiz}
               onDeleteQuiz={onDeleteQuiz}
             />
           )}
@@ -604,6 +609,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               usedPercentage={usedPercentage}
               totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
               onAddAttachment={onAddAttachment}
+              onUpdateAttachment={onUpdateAttachment}
               onDeleteAttachment={onDeleteAttachment}
             />
           )}

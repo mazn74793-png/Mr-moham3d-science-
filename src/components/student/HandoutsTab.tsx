@@ -1,7 +1,20 @@
-import React, { useState } from 'react';
-import { Download, Eye, FileText, Image as ImageIcon, Lock, Unlock, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import {
+  Download,
+  Eye,
+  FileText,
+  Image as ImageIcon,
+  Lock,
+  Unlock,
+  Loader2,
+  AlertCircle,
+  Search,
+  BookOpen,
+  FileSpreadsheet,
+} from 'lucide-react';
 import { AttachmentFile, UserProfile } from '../../types';
 import { MediaKind, MediaPreviewModal, detectMediaKind } from '../MediaPreview';
+import { optimizeImageUrl } from '../../utils/mediaOptimizer';
 
 interface HandoutsTabProps {
   lang: string;
@@ -25,15 +38,17 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
   } | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'pdf' | 'image' | 'free' | 'points'>('all');
 
   const isTeacher = currentUser?.role === 'teacher';
   const pointsBalance = Number(currentUser?.points) || 0;
   const unlockedIds = currentUser?.unlockedAttachmentIds || [];
 
-  const getBadgeLabel = (kind: MediaKind): string => {
-    if (kind === 'image') return 'صورة';
-    if (kind === 'pdf') return 'PDF';
-    return 'ملف';
+  const getTypeLabel = (kind: MediaKind): string => {
+    if (kind === 'image') return 'ملخص / صورة';
+    if (kind === 'pdf') return 'ملزمة PDF';
+    return 'مستند Word';
   };
 
   const handleUnlock = async (file: AttachmentFile) => {
@@ -49,16 +64,81 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
     }
   };
 
+  const visibleAttachments = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return filteredAttachments.filter((file) => {
+      const kind = detectMediaKind(file.downloadUrl, file.fileType as MediaKind | undefined);
+      const cost = file.pointsCost || 0;
+
+      if (typeFilter === 'pdf' && kind !== 'pdf') return false;
+      if (typeFilter === 'image' && kind !== 'image') return false;
+      if (typeFilter === 'free' && cost > 0) return false;
+      if (typeFilter === 'points' && cost <= 0) return false;
+
+      if (!q) return true;
+      return (
+        file.title.toLowerCase().includes(q) ||
+        (file.chapter || '').toLowerCase().includes(q)
+      );
+    });
+  }, [filteredAttachments, searchTerm, typeFilter]);
+
   return (
     <>
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
-            مذكرات {gradeTitle}
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            معاينة مباشرة أو تحميل سريع للمذكرات وبنوك الأسئلة.
-          </p>
+      <div className="space-y-5">
+        {/* Clean Header + Search & Filter Toolbar */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
+                مذكرات وملازم {gradeTitle}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                عرض منظم للملازم، بنوك الأسئلة، والملخصات المصورة مع معاينة وقراءة مباشرة أو تحميل.
+              </p>
+            </div>
+            <div className="text-xs font-mono font-bold text-teal-700 dark:text-teal-300 tabular-nums shrink-0">
+              {visibleAttachments.length} / {filteredAttachments.length} ملزمة
+            </div>
+          </div>
+
+          {filteredAttachments.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="ابحث باسم الملزمة أو الباب..."
+                  className="w-full min-h-[40px] pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 self-start sm:self-auto">
+                {[
+                  { id: 'all', label: 'الكل' },
+                  { id: 'pdf', label: 'PDF' },
+                  { id: 'image', label: 'صور وملخصات' },
+                  { id: 'free', label: 'مجانية' },
+                  { id: 'points', label: 'بالنقاط' },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setTypeFilter(f.id as any)}
+                    className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      typeFilter === f.id
+                        ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {unlockError && (
@@ -77,9 +157,16 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                 : 'لا توجد مذكرات مضافة لهذا الصف بعد'}
             </h4>
           </div>
+        ) : visibleAttachments.length === 0 ? (
+          <div className="p-10 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+            <Search className="w-7 h-7 text-slate-400 mx-auto" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              لا توجد ملازم مطابقة لبحثك
+            </p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredAttachments.map((file) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {visibleAttachments.map((file) => {
               const kind = detectMediaKind(
                 file.downloadUrl,
                 file.fileType as MediaKind | undefined
@@ -90,63 +177,13 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
               const canAfford = pointsBalance >= cost;
 
               return (
-                <div
+                <article
                   key={file.id}
-                  className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4"
+                  className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between transition-colors hover:border-teal-400"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                      {isLocked ? (
-                        <Lock className="w-5 h-5 text-amber-500" />
-                      ) : kind === 'image' ? (
-                        <ImageIcon className="w-5 h-5" />
-                      ) : (
-                        <FileText className="w-5 h-5" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug truncate">
-                          {file.title}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold font-mono shrink-0">
-                          {cost > 0 ? `${cost} نقطة` : getBadgeLabel(kind)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
-                        <span className="truncate">{file.chapter}</span>
-                        <span aria-hidden="true">·</span>
-                        <span className="shrink-0">{file.fileSize}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {isLocked ? (
-                    <button
-                      type="button"
-                      disabled={Boolean(unlockingId) || !canAfford}
-                      onClick={() => handleUnlock(file)}
-                      className={`w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 ${
-                        canAfford
-                          ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      {unlockingId === file.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Unlock className="w-4 h-4" />
-                      )}
-                      <span>
-                        {unlockingId === file.id
-                          ? 'جاري الفتح...'
-                          : canAfford
-                          ? `افتح المذكرة بـ ${cost} نقطة`
-                          : `مطلوب ${cost} نقطة (رصيدك ${pointsBalance})`}
-                      </span>
-                    </button>
-                  ) : isAvailable ? (
-                    <div className="grid grid-cols-2 gap-2">
+                  {/* Visual Handout Cover Header */}
+                  <div className="relative">
+                    {!isLocked && isAvailable && kind === 'image' ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -156,30 +193,140 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
                             kind,
                           })
                         }
-                        className="min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="w-full h-44 bg-slate-100 dark:bg-slate-950 overflow-hidden block cursor-zoom-in group"
                       >
-                        <Eye className="w-4 h-4" />
-                        <span>معاينة</span>
+                        <img
+                          src={optimizeImageUrl(file.downloadUrl, 700)}
+                          alt={file.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                       </button>
-
-                      <a
-                        href={file.downloadUrl}
-                        download
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-1.5"
+                    ) : (
+                      <div
+                        className={`h-32 px-5 py-4 flex items-center justify-between gap-3 ${
+                          isLocked
+                            ? 'bg-gradient-to-bl from-amber-600 via-amber-700 to-slate-900 text-white'
+                            : kind === 'pdf'
+                            ? 'bg-gradient-to-bl from-teal-700 via-teal-800 to-slate-900 text-white'
+                            : 'bg-gradient-to-bl from-indigo-700 via-indigo-800 to-slate-900 text-white'
+                        }`}
                       >
-                        <Download className="w-4 h-4" />
-                        <span>تحميل</span>
-                      </a>
+                        <div className="space-y-1 min-w-0">
+                          <div className="text-[11px] font-bold text-white/80 font-mono">
+                            {isLocked ? `محمية بـ ${cost} نقطة` : getTypeLabel(kind)}
+                          </div>
+                          <div className="text-sm sm:text-base font-extrabold leading-snug line-clamp-2">
+                            {file.title}
+                          </div>
+                        </div>
+
+                        <div className="w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+                          {isLocked ? (
+                            <Lock className="w-6 h-6 text-amber-300" />
+                          ) : kind === 'pdf' ? (
+                            <BookOpen className="w-6 h-6 text-white" />
+                          ) : kind === 'image' ? (
+                            <ImageIcon className="w-6 h-6 text-white" />
+                          ) : (
+                            <FileSpreadsheet className="w-6 h-6 text-white" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Handout Details & Actions */}
+                  <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug line-clamp-2">
+                        {file.title}
+                      </h3>
+
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                        <span className="font-semibold text-teal-700 dark:text-teal-400">
+                          {file.chapter}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{file.fileSize}</span>
+                        {file.pageCount ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{file.pageCount} صفحة</span>
+                          </>
+                        ) : null}
+                        {cost > 0 && !isLocked && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                              تم الفتح
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <span className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 cursor-not-allowed">
-                      <Download className="w-4 h-4" />
-                      <span>غير متاح للتحميل حالياً</span>
-                    </span>
-                  )}
-                </div>
+
+                    {isLocked ? (
+                      <button
+                        type="button"
+                        disabled={Boolean(unlockingId) || !canAfford}
+                        onClick={() => handleUnlock(file)}
+                        className={`w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 ${
+                          canAfford
+                            ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {unlockingId === file.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Unlock className="w-4 h-4" />
+                        )}
+                        <span>
+                          {unlockingId === file.id
+                            ? 'جاري الفتح...'
+                            : canAfford
+                            ? `افتح الملزمة بـ ${cost} نقطة`
+                            : `مطلوب ${cost} نقطة (رصيدك ${pointsBalance})`}
+                        </span>
+                      </button>
+                    ) : isAvailable ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewTarget({
+                              url: file.downloadUrl,
+                              title: file.title,
+                              kind,
+                            })
+                          }
+                          className="min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>قراءة ومعاينة</span>
+                        </button>
+
+                        <a
+                          href={file.downloadUrl}
+                          download
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>تحميل</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="w-full min-h-[44px] py-2.5 rounded-xl font-bold text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 cursor-not-allowed">
+                        <Download className="w-4 h-4" />
+                        <span>غير متاح للتحميل حالياً</span>
+                      </span>
+                    )}
+                  </div>
+                </article>
               );
             })}
           </div>

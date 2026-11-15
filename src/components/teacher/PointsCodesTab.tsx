@@ -13,6 +13,8 @@ import {
   AlertCircle,
   Video,
   FileText,
+  Edit3,
+  X,
 } from 'lucide-react';
 import { AttachmentFile, Lecture, PointReward, RedeemCode } from '../../types';
 import { GradeItem, getGradeDisplayName } from '../../types/siteConfig';
@@ -62,13 +64,18 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
   const [codeLabel, setCodeLabel] = useState('');
   const [savingCode, setSavingCode] = useState(false);
 
-  // Rewards creator
+  // Rewards creator / editor
+  const [editingRewardId, setEditingRewardId] = useState<string | null>(null);
   const [rewardTitle, setRewardTitle] = useState('');
   const [rewardDesc, setRewardDesc] = useState('');
   const [rewardCost, setRewardCost] = useState(100);
   const [rewardCategory, setRewardCategory] = useState<PointReward['category']>('perk');
   const [rewardGrade, setRewardGrade] = useState('all');
   const [savingReward, setSavingReward] = useState(false);
+
+  // Code editor modal state
+  const [editingCode, setEditingCode] = useState<RedeemCode | null>(null);
+  const [savingEditedCode, setSavingEditedCode] = useState(false);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
@@ -167,29 +174,76 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
     window.setTimeout(() => setCopiedAll(false), 2000);
   };
 
+  const resetRewardForm = () => {
+    setEditingRewardId(null);
+    setRewardTitle('');
+    setRewardDesc('');
+    setRewardCost(100);
+    setRewardCategory('perk');
+    setRewardGrade('all');
+  };
+
+  const handleLoadRewardForEdit = (rew: PointReward) => {
+    setEditingRewardId(rew.id);
+    setRewardTitle(rew.title);
+    setRewardDesc(rew.description || '');
+    setRewardCost(rew.pointsCost);
+    setRewardCategory(rew.category);
+    setRewardGrade(rew.grade || 'all');
+  };
+
   const handleAddReward = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rewardTitle.trim() || savingReward) return;
     setSavingReward(true);
     try {
+      const existing = editingRewardId ? rewards.find((r) => r.id === editingRewardId) : undefined;
       const reward: PointReward = {
-        id: `rew-${Date.now()}`,
+        id: existing ? existing.id : `rew-${Date.now()}`,
         title: rewardTitle.trim(),
         description: rewardDesc.trim(),
         pointsCost: Math.max(1, Math.min(100000, Math.round(Number(rewardCost) || 50))),
         category: rewardCategory,
         grade: rewardGrade,
-        active: true,
-        dateAdded: new Date().toISOString().split('T')[0],
+        active: existing ? existing.active : true,
+        dateAdded: existing?.dateAdded || new Date().toISOString().split('T')[0],
       };
       const ok = await onSaveReward(reward);
       if (ok) {
-        showToast('success', `تمت إضافة مكافأة "${reward.title}" لمتجر الطلاب!`);
-        setRewardTitle('');
-        setRewardDesc('');
+        showToast(
+          'success',
+          existing
+            ? `تم تحديث مكافأة "${reward.title}" بنجاح!`
+            : `تمت إضافة مكافأة "${reward.title}" لمتجر الطلاب!`
+        );
+        resetRewardForm();
       }
     } finally {
       setSavingReward(false);
+    }
+  };
+
+  const handleSaveEditedCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCode || savingEditedCode) return;
+    setSavingEditedCode(true);
+    try {
+      const updated: RedeemCode = {
+        ...editingCode,
+        points: Math.max(1, Math.min(100000, Math.round(Number(editingCode.points) || 10))),
+        maxUses: Math.max(
+          editingCode.usedCount || 0,
+          Math.max(1, Math.min(100000, Math.round(Number(editingCode.maxUses) || 1)))
+        ),
+        label: editingCode.label?.trim() || undefined,
+      };
+      const ok = await onCreateRedeemCode(updated);
+      if (ok) {
+        showToast('success', `تم تحديث كود (${updated.code}) بنجاح!`);
+        setEditingCode(null);
+      }
+    } finally {
+      setSavingEditedCode(false);
     }
   };
 
@@ -454,6 +508,15 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
 
                       <button
                         type="button"
+                        onClick={() => setEditingCode(item)}
+                        title="تعديل نقاط أو عدد استخدامات الكود"
+                        className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 text-slate-600 dark:text-slate-300 hover:text-teal-600 cursor-pointer"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => onToggleRedeemCode(item.id, !item.active)}
                         title={item.active ? 'إيقاف الكود مؤقتاً' : 'تفعيل الكود'}
                         className={`p-2 rounded-xl cursor-pointer transition-colors ${
@@ -599,14 +662,31 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
                   className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={savingReward}
-                className="min-h-[40px] px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>{savingReward ? 'جاري الإضافة...' : 'إضافة للمتجر'}</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {editingRewardId && (
+                  <button
+                    type="button"
+                    onClick={resetRewardForm}
+                    className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                  >
+                    إلغاء التعديل
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={savingReward}
+                  className="min-h-[40px] px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>
+                    {savingReward
+                      ? 'جاري الحفظ...'
+                      : editingRewardId
+                      ? 'حفظ تعديل المكافأة'
+                      : 'إضافة للمتجر'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </form>
@@ -616,7 +696,13 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
             {rewards.map((rew) => (
               <div
                 key={rew.id}
-                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                  editingRewardId === rew.id
+                    ? 'border-teal-500 bg-teal-50/40 dark:bg-teal-950/20'
+                    : !rew.active
+                    ? 'border-slate-200 dark:border-slate-800 opacity-70'
+                    : 'border-slate-200 dark:border-slate-800'
+                }`}
               >
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2 text-xs">
@@ -629,6 +715,12 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
                         ? 'كل الصفوف'
                         : getGradeDisplayName(rew.grade, undefined, 'ar')}
                     </span>
+                    {!rew.active && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-rose-500 font-bold">موقوفة</span>
+                      </>
+                    )}
                   </div>
                   <div className="font-bold text-sm text-slate-900 dark:text-white truncate">
                     {rew.title}
@@ -638,40 +730,153 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
                   )}
                 </div>
 
-                {confirmDeleteReward === rew.id ? (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDeleteReward(rew.id);
-                        setConfirmDeleteReward(null);
-                      }}
-                      className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
-                    >
-                      تأكيد
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteReward(null)}
-                      className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-[10px] cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-                  </div>
-                ) : (
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setConfirmDeleteReward(rew.id)}
-                    className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer shrink-0"
+                    onClick={() => handleLoadRewardForEdit(rew)}
+                    title="تعديل المكافأة"
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 text-slate-600 dark:text-slate-300 hover:text-teal-600 cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Edit3 className="w-4 h-4" />
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => onSaveReward({ ...rew, active: !rew.active })}
+                    title={rew.active ? 'إيقاف المكافأة' : 'تفعيل المكافأة'}
+                    className={`p-2 rounded-xl cursor-pointer transition-colors ${
+                      rew.active
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    <Power className="w-4 h-4" />
+                  </button>
+
+                  {confirmDeleteReward === rew.id ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDeleteReward(rew.id);
+                          setConfirmDeleteReward(null);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                      >
+                        تأكيد
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteReward(null)}
+                        className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-[10px] cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteReward(rew.id)}
+                      className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Edit Redeem Code Modal */}
+      {editingCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-teal-600" />
+                <h3 className="text-base font-bold font-kufi text-slate-900 dark:text-white">
+                  تعديل كود <span dir="ltr" className="font-mono text-teal-600">{editingCode.code}</span>
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCode(null)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedCode} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    قيمة النقاط *
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100000}
+                    required
+                    value={editingCode.points}
+                    onChange={(e) =>
+                      setEditingCode({ ...editingCode, points: Number(e.target.value) })
+                    }
+                    className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الحد الأقصى للاستخدام
+                  </label>
+                  <input
+                    type="number"
+                    min={Math.max(1, editingCode.usedCount || 0)}
+                    max={100000}
+                    required
+                    value={editingCode.maxUses}
+                    onChange={(e) =>
+                      setEditingCode({ ...editingCode, maxUses: Number(e.target.value) })
+                    }
+                    className="w-full p-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  ملاحظة / وصف الكود
+                </label>
+                <input
+                  type="text"
+                  value={editingCode.label || ''}
+                  onChange={(e) => setEditingCode({ ...editingCode, label: e.target.value })}
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingCode(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditedCode}
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {savingEditedCode ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 3. POINT-PRICED CONTENT SUMMARY */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4">

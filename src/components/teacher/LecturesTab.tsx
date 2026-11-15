@@ -74,6 +74,10 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
   const [uploadingEditThumb, setUploadingEditThumb] = useState(false);
   const [editThumbProgress, setEditThumbProgress] = useState(0);
+  const [uploadingEditVideo, setUploadingEditVideo] = useState(false);
+  const [editVideoProgress, setEditVideoProgress] = useState(0);
+  const [uploadingEditPdf, setUploadingEditPdf] = useState(false);
+  const [editPdfProgress, setEditPdfProgress] = useState(0);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteConfirmLecId, setDeleteConfirmLecId] = useState<string | null>(null);
 
@@ -190,6 +194,71 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     } finally {
       setUploadingEditThumb(false);
       setEditThumbProgress(0);
+    }
+  };
+
+  const handleEditVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !editingLecture) return;
+
+    setUploadingEditVideo(true);
+    setEditVideoProgress(0);
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'video',
+        onProgress: (percent) => setEditVideoProgress(percent),
+      });
+      setEditingLecture((prev) =>
+        prev
+          ? {
+              ...prev,
+              videoUrl: result.url,
+              duration: result.durationSeconds
+                ? `${Math.max(1, Math.round(result.durationSeconds / 60))} دقيقة`
+                : prev.duration,
+            }
+          : null
+      );
+    } catch (err: any) {
+      setLectureFormError(err?.message || 'تعذر رفع الفيديو البديل.');
+    } finally {
+      setUploadingEditVideo(false);
+      setEditVideoProgress(0);
+    }
+  };
+
+  const handleEditPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !editingLecture) return;
+
+    setUploadingEditPdf(true);
+    setEditPdfProgress(0);
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'auto',
+        onProgress: (percent) => setEditPdfProgress(percent),
+      });
+      const fallbackTitle = file.name.replace(/\.[^/.]+$/, '');
+      setEditingLecture((prev) =>
+        prev
+          ? {
+              ...prev,
+              pdfUrl: result.url,
+              pdfTitle: prev.pdfTitle || `${fallbackTitle}.pdf`,
+            }
+          : null
+      );
+    } catch (err: any) {
+      setLectureFormError(err?.message || 'تعذر رفع ملف المذكرة المرفقة.');
+    } finally {
+      setUploadingEditPdf(false);
+      setEditPdfProgress(0);
     }
   };
 
@@ -902,10 +971,22 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  رابط الفيديو *
-                </label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    رابط الفيديو * أو رفع فيديو بديل
+                  </label>
+                  <label className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer">
+                    {uploadingEditVideo ? `جاري رفع الفيديو ${editVideoProgress}%` : 'رفع فيديو بديل من جهازك'}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      disabled={uploadingEditVideo}
+                      onChange={handleEditVideoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
                 <input
                   type="text"
                   required
@@ -913,7 +994,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                   onChange={(e) =>
                     setEditingLecture({ ...editingLecture, videoUrl: e.target.value })
                   }
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono dir-ltr"
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono dir-ltr"
                 />
               </div>
 
@@ -1010,6 +1091,57 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 </label>
               </div>
 
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    مذكرة PDF المرفقة بالمحاضرة (اختياري)
+                  </span>
+                  <label className="px-3 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 text-white text-[11px] font-bold cursor-pointer">
+                    {uploadingEditPdf ? `جاري الرفع ${editPdfProgress}%` : 'رفع PDF بديل'}
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,image/*"
+                      disabled={uploadingEditPdf}
+                      onChange={handleEditPdfUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500">عنوان المذكرة المرفقة</label>
+                    <input
+                      type="text"
+                      value={editingLecture.pdfTitle || ''}
+                      onChange={(e) =>
+                        setEditingLecture({
+                          ...editingLecture,
+                          pdfTitle: e.target.value || undefined,
+                        })
+                      }
+                      placeholder="مثال: ملزمة الحصة الأولى.pdf"
+                      className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500">رابط ملف PDF</label>
+                    <input
+                      type="text"
+                      value={editingLecture.pdfUrl || ''}
+                      onChange={(e) =>
+                        setEditingLecture({
+                          ...editingLecture,
+                          pdfUrl: e.target.value || undefined,
+                        })
+                      }
+                      dir="ltr"
+                      placeholder="https://..."
+                      className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
                   وصف المحاضرة
@@ -1034,7 +1166,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={savingEdit || uploadingEditThumb}
+                  disabled={savingEdit || uploadingEditThumb || uploadingEditVideo || uploadingEditPdf}
                   className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer disabled:opacity-50"
                 >
                   {savingEdit ? 'جاري الحفظ...' : 'حفظ التعديلات'}

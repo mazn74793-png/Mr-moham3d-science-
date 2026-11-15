@@ -1100,6 +1100,17 @@ export default function App() {
     return ok;
   };
 
+  const handleUpdateAttachment = async (updated: AttachmentFile): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveAttachmentToCloud(updated),
+      'تم تحديث بيانات المذكرة وحفظ التعديلات في السحابة!'
+    );
+    if (ok) {
+      setAttachments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+    return ok;
+  };
+
   const handleAddQuiz = async (newQuiz: Quiz): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveQuizToCloud(newQuiz),
@@ -1107,6 +1118,17 @@ export default function App() {
     );
     if (ok) {
       setQuizzes((prev) => [newQuiz, ...prev.filter((q) => q.id !== newQuiz.id)]);
+    }
+    return ok;
+  };
+
+  const handleUpdateQuiz = async (updatedQuiz: Quiz): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveQuizToCloud(updatedQuiz),
+      'تم تحديث الامتحان والأسئلة وحفظ التعديلات في السحابة!'
+    );
+    if (ok) {
+      setQuizzes((prev) => prev.map((q) => (q.id === updatedQuiz.id ? updatedQuiz : q)));
     }
     return ok;
   };
@@ -1516,9 +1538,11 @@ export default function App() {
               onUpdateLecture={handleUpdateLecture}
               attachments={attachments}
               onAddAttachment={handleAddAttachment}
+              onUpdateAttachment={handleUpdateAttachment}
               onDeleteAttachment={handleDeleteAttachment}
               quizzes={quizzes}
               onAddQuiz={handleAddQuiz}
+              onUpdateQuiz={handleUpdateQuiz}
               onDeleteQuiz={handleDeleteQuiz}
               students={students}
               onUpdateStudent={handleAdminUpdateStudent}

@@ -12,7 +12,6 @@ import {
   Check,
   Lock,
   AlertTriangle,
-  Atom,
   LayoutDashboard,
   Eye,
   Ticket,
@@ -24,6 +23,10 @@ import {
   FlaskConical,
   Clock3,
   User,
+  Edit3,
+  MapPin,
+  Phone,
+  Target,
 } from 'lucide-react';
 import {
   Lecture,
@@ -40,7 +43,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { MediaPreviewModal, detectMediaKind } from './MediaPreview';
 import { QuizRunner } from './student/QuizRunner';
 import { HandoutsTab } from './student/HandoutsTab';
-import { PeriodicTableTab } from './student/PeriodicTableTab';
 import { StudyLabTab } from './student/StudyLabTab';
 import { PointsWalletTab } from './student/PointsWalletTab';
 import {
@@ -107,7 +109,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [currentUser?.grade, isTeacher]);
 
   const [activeTab, setActiveTab] = useState<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'periodic-table' | 'study-hub'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub'
   >('lectures');
   const [inlineCodeInput, setInlineCodeInput] = useState('');
   const [inlineBusy, setInlineBusy] = useState(false);
@@ -598,22 +600,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <button
               type="button"
               onClick={() => {
-                setActiveTab('periodic-table');
-                setActiveQuiz(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'periodic-table'
-                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Atom className="w-4 h-4" />
-              <span>{lang === 'en' ? 'Chemistry Lab' : 'الجدول والمختبر'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
                 setActiveTab('study-hub');
                 setActiveQuiz(null);
               }}
@@ -626,6 +612,39 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <FlaskConical className="w-4 h-4" />
               <span>{lang === 'en' ? 'Study & Equations' : 'المعادلات والمذاكرة'}</span>
             </button>
+          </div>
+
+          {/* Mobile / Tablet Quick Scrollable Strip */}
+          <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-1">
+            {[
+              { id: 'lectures' as const, label: lang === 'en' ? 'Lectures' : `المحاضرات (${filteredLectures.length})`, icon: Video },
+              { id: 'quizzes' as const, label: lang === 'en' ? 'Quizzes' : `الامتحانات (${filteredQuizzes.length})`, icon: Award },
+              { id: 'files' as const, label: lang === 'en' ? 'Handouts' : `الملازم (${filteredAttachments.length})`, icon: FileText },
+              { id: 'points' as const, label: lang === 'en' ? 'Points' : 'النقاط والأكواد', icon: Ticket },
+              { id: 'study-hub' as const, label: lang === 'en' ? 'Equations' : 'المعادلات والمذاكرة', icon: FlaskConical },
+            ].map((item) => {
+              const IconComp = item.icon;
+              const isSelected =
+                item.id === 'quizzes' ? activeTab === 'quizzes' || Boolean(activeQuiz) : activeTab === item.id && !activeQuiz;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (item.id !== 'quizzes') setActiveQuiz(null);
+                  }}
+                  className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 border transition-colors cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <IconComp className="w-3.5 h-3.5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Teacher Grade Preview Switcher */}
@@ -648,6 +667,88 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Prominent Student Profile Identity Card */}
+        {!activeQuiz && (() => {
+          const cardTheme = STUDENT_CARD_THEMES[customProfile.cardTheme] || STUDENT_CARD_THEMES.teal;
+          return (
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+              <div className={`h-2.5 w-full ${cardTheme.cardBg}`} />
+              <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                  {currentUser.avatarUrl ? (
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={currentUser.name}
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shrink-0 shadow-xs"
+                    />
+                  ) : (
+                    <div
+                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-sm ${cardTheme.cardBg}`}
+                    >
+                      {renderStudentAvatarIcon(customProfile.avatarIcon, 'w-7 h-7')}
+                    </div>
+                  )}
+
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white truncate">
+                        {currentUser.name}
+                      </h2>
+                      {customProfile.titleBadge && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>{customProfile.titleBadge}</span>
+                        </span>
+                      )}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 text-[11px] font-bold text-teal-700 dark:text-teal-300">
+                        {getGradeTitle(selectedGrade)}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                      {currentUser.phone && (
+                        <span className="inline-flex items-center gap-1 font-mono tabular-nums" dir="ltr">
+                          <Phone className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                          {currentUser.phone}
+                        </span>
+                      )}
+                      {currentUser.governorate && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                          {currentUser.governorate}
+                        </span>
+                      )}
+                      {customProfile.targetScore && (
+                        <span className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300">
+                          <Target className="w-3.5 h-3.5 text-amber-500" />
+                          <span>الدرجة المستهدفة: {customProfile.targetScore}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {customProfile.studyGoal && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
+                        هدفي: {customProfile.studyGoal}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalOpen(true)}
+                    className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-900 dark:bg-teal-600 hover:bg-slate-800 dark:hover:bg-teal-700 text-white text-xs font-bold transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    <span>تعديل بياناتي وتخصيص البطاقة</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="flex flex-col gap-6">
           {/* Compact 4-Metric Quick Strip */}
@@ -1374,43 +1475,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               />
             )}
 
-            {/* 5. INTERACTIVE CHEMISTRY LAB & STUDY HUB */}
-            {(activeTab === 'periodic-table' || activeTab === 'study-hub') && !activeQuiz && (
-              <div className="space-y-4">
-                {/* Mobile quick sub-switcher between Lab and Study Hub */}
-                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('periodic-table')}
-                    className={`flex-1 min-h-[42px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                      activeTab === 'periodic-table'
-                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <Atom className="w-4 h-4" />
-                    <span>الجدول والمختبر</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('study-hub')}
-                    className={`flex-1 min-h-[42px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                      activeTab === 'study-hub'
-                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <FlaskConical className="w-4 h-4" />
-                    <span>المعادلات والمذاكرة</span>
-                  </button>
-                </div>
-
-                {activeTab === 'periodic-table' ? (
-                  <PeriodicTableTab />
-                ) : (
-                  <StudyLabTab studentId={currentUser?.id} />
-                )}
-              </div>
+            {/* 5. STUDY & EQUATIONS HUB */}
+            {activeTab === 'study-hub' && !activeQuiz && (
+              <StudyLabTab studentId={currentUser?.id} />
             )}
           </div>
         </div>
@@ -1480,23 +1547,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             }`}
           >
             <FileText className="w-5 h-5" />
-            <span>{lang === 'en' ? 'PDFs' : 'المذكرات'}</span>
+            <span>{lang === 'en' ? 'PDFs' : 'الملازم'}</span>
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              setActiveTab(activeTab === 'study-hub' ? 'study-hub' : 'periodic-table');
-              setActiveQuiz(null);
-            }}
+            onClick={() => setProfileModalOpen(true)}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              activeTab === 'periodic-table' || activeTab === 'study-hub'
+              profileModalOpen
                 ? 'text-teal-600 dark:text-teal-400'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            <Atom className="w-5 h-5" />
-            <span>{lang === 'en' ? 'Chem Lab' : 'المختبر'}</span>
+            <User className="w-5 h-5" />
+            <span>{lang === 'en' ? 'Profile' : 'ملفي'}</span>
           </button>
         </div>
       </nav>

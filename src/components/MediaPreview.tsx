@@ -69,7 +69,7 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-5xl bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
       >
         {/* Modal Top Bar */}
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950">
@@ -89,13 +89,22 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <a
               href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">فتح في تبويب مستقل</span>
+            </a>
+            <a
+              href={url}
               download
               target="_blank"
               rel="noopener noreferrer"
               className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">تحميل / فتح</span>
+              <span className="hidden sm:inline">تحميل</span>
             </a>
             <button
               type="button"
@@ -109,12 +118,12 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
         </div>
 
         {/* Viewer Body */}
-        <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-950 flex items-center justify-center p-2 sm:p-4 min-h-[320px]">
+        <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4 min-h-[360px]">
           {resolvedKind === 'image' && (
             <img
-              src={optimizeImageUrl(url, 1280)}
+              src={optimizeImageUrl(url, 1440)}
               alt={title || 'معاينة'}
-              className="max-w-full max-h-[76vh] rounded-xl object-contain shadow-md"
+              className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-md"
             />
           )}
 
@@ -136,16 +145,21 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
                 controls
                 playsInline
                 preload="auto"
-                className="w-full max-h-[75vh] rounded-xl bg-black"
+                className="w-full max-h-[78vh] rounded-xl bg-black"
               />
             ))}
 
           {resolvedKind === 'pdf' && (
-            <iframe
-              src={url}
-              title={title || 'PDF Preview'}
-              className="w-full h-[74vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
-            />
+            <div className="w-full flex-1 flex flex-col gap-2">
+              <iframe
+                src={url}
+                title={title || 'PDF Preview'}
+                className="w-full h-[76vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
+              />
+              <div className="text-center text-[11px] text-slate-500">
+                في حال لم يظهر ملف الـ PDF داخل متصفح الهاتف، اضغط على «فتح في تبويب مستقل» أو «تحميل» بالأعلى.
+              </div>
+            </div>
           )}
 
           {resolvedKind === 'doc' && (
