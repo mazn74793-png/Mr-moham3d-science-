@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom, Camera } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
+import { optimizeImageUrl } from '../utils/mediaOptimizer';
 
 interface HeroSectionProps {
   siteConfig: SiteConfig;
@@ -53,10 +54,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           <div className={`lg:col-span-7 ${isRtl ? 'text-right' : 'text-left'} space-y-6 animate-fade-in-up`}>
             
             {/* Elegant Callout Tag */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-50/90 dark:bg-teal-950/70 border border-teal-200/80 dark:border-teal-800 text-teal-800 dark:text-teal-300 text-xs sm:text-sm font-bold shadow-xs hover:scale-102 transition-transform">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-teal-500 animate-ping"></span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-50/90 dark:bg-teal-950/70 border border-teal-200/80 dark:border-teal-800 text-teal-800 dark:text-teal-300 text-xs sm:text-sm font-bold shadow-xs">
+              <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
               <span>{lang === 'en' ? 'Class of 2026 · Languages & Experimental Schools' : siteConfig.heroBadge}</span>
-              <Sparkles className="w-4 h-4 text-amber-500" />
             </div>
 
             {/* Heading with Gradient & Accent underline */}
@@ -160,10 +160,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <div className="relative w-full flex items-center justify-center group">
                 {imgSrc && !imgError ? (
                   <img
-                    src={imgSrc}
+                    src={optimizeImageUrl(imgSrc, 900)}
                     alt={siteConfig.teacherName}
                     decoding="async"
-                    className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 animate-float-slow cursor-pointer rounded-3xl"
+                    className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 cursor-pointer rounded-3xl"
                     referrerPolicy="no-referrer"
                     onError={handleImageError}
                   />

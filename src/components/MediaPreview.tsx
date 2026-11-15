@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, X, ExternalLink, FileText, Film, Image as ImageIcon, ZoomIn, Download } from 'lucide-react';
+import { optimizeVideoStreamUrl, optimizeImageUrl, getVideoPosterUrl } from '../utils/mediaOptimizer';
 
 export type MediaKind = 'image' | 'video' | 'pdf' | 'doc';
 
@@ -111,7 +112,7 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
         <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-950 flex items-center justify-center p-2 sm:p-4 min-h-[320px]">
           {resolvedKind === 'image' && (
             <img
-              src={url}
+              src={optimizeImageUrl(url, 1280)}
               alt={title || 'معاينة'}
               className="max-w-full max-h-[76vh] rounded-xl object-contain shadow-md"
             />
@@ -130,10 +131,11 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
               </div>
             ) : (
               <video
-                src={url}
+                src={optimizeVideoStreamUrl(url, 'fast')}
+                poster={getVideoPosterUrl(url)}
                 controls
                 playsInline
-                preload="metadata"
+                preload="auto"
                 className="w-full max-h-[75vh] rounded-xl bg-black"
               />
             ))}
@@ -220,7 +222,7 @@ export const InlineMediaPreview: React.FC<InlineMediaPreviewProps> = ({
               className="w-full flex justify-center bg-slate-50 dark:bg-slate-950 rounded-xl overflow-hidden cursor-zoom-in"
             >
               <img
-                src={url}
+                src={optimizeImageUrl(url, 800)}
                 alt={title || 'معاينة الصورة'}
                 loading="lazy"
                 decoding="async"
@@ -242,7 +244,8 @@ export const InlineMediaPreview: React.FC<InlineMediaPreviewProps> = ({
               </div>
             ) : (
               <video
-                src={url}
+                src={optimizeVideoStreamUrl(url, 'fast')}
+                poster={getVideoPosterUrl(url)}
                 controls
                 playsInline
                 preload="metadata"

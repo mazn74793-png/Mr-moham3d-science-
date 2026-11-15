@@ -19,6 +19,10 @@ import {
   Sparkles,
   Unlock,
   Loader2,
+  Bookmark,
+  Search,
+  FlaskConical,
+  Clock3,
 } from 'lucide-react';
 import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile, PointReward } from '../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
@@ -28,7 +32,9 @@ import { MediaPreviewModal, detectMediaKind } from './MediaPreview';
 import { QuizRunner } from './student/QuizRunner';
 import { HandoutsTab } from './student/HandoutsTab';
 import { PeriodicTableTab } from './student/PeriodicTableTab';
+import { StudyLabTab } from './student/StudyLabTab';
 import { PointsWalletTab } from './student/PointsWalletTab';
+import { prefetchVideoStream } from '../utils/mediaOptimizer';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -83,11 +89,45 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [currentUser?.grade, isTeacher]);
 
   const [activeTab, setActiveTab] = useState<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'periodic-table'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'periodic-table' | 'study-hub'
   >('lectures');
   const [inlineCodeInput, setInlineCodeInput] = useState('');
   const [inlineBusy, setInlineBusy] = useState(false);
   const [inlineNotice, setInlineNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [lectureSearch, setLectureSearch] = useState('');
+  const [lectureFilter, setLectureFilter] = useState<'all' | 'available' | 'completed' | 'bookmarked'>('all');
+
+  const studentStorageKey = currentUser?.id || 'guest';
+  const [bookmarkedLectureIds, setBookmarkedLectureIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`mm_study_${studentStorageKey}_bookmarks`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`mm_study_${studentStorageKey}_bookmarks`);
+      setBookmarkedLectureIds(saved ? JSON.parse(saved) : []);
+    } catch {
+      setBookmarkedLectureIds([]);
+    }
+  }, [studentStorageKey]);
+
+  const toggleLectureBookmark = (lecId: string) => {
+    setBookmarkedLectureIds((prev) => {
+      const next = prev.includes(lecId) ? prev.filter((id) => id !== lecId) : [...prev, lecId];
+      try {
+        localStorage.setItem(`mm_study_${studentStorageKey}_bookmarks`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const videoTimeGetterRef = React.useRef<() => number>(() => 0);
 
   const filteredLectures = lectures
     .filter((l) => l.grade === selectedGrade)
@@ -110,6 +150,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
   }, [selectedGrade, filteredLectures, activeLecture]);
 
+  // Pre-warm active and upcoming unlocked lecture streams for fast instant start
+  useEffect(() => {
+    if (!activeLecture?.videoUrl) return;
+    prefetchVideoStream(activeLecture.videoUrl);
+    const curIdx = filteredLectures.findIndex((l) => l.id === activeLecture.id);
+    if (curIdx >= 0 && curIdx + 1 < filteredLectures.length) {
+      const nextLec = filteredLectures[curIdx + 1];
+      if (nextLec?.videoUrl) prefetchVideoStream(nextLec.videoUrl);
+    }
+  }, [activeLecture?.id, activeLecture?.videoUrl, filteredLectures]);
+
   // Quiz state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
@@ -120,18 +171,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [studentNotes, setStudentNotes] = useState<string>('');
   useEffect(() => {
     if (!activeLecture?.id) return;
-    const saved = localStorage.getItem(`mm_note_${activeLecture.id}`);
+    const saved = localStorage.getItem(`mm_note_${studentStorageKey}_${activeLecture.id}`)
+      ?? localStorage.getItem(`mm_note_${activeLecture.id}`);
     setStudentNotes(
       saved ??
         'ملاحظة: تذكر أن عنصر الكروم والنحاس شواذ في التوزيع الإلكتروني لاستقرار المستوى الفرعي 3d.'
     );
-  }, [activeLecture?.id]);
+  }, [activeLecture?.id, studentStorageKey]);
 
   const handleNotesChange = (val: string) => {
     setStudentNotes(val);
     if (activeLecture?.id) {
-      localStorage.setItem(`mm_note_${activeLecture.id}`, val);
+      localStorage.setItem(`mm_note_${studentStorageKey}_${activeLecture.id}`, val);
     }
+  };
+
+  const handleInsertVideoTimestamp = () => {
+    const secs = Math.floor(videoTimeGetterRef.current?.() || 0);
+    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+    const ss = String(secs % 60).padStart(2, '0');
+    const prefix = studentNotes.trim() ? `${studentNotes.trimEnd()}\n` : '';
+    handleNotesChange(`${prefix}[${mm}:${ss}] `);
   };
 
   // Sequential & Points-Gated Unlocking Logic
@@ -477,7 +537,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               }`}
             >
               <Atom className="w-4 h-4" />
-              <span>{lang === 'en' ? 'Periodic Table' : 'الجدول الدوري'}</span>
+              <span>{lang === 'en' ? 'Chemistry Lab' : 'الجدول والمختبر'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('study-hub');
+                setActiveQuiz(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                activeTab === 'study-hub'
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <FlaskConical className="w-4 h-4" />
+              <span>{lang === 'en' ? 'Study & Equations' : 'المعادلات والمذاكرة'}</span>
             </button>
           </div>
 
@@ -595,6 +671,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             currentUser?.watchedLectureIds?.includes(activeLecture.id)
                           )}
                           onMarkWatched={handleMarkWatched}
+                          onRegisterTimeGetter={(fn) => {
+                            videoTimeGetterRef.current = fn;
+                          }}
                           onTakeQuiz={(quizId) => {
                             const targetQuiz =
                               quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
@@ -603,27 +682,56 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         />
 
                         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                              <span className="font-semibold text-teal-700 dark:text-teal-400">
-                                {activeLecture.chapter}
-                              </span>
-                              <span aria-hidden="true">·</span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5" />
-                                {activeLecture.duration}
-                              </span>
-                              <span aria-hidden="true">·</span>
-                              <span>{activeLecture.viewsCount} مشاهدة</span>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1.5 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                                <span className="font-semibold text-teal-700 dark:text-teal-400">
+                                  {activeLecture.chapter}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  {activeLecture.duration}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span>{activeLecture.viewsCount} مشاهدة</span>
+                              </div>
+
+                              <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
+                                {activeLecture.title}
+                              </h2>
+
+                              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {activeLecture.description}
+                              </p>
                             </div>
 
-                            <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
-                              {activeLecture.title}
-                            </h2>
-
-                            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                              {activeLecture.description}
-                            </p>
+                            <button
+                              type="button"
+                              onClick={() => toggleLectureBookmark(activeLecture.id)}
+                              aria-label="حفظ الحصة في المفضلة"
+                              title={
+                                bookmarkedLectureIds.includes(activeLecture.id)
+                                  ? 'إزالة من المحفوظات'
+                                  : 'حفظ الحصة للمراجعة'
+                              }
+                              className={`min-w-[44px] min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+                                bookmarkedLectureIds.includes(activeLecture.id)
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-teal-400'
+                              }`}
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 ${
+                                  bookmarkedLectureIds.includes(activeLecture.id)
+                                    ? 'fill-current'
+                                    : ''
+                                }`}
+                              />
+                              <span className="hidden sm:inline">
+                                {bookmarkedLectureIds.includes(activeLecture.id) ? 'محفوظة' : 'حفظ'}
+                              </span>
+                            </button>
                           </div>
 
                           {/* Attached PDF Handout Row */}
@@ -673,12 +781,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             </div>
                           )}
 
-                          {/* Quick Notes Section */}
+                          {/* Quick Notes Section with Video Timestamp Inserter */}
                           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                              <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                              <span>ملاحظاتك السريعة على الحصة (تُحفظ تلقائياً):</span>
-                            </label>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                                <span>ملاحظاتك السريعة على الحصة (تُحفظ تلقائياً):</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleInsertVideoTimestamp}
+                                className="min-h-[34px] px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/70 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Clock3 className="w-3.5 h-3.5" />
+                                <span>+ إضافة توقيت الفيديو</span>
+                              </button>
+                            </div>
                             <textarea
                               value={studentNotes}
                               onChange={(e) => handleNotesChange(e.target.value)}
@@ -687,6 +805,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               placeholder="اكتب معادلة أو ملاحظة هامة تريد الرجوع لها..."
                             />
                           </div>
+
+                          {/* Previous / Next Lecture Navigation */}
+                          {filteredLectures.length > 1 && (() => {
+                            const curIdx = filteredLectures.findIndex((l) => l.id === activeLecture.id);
+                            const prevL = curIdx > 0 ? filteredLectures[curIdx - 1] : null;
+                            const nextL =
+                              curIdx >= 0 && curIdx + 1 < filteredLectures.length
+                                ? filteredLectures[curIdx + 1]
+                                : null;
+                            return (
+                              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                                <button
+                                  type="button"
+                                  disabled={!prevL}
+                                  onClick={() => prevL && setActiveLecture(prevL)}
+                                  className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <ChevronRight className="w-4 h-4" />
+                                  <span>الحصة السابقة</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!nextL}
+                                  onClick={() => nextL && setActiveLecture(nextL)}
+                                  className="min-h-[42px] px-3.5 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/60 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span>الحصة التالية</span>
+                                  <ChevronLeft className="w-4 h-4" />
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     ) : (activeLecture.pointsCost || 0) > 0 ? (
@@ -915,25 +1065,83 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                 {/* Lecture Curriculum Playlist Column */}
                 <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                      قائمة حصص المنهج
-                    </h3>
-                    <span className="text-xs font-mono tabular-nums text-slate-500">
-                      {filteredLectures.length} حصص
-                    </span>
+                  <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                        قائمة حصص المنهج
+                      </h3>
+                      <span className="text-xs font-mono tabular-nums text-slate-500">
+                        {filteredLectures.length} حصص
+                      </span>
+                    </div>
+
+                    {filteredLectures.length > 0 && (
+                      <>
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={lectureSearch}
+                            onChange={(e) => setLectureSearch(e.target.value)}
+                            placeholder="ابحث عن حصة أو باب..."
+                            className="w-full min-h-[36px] pr-8 pl-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { id: 'all', label: 'الكل' },
+                            { id: 'available', label: 'متاحة' },
+                            { id: 'completed', label: 'مكتملة' },
+                            { id: 'bookmarked', label: 'المحفوظة' },
+                          ].map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setLectureFilter(f.id as any)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                                lectureFilter === f.id
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[540px] overflow-y-auto">
-                    {filteredLectures.map((lec, idx) => {
+                    {filteredLectures
+                      .filter((lec) => {
+                        const unlocked = isLectureUnlocked(lec);
+                        const isWatched = Boolean(currentUser?.watchedLectureIds?.includes(lec.id));
+                        const isBookmarked = bookmarkedLectureIds.includes(lec.id);
+                        if (lectureFilter === 'available' && !unlocked) return false;
+                        if (lectureFilter === 'completed' && !isWatched) return false;
+                        if (lectureFilter === 'bookmarked' && !isBookmarked) return false;
+                        const q = lectureSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          lec.title.toLowerCase().includes(q) ||
+                          lec.chapter.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((lec, idx) => {
                       const isCurrent = activeLecture?.id === lec.id;
                       const unlocked = isLectureUnlocked(lec);
                       const isWatched = currentUser?.watchedLectureIds?.includes(lec.id);
+                      const isBookmarked = bookmarkedLectureIds.includes(lec.id);
 
                       return (
                         <button
                           key={lec.id}
                           type="button"
+                          onMouseEnter={() => {
+                            if (unlocked && lec.videoUrl) prefetchVideoStream(lec.videoUrl);
+                          }}
                           onClick={() => {
                             setActiveLecture(lec);
                             if (window.innerWidth < 1024) {
@@ -964,19 +1172,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             ) : isWatched ? (
                               <Check className="w-4 h-4" />
                             ) : (
-                              idx + 1
+                              lec.sessionOrder || idx + 1
                             )}
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <div
-                              className={`text-xs sm:text-sm font-bold truncate ${
-                                isCurrent
-                                  ? 'text-teal-800 dark:text-teal-300'
-                                  : 'text-slate-900 dark:text-white'
-                              }`}
-                            >
-                              {lec.title}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div
+                                className={`text-xs sm:text-sm font-bold truncate ${
+                                  isCurrent
+                                    ? 'text-teal-800 dark:text-teal-300'
+                                    : 'text-slate-900 dark:text-white'
+                                }`}
+                              >
+                                {lec.title}
+                              </div>
+                              {isBookmarked && (
+                                <Bookmark className="w-3.5 h-3.5 text-amber-500 fill-current shrink-0" />
+                              )}
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums truncate">
                               <span>{lec.duration}</span>
@@ -1090,8 +1303,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               />
             )}
 
-            {/* 5. INTERACTIVE PERIODIC TABLE */}
-            {activeTab === 'periodic-table' && !activeQuiz && <PeriodicTableTab />}
+            {/* 5. INTERACTIVE CHEMISTRY LAB & STUDY HUB */}
+            {(activeTab === 'periodic-table' || activeTab === 'study-hub') && !activeQuiz && (
+              <div className="space-y-4">
+                {/* Mobile quick sub-switcher between Lab and Study Hub */}
+                <div className="lg:hidden flex items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('periodic-table')}
+                    className={`flex-1 min-h-[42px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                      activeTab === 'periodic-table'
+                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <Atom className="w-4 h-4" />
+                    <span>الجدول والمختبر</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('study-hub')}
+                    className={`flex-1 min-h-[42px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                      activeTab === 'study-hub'
+                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <FlaskConical className="w-4 h-4" />
+                    <span>المعادلات والمذاكرة</span>
+                  </button>
+                </div>
+
+                {activeTab === 'periodic-table' ? (
+                  <PeriodicTableTab />
+                ) : (
+                  <StudyLabTab studentId={currentUser?.id} />
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1166,17 +1415,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('periodic-table');
+              setActiveTab(activeTab === 'study-hub' ? 'study-hub' : 'periodic-table');
               setActiveQuiz(null);
             }}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              activeTab === 'periodic-table'
+              activeTab === 'periodic-table' || activeTab === 'study-hub'
                 ? 'text-teal-600 dark:text-teal-400'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <Atom className="w-5 h-5" />
-            <span>{lang === 'en' ? 'Elements' : 'الجدول'}</span>
+            <span>{lang === 'en' ? 'Chem Lab' : 'المختبر'}</span>
           </button>
         </div>
       </nav>

@@ -6,8 +6,6 @@ import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { Footer } from './components/Footer';
-import { NetworkStatusMonitor } from './components/NetworkStatusMonitor';
-import { probeNetworkQuality, emitNetworkAlert } from './utils/networkMonitor';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
 import {
   Lecture,
@@ -518,8 +516,7 @@ export default function App() {
             `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
           );
         } else if (code === 'auth/network-request-failed') {
-          probeNetworkQuality('auth');
-          showNotice('error', 'فشل إتمام تسجيل الدخول بسبب ضعف أو انقطاع الإنترنت.');
+          showNotice('error', 'تعذر الاتصال بخدمة تسجيل الدخول، تأكد من الاتصال ثم أعد المحاولة.');
         } else if (code) {
           showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
           setLoginModalOpen(true);
@@ -822,9 +819,7 @@ export default function App() {
     successMsg?: string
   ): Promise<boolean> => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const offlineMsg = 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.';
-      emitNetworkAlert({ level: 'offline', message: offlineMsg, context: 'save' });
-      showNotice('error', offlineMsg);
+      showNotice('error', 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.');
       return false;
     }
 
@@ -866,12 +861,9 @@ export default function App() {
       return true;
     } catch (err) {
       console.error('Cloud write error:', err);
-      const net = await probeNetworkQuality('save');
       showNotice(
         'error',
-        net.level !== 'good'
-          ? 'تعذر الحفظ بسبب ضعف أو انقطاع الإنترنت، يرجى المحاولة مرة أخرى عند استقرار الشبكة.'
-          : 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
+        'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
       );
       return false;
     }
@@ -1417,8 +1409,6 @@ export default function App() {
     <div
       className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
     >
-      <NetworkStatusMonitor />
-
       {resolvingAuth && (
         <div
           dir="rtl"

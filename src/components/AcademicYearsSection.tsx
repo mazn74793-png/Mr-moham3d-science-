@@ -167,9 +167,6 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
               }`}
             >
               <span>{lang === 'en' ? item.badgeEn : item.badgeAr}</span>
-              {item.isPopular && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              )}
             </button>
           ))}
         </div>
@@ -209,27 +206,21 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                 >
                   <div>
                     
-                    {/* Top Badges */}
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                      <span className="text-xs font-bold font-mono px-3.5 py-1.5 rounded-full bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1.5">
-                        <GraduationCap className="w-3.5 h-3.5" />
+                    {/* Clean Inline Header Metadata */}
+                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2 text-xs">
+                      <div className="flex items-center gap-2 font-bold text-teal-700 dark:text-teal-300">
+                        <GraduationCap className="w-4 h-4 shrink-0" />
                         <span>{lang === 'en' ? card.badgeEn : card.badgeAr}</span>
-                      </span>
-                      
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>{lang === 'en' ? 'Live Platform Data' : 'بيانات حقيقية لايف'}</span>
-                        </span>
-
-                        <span className={`text-xs font-bold font-mono px-3 py-1 rounded-full ${
-                          card.isPopular 
-                            ? 'bg-amber-400 text-slate-950 shadow-xs' 
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                        }`}>
+                        <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+                        <span className="font-mono font-semibold text-slate-500 dark:text-slate-400">
                           {lang === 'en' ? card.yearLabelEn : card.yearLabelAr}
                         </span>
                       </div>
+                      {card.isPopular && (
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                          {lang === 'en' ? 'Most Popular' : 'الأكثر انضماماً'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Title & Description */}

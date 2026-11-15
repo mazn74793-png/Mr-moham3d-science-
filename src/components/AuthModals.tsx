@@ -9,13 +9,11 @@ import {
   Sparkles,
   AlertCircle,
   Loader2,
-  WifiOff,
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import { auth, googleProvider, getStudentFromCloud, fetchAdminConfigIfAuthorized } from '../firebase';
-import { emitNetworkAlert, getQuickNetworkStatus, probeNetworkQuality } from '../utils/networkMonitor';
 
 interface AuthModalsProps {
   loginOpen: boolean;
@@ -71,7 +69,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [slowAuthHint, setSlowAuthHint] = useState<string | null>(null);
 
   const checkIsAdminEmail = (emailStr?: string, cloudAllowedEmails?: string[]) => {
     if (!emailStr) return false;
@@ -223,46 +220,19 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const handleGoogleLogin = async () => {
     if (googleLoading) return;
     setAuthError(null);
-    setSlowAuthHint(null);
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const msg = 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.';
-      setAuthError(msg);
-      emitNetworkAlert({ level: 'offline', message: msg, context: 'auth' });
+      setAuthError('لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.');
       return;
     }
 
     setGoogleLoading(true);
 
-    if (getQuickNetworkStatus().level !== 'good') {
-      probeNetworkQuality('auth').then((res) => {
-        if (res.level !== 'good') {
-          setSlowAuthHint(
-            `Internet Quality: زمن التأخير مرتفع (${res.rttMs ? `${res.rttMs} ms` : 'بطيء'}) — قد تتأخر نافذة Google.`
-          );
-        }
-      });
-    }
-
-    const slowWatchTimer = window.setTimeout(async () => {
-      const probe = await probeNetworkQuality('auth');
-      if (probe.level === 'offline') {
-        setSlowAuthHint('Internet Quality: انقطع الاتصال بالإنترنت أثناء انتظار Google.');
-      } else if (probe.level === 'slow') {
-        setSlowAuthHint(
-          `Internet Quality: زمن التأخير مرتفع (${probe.rttMs ? `${probe.rttMs} ms` : 'بطيء'}) — جاري انتظار استجابة Google...`
-        );
-      }
-    }, 5500);
-
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      window.clearTimeout(slowWatchTimer);
       clearRedirectFlags();
       await completeFirebaseUserLogin(result.user);
     } catch (err: any) {
-      window.clearTimeout(slowWatchTimer);
-
       // Some mobile browsers lose popup window communication right after auth actually finishes
       if (auth.currentUser) {
         clearRedirectFlags();
@@ -288,30 +258,13 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           setAuthError('حجب المتصفح نافذة تسجيل الدخول، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
         }
       } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        const probe = await probeNetworkQuality('auth');
-        if (probe.level === 'offline') {
-          setSlowAuthHint('Internet Quality: انقطع الاتصال بالإنترنت قبل إتمام تسجيل الدخول.');
-          setAuthError('انقطع الاتصال بالإنترنت أثناء تسجيل الدخول. تأكد من الشبكة ثم حاول مرة أخرى.');
-        } else if (probe.level === 'slow') {
-          const latencyTag = probe.rttMs ? ` (${probe.rttMs} ms)` : '';
-          setSlowAuthHint(`Internet Quality: زمن التأخير مرتفع${latencyTag} — اتصال الإنترنت ضعيف حالياً.`);
-          setAuthError(
-            `تأخرت نافذة تسجيل الدخول بسبب ارتفاع زمن التأخير${latencyTag}. يُرجى المحاولة مرة أخرى عند تحسن الشبكة.`
-          );
-        } else {
-          setAuthError('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية، يرجى المحاولة مرة أخرى.');
-        }
+        setAuthError('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية، يرجى المحاولة مرة أخرى.');
       } else if (code === 'auth/unauthorized-domain') {
         setAuthError(
           `النطاق (${window.location.hostname}) غير مضاف بعد في قائمة النطاقات المصرح بها لتسجيل الدخول.`
         );
       } else if (code === 'auth/network-request-failed') {
-        const probe = await probeNetworkQuality('auth');
-        const latencyTag = probe.rttMs ? ` (${probe.rttMs} ms)` : '';
-        const msg = `Internet Quality: تعذر الاتصال بسبب ضعف الإنترنت${latencyTag}. تحقق من الشبكة ثم أعد المحاولة.`;
-        setSlowAuthHint(msg);
-        setAuthError(msg);
-        emitNetworkAlert({ level: 'slow', rttMs: probe.rttMs, message: msg, context: 'auth' });
+        setAuthError('تعذر الاتصال بخدمة تسجيل الدخول، تحقق من الشبكة ثم أعد المحاولة.');
       } else {
         setAuthError('تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.');
       }
@@ -525,13 +478,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           <div className="p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2 font-sans leading-relaxed">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{authError}</span>
-          </div>
-        )}
-
-        {slowAuthHint && (
-          <div className="p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2 font-sans leading-relaxed">
-            <WifiOff className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{slowAuthHint}</span>
           </div>
         )}
 

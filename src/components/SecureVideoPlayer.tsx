@@ -14,8 +14,17 @@ import {
   Award,
   Loader2,
   RefreshCw,
+  PictureInPicture2,
+  Gauge,
 } from 'lucide-react';
 import { Lecture, UserProfile } from '../types';
+import {
+  optimizeVideoStreamUrl,
+  isCloudinaryVideoUrl,
+  getVideoPosterUrl,
+  prefetchVideoStream,
+  VideoQualityMode,
+} from '../utils/mediaOptimizer';
 
 interface SecureVideoPlayerProps {
   lecture: Lecture;
@@ -23,9 +32,16 @@ interface SecureVideoPlayerProps {
   isWatched: boolean;
   onMarkWatched: (lectureId: string) => void;
   onTakeQuiz?: (quizId?: string) => void;
+  onRegisterTimeGetter?: (getter: () => number) => void;
 }
 
 const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+
+const QUALITY_OPTIONS: Array<{ id: VideoQualityMode; labelAr: string; shortLabel: string }> = [
+  { id: 'fast', labelAr: 'سريع (تلقائي)', shortLabel: 'سريع' },
+  { id: 'eco', labelAr: 'توفير (سلس)', shortLabel: 'توفير' },
+  { id: 'hd', labelAr: 'جودة عالية HD', shortLabel: 'HD' },
+];
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
@@ -44,22 +60,42 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   isWatched,
   onMarkWatched,
   onTakeQuiz,
+  onRegisterTimeGetter,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideControlsTimerRef = useRef<number | null>(null);
+  const lastSavedPosRef = useRef<number>(0);
+  const restoredForLectureRef = useRef<string | null>(null);
 
   const [securityNotice, setSecurityNotice] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [fallbackToRaw, setFallbackToRaw] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [bufferedPercent, setBufferedPercent] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [videoQuality, setVideoQuality] = useState<VideoQualityMode>(() => {
+    const saved = localStorage.getItem('mm_video_quality') as VideoQualityMode | null;
+    return saved === 'eco' || saved === 'hd' ? saved : 'fast';
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
+
+  const canOptimizeCloudinary = isCloudinaryVideoUrl(lecture.videoUrl);
+  const resolvedVideoSrc =
+    fallbackToRaw || !canOptimizeCloudinary
+      ? lecture.videoUrl
+      : optimizeVideoStreamUrl(lecture.videoUrl, videoQuality);
+  const posterUrl = getVideoPosterUrl(lecture.videoUrl, lecture.thumbnailUrl);
+
+  // Register live video time getter for quick timestamped notes
+  useEffect(() => {
+    onRegisterTimeGetter?.(() => videoRef.current?.currentTime || 0);
+  }, [onRegisterTimeGetter, lecture.id]);
 
   // Subtle drifting watermark coordinates
   const [watermarkPos, setWatermarkPos] = useState<{ top: number; left: number }>({
@@ -76,19 +112,24 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     return () => window.clearInterval(interval);
   }, []);
 
-  // Reset player state when switching lectures
+  // Reset player state when switching lectures & pre-warm the stream
   useEffect(() => {
     setIsPlaying(false);
     setIsBuffering(false);
     setHasError(false);
+    setFallbackToRaw(false);
     setCurrentTime(0);
     setDuration(0);
     setBufferedPercent(0);
     setShowControls(true);
+    restoredForLectureRef.current = null;
+    lastSavedPosRef.current = 0;
+
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackRate;
     }
-  }, [lecture.id, lecture.videoUrl]);
+    prefetchVideoStream(lecture.videoUrl, videoQuality);
+  }, [lecture.id, lecture.videoUrl, videoQuality]);
 
   // Listen for native fullscreen exit (Esc key / swipe down)
   useEffect(() => {
@@ -103,23 +144,6 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     setSecurityNotice(msg);
     window.setTimeout(() => setSecurityNotice(null), 3200);
   }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.key === 'PrintScreen' ||
-        e.keyCode === 44 ||
-        e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c')) ||
-        (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))
-      ) {
-        e.preventDefault();
-        showNotice('تصوير أو حفظ محتوى المحاضرة غير مصرح به.');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showNotice]);
 
   const scheduleHideControls = useCallback(() => {
     if (hideControlsTimerRef.current) {
@@ -142,13 +166,12 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
 
   // Determine whether video is direct stream (Cloudinary / server uploads / mp4 / webm / mkv) or iframe embed
   const isDirectVideo = Boolean(
-    lecture.videoUrl && (
-      lecture.videoUrl.includes('cloudinary.com') ||
-      lecture.videoUrl.includes('/uploads/') ||
-      lecture.videoUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)(\?.*)?$/i) ||
-      lecture.videoUrl.startsWith('blob:') ||
-      lecture.videoUrl.startsWith('data:video')
-    )
+    lecture.videoUrl &&
+      (lecture.videoUrl.includes('cloudinary.com') ||
+        lecture.videoUrl.includes('/uploads/') ||
+        lecture.videoUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)(\?.*)?$/i) ||
+        lecture.videoUrl.startsWith('blob:') ||
+        lecture.videoUrl.startsWith('data:video'))
   );
 
   const getEmbedUrl = (url: string) => {
@@ -174,7 +197,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     return false;
   };
 
-  const togglePlayPause = () => {
+  const togglePlayPause = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
     setShowControls(true);
@@ -186,17 +209,20 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     } else {
       vid.pause();
     }
-  };
+  }, [scheduleHideControls, showNotice]);
 
-  const skipSeconds = (delta: number) => {
-    const vid = videoRef.current;
-    if (!vid) return;
-    const next = Math.min(vid.duration || Infinity, Math.max(0, vid.currentTime + delta));
-    vid.currentTime = next;
-    setCurrentTime(next);
-    setShowControls(true);
-    scheduleHideControls();
-  };
+  const skipSeconds = useCallback(
+    (delta: number) => {
+      const vid = videoRef.current;
+      if (!vid) return;
+      const next = Math.min(vid.duration || Infinity, Math.max(0, vid.currentTime + delta));
+      vid.currentTime = next;
+      setCurrentTime(next);
+      setShowControls(true);
+      scheduleHideControls();
+    },
+    [scheduleHideControls]
+  );
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const vid = videoRef.current;
@@ -207,13 +233,13 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     scheduleHideControls();
   };
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
     vid.muted = !vid.muted;
     setIsMuted(vid.muted);
     scheduleHideControls();
-  };
+  }, [scheduleHideControls]);
 
   const cyclePlaybackSpeed = () => {
     const idx = PLAYBACK_SPEEDS.indexOf(playbackRate);
@@ -225,7 +251,44 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     scheduleHideControls();
   };
 
-  const toggleFullscreen = async () => {
+  const cycleVideoQuality = () => {
+    if (!canOptimizeCloudinary) return;
+    const vid = videoRef.current;
+    const resumeTime = vid?.currentTime || 0;
+    const wasPlaying = vid ? !vid.paused : false;
+    const idx = QUALITY_OPTIONS.findIndex((q) => q.id === videoQuality);
+    const nextQuality = QUALITY_OPTIONS[(idx + 1) % QUALITY_OPTIONS.length].id;
+
+    try {
+      sessionStorage.setItem(`mm_vid_pos_${lecture.id}`, String(Math.floor(resumeTime)));
+      localStorage.setItem('mm_video_quality', nextQuality);
+    } catch {}
+
+    setFallbackToRaw(false);
+    setVideoQuality(nextQuality);
+    restoredForLectureRef.current = null;
+    if (wasPlaying) {
+      window.setTimeout(() => {
+        videoRef.current?.play().catch(() => {});
+      }, 150);
+    }
+  };
+
+  const togglePictureInPicture = async () => {
+    const vid = videoRef.current as (HTMLVideoElement & { requestPictureInPicture?: () => Promise<any> }) | null;
+    if (!vid) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (vid.requestPictureInPicture) {
+        await vid.requestPictureInPicture();
+      }
+    } catch {
+      // ignore unsupported PiP gesture restrictions
+    }
+  };
+
+  const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current;
     const vid = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
 
@@ -254,7 +317,51 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
         // ignore
       }
     }
-  };
+  }, []);
+
+  // Combined protection & convenient playback keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === 'PrintScreen' ||
+        e.keyCode === 44 ||
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c')) ||
+        (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))
+      ) {
+        e.preventDefault();
+        showNotice('تصوير أو حفظ محتوى المحاضرة غير مصرح به.');
+        return;
+      }
+
+      if (!isDirectVideo) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+        return;
+      }
+
+      if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        skipSeconds(-10);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        skipSeconds(10);
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        toggleMute();
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDirectVideo, showNotice, skipSeconds, toggleFullscreen, toggleMute, togglePlayPause]);
 
   const handleSurfaceTap = () => {
     if (!isDirectVideo) return;
@@ -277,6 +384,10 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   };
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const currentQualityLabel =
+    QUALITY_OPTIONS.find((q) => q.id === videoQuality)?.shortLabel || 'سريع';
+  const supportsPiP =
+    typeof document !== 'undefined' && Boolean((document as any).pictureInPictureEnabled);
 
   const studentDisplayName = currentUser?.name || 'طالب المنصة';
   const studentDisplayPhone = currentUser?.phone || '';
@@ -301,10 +412,11 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
           <>
             <video
               ref={videoRef}
-              key={lecture.videoUrl}
-              src={lecture.videoUrl}
+              key={resolvedVideoSrc}
+              src={resolvedVideoSrc}
+              poster={posterUrl}
               playsInline
-              preload="metadata"
+              preload="auto"
               controlsList="nodownload"
               onClick={handleSurfaceTap}
               onPlay={() => {
@@ -312,32 +424,65 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                 setIsBuffering(false);
                 scheduleHideControls();
               }}
-              onPause={() => {
+              onPause={(e) => {
                 setIsPlaying(false);
                 setShowControls(true);
+                const t = Math.floor(e.currentTarget.currentTime || 0);
+                try {
+                  if (t > 4) sessionStorage.setItem(`mm_vid_pos_${lecture.id}`, String(t));
+                } catch {}
               }}
               onWaiting={() => setIsBuffering(true)}
               onCanPlay={() => setIsBuffering(false)}
               onLoadedMetadata={(e) => {
                 const v = e.currentTarget;
-                setDuration(v.duration || 0);
+                const dur = v.duration || 0;
+                setDuration(dur);
                 v.playbackRate = playbackRate;
+
+                if (restoredForLectureRef.current !== lecture.id) {
+                  restoredForLectureRef.current = lecture.id;
+                  try {
+                    const savedPos = Number(sessionStorage.getItem(`mm_vid_pos_${lecture.id}`) || '0');
+                    if (savedPos > 5 && (!dur || savedPos < dur - 5)) {
+                      v.currentTime = savedPos;
+                      setCurrentTime(savedPos);
+                    }
+                  } catch {}
+                }
               }}
               onTimeUpdate={(e) => {
                 const v = e.currentTarget;
-                setCurrentTime(v.currentTime || 0);
+                const nowSec = v.currentTime || 0;
+                setCurrentTime(nowSec);
                 if (v.buffered.length > 0 && v.duration > 0) {
                   const end = v.buffered.end(v.buffered.length - 1);
                   setBufferedPercent(Math.min(100, (end / v.duration) * 100));
                 }
+                if (Math.abs(nowSec - lastSavedPosRef.current) >= 4) {
+                  lastSavedPosRef.current = nowSec;
+                  try {
+                    if (nowSec > 5) {
+                      sessionStorage.setItem(`mm_vid_pos_${lecture.id}`, String(Math.floor(nowSec)));
+                    }
+                  } catch {}
+                }
               }}
               onError={() => {
+                if (!fallbackToRaw && canOptimizeCloudinary && resolvedVideoSrc !== lecture.videoUrl) {
+                  setFallbackToRaw(true);
+                  setHasError(false);
+                  return;
+                }
                 setIsBuffering(false);
                 setHasError(true);
               }}
               onEnded={() => {
                 setIsPlaying(false);
                 setShowControls(true);
+                try {
+                  sessionStorage.removeItem(`mm_vid_pos_${lecture.id}`);
+                } catch {}
                 onMarkWatched(lecture.id);
               }}
               className="w-full h-full object-contain bg-black relative z-0 cursor-pointer"
@@ -349,7 +494,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                 <AlertTriangle className="w-9 h-9 text-amber-400" />
                 <p className="text-sm font-bold text-white">تعذر تحميل الفيديو حالياً</p>
                 <p className="text-xs text-slate-400 max-w-xs">
-                  تأكد من استقرار اتصال الإنترنت أو أعد المحاولة.
+                  يرجى المحاولة مرة أخرى لتشغيل المحاضرة.
                 </p>
                 <button
                   type="button"
@@ -392,7 +537,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-white/75 font-mono shrink-0">
                     <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-                    <span className="hidden xs:inline">بث محمي</span>
+                    <span className="hidden xs:inline">بث سريع محمي</span>
                   </div>
                 </div>
 
@@ -446,7 +591,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                   </button>
                 </div>
 
-                {/* Bottom Scrim Bar: Scrub Track + Time + Speed + Mute + Fullscreen */}
+                {/* Bottom Scrim Bar: Scrub Track + Time + Speed + Quality + PiP + Mute + Fullscreen */}
                 <div
                   onClick={(e) => e.stopPropagation()}
                   className="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 sm:px-4 pt-6 pb-2.5 sm:pb-3 space-y-1.5"
@@ -514,6 +659,19 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 sm:gap-1.5">
+                      {canOptimizeCloudinary && (
+                        <button
+                          type="button"
+                          onClick={cycleVideoQuality}
+                          aria-label="تغيير جودة البث"
+                          title="تبديل جودة الفيديو (سريع / توفير / HD)"
+                          className="min-h-[36px] px-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Gauge className="w-3.5 h-3.5 text-teal-300" />
+                          <span>{currentQualityLabel}</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={cyclePlaybackSpeed}
@@ -522,6 +680,18 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       >
                         {playbackRate}x
                       </button>
+
+                      {supportsPiP && (
+                        <button
+                          type="button"
+                          onClick={togglePictureInPicture}
+                          aria-label="نافذة عائمة"
+                          title="تشغيل في نافذة مصغرة"
+                          className="hidden sm:flex min-w-[36px] min-h-[36px] items-center justify-center rounded-lg text-white hover:bg-white/15 transition-colors cursor-pointer"
+                        >
+                          <PictureInPicture2 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -551,7 +721,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
           />
         )}
 
-        {/* Minimal Non-Intrusive Drifting Watermark (unboxed, clean legibility protection) */}
+        {/* Minimal Non-Intrusive Drifting Watermark */}
         <div
           className="absolute z-10 pointer-events-none select-none transition-all duration-1000 ease-in-out text-center font-mono"
           style={{

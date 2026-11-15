@@ -2,15 +2,12 @@
 // real-time byte-accurate progress tracking, and live weak-internet speed detection.
 
 import { optimizeImageFile } from './imageOptimizer';
-import { emitNetworkAlert, getQuickNetworkStatus, probeNetworkQuality } from './networkMonitor';
 
 export interface UploadProgressInfo {
   percent: number;
   loadedMB: string;
   totalMB: string;
   speedMbps?: number;
-  isSlowNetwork?: boolean;
-  networkWarning?: string;
 }
 
 export interface UploadOptions {
@@ -30,8 +27,6 @@ export interface UploadResult {
 
 const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5 MB chunks avoid proxy stalls and give instant streaming progress
 const MAX_PARALLEL_CHUNKS = 3;
-const SLOW_SPEED_THRESHOLD_MBPS = 0.5;
-const STALL_MS_THRESHOLD = 6500;
 
 function formatMB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
@@ -51,74 +46,29 @@ export function isCloudinaryConfigured(cloudName?: string, uploadPreset?: string
 
 function createSpeedTracker(totalBytes: number, onProgress?: (percent: number, info: UploadProgressInfo) => void) {
   const startedAt = Date.now();
-  let lastProgressAt = startedAt;
-  let lastLoadedBytes = 0;
   let lastPercent = 1;
-  let slowAlertSent = false;
 
-  const computeMeta = (loadedBytes: number, pct: number, stalled = false): UploadProgressInfo => {
+  const computeMeta = (loadedBytes: number, pct: number): UploadProgressInfo => {
     const elapsedSec = Math.max(0.2, (Date.now() - startedAt) / 1000);
     const speedMbps =
       loadedBytes > 0 ? Number(((loadedBytes * 8) / (elapsedSec * 1_000_000)).toFixed(2)) : 0;
-
-    const quick = getQuickNetworkStatus();
-    const isSlow =
-      stalled ||
-      quick.level !== 'good' ||
-      (elapsedSec >= 3.5 && loadedBytes < totalBytes && speedMbps > 0 && speedMbps < SLOW_SPEED_THRESHOLD_MBPS);
-
-    let networkWarning: string | undefined;
-    if (isSlow) {
-      networkWarning =
-        quick.level === 'offline'
-          ? 'انقطع الاتصال بالإنترنت أثناء الرفع!'
-          : stalled
-          ? 'تأخر استجابة الشبكة — الإنترنت ضعيف أو غير مستقر، يرجى الانتظار وعدم إغلاق الصفحة.'
-          : 'سرعة الرفع ضعيفة حالياً — جاري الاستكمال تلقائياً، لا تغلق الصفحة.';
-
-      if (!slowAlertSent) {
-        slowAlertSent = true;
-        emitNetworkAlert({
-          level: quick.level === 'offline' ? 'offline' : 'slow',
-          message: networkWarning,
-          speedMbps,
-          context: 'upload',
-        });
-      }
-    }
 
     return {
       percent: pct,
       loadedMB: formatMB(Math.min(loadedBytes, totalBytes)),
       totalMB: formatMB(totalBytes),
       speedMbps,
-      isSlowNetwork: isSlow,
-      networkWarning,
     };
   };
 
-  const watchdog = setInterval(() => {
-    const now = Date.now();
-    if (now - lastProgressAt >= STALL_MS_THRESHOLD && lastPercent < 99) {
-      const info = computeMeta(lastLoadedBytes, lastPercent, true);
-      onProgress?.(lastPercent, info);
-    }
-  }, 2500);
-
   return {
     update(loadedBytes: number, pct: number, forceEmit = false) {
-      if (loadedBytes > lastLoadedBytes) {
-        lastLoadedBytes = loadedBytes;
-        lastProgressAt = Date.now();
-      }
       if (forceEmit || pct !== lastPercent) {
         lastPercent = pct;
-        onProgress?.(pct, computeMeta(loadedBytes, pct, false));
+        onProgress?.(pct, computeMeta(loadedBytes, pct));
       }
     },
-    stop() {
-      clearInterval(watchdog);
-    },
+    stop() {},
   };
 }
 
@@ -131,9 +81,7 @@ function uploadBlobViaXhr(
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const msg = 'انقطع الاتصال بالإنترنت — تأكد من الشبكة ثم أعد المحاولة.';
-      emitNetworkAlert({ level: 'offline', message: msg, context: 'upload' });
-      reject(new Error(msg));
+      reject(new Error('تعذر الرفع حالياً، تأكد من اتصال الإنترنت ثم أعد المحاولة.'));
       return;
     }
 
@@ -171,18 +119,11 @@ function uploadBlobViaXhr(
     };
 
     xhr.ontimeout = () => {
-      const msg = 'انتهت مهلة الاتصال بسبب بطء الإنترنت أثناء الرفع، يرجى المحاولة مرة أخرى.';
-      emitNetworkAlert({ level: 'slow', message: msg, context: 'upload' });
-      reject(new Error(msg));
+      reject(new Error('انتهت مهلة الرفع، يرجى المحاولة مرة أخرى.'));
     };
 
     xhr.onerror = () => {
-      const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
-      const msg = offlineNow
-        ? 'انقطع الاتصال بالإنترنت أثناء الرفع، تحقق من الشبكة ثم أعد المحاولة.'
-        : 'حدث خطأ في الاتصال أو الإنترنت ضعيف أثناء الرفع، يرجى المحاولة مرة أخرى.';
-      emitNetworkAlert({ level: offlineNow ? 'offline' : 'slow', message: msg, context: 'upload' });
-      reject(new Error(msg));
+      reject(new Error('تعذر إتمام الرفع، يرجى المحاولة مرة أخرى.'));
     };
 
     xhr.onabort = () => {
@@ -277,14 +218,7 @@ export async function uploadMediaFile(
   options?: UploadOptions
 ): Promise<UploadResult> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    const msg = 'لا يوجد اتصال بالإنترنت حالياً. تأكد من اتصالك ثم أعد رفع الملف.';
-    emitNetworkAlert({ level: 'offline', message: msg, context: 'upload' });
-    throw new Error(msg);
-  }
-
-  // Non-blocking background quality probe when connection hints weakness
-  if (getQuickNetworkStatus().level !== 'good') {
-    probeNetworkQuality('upload');
+    throw new Error('لا يوجد اتصال بالإنترنت حالياً. تأكد من اتصالك ثم أعد رفع الملف.');
   }
 
   const { cloudName, uploadPreset, resourceType = 'auto', skipOptimize = false, onProgress } = options || {};
