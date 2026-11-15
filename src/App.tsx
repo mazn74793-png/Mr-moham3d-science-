@@ -5,7 +5,8 @@ import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { AcademicYearsSection } from './components/AcademicYearsSection';
-import { Footer } from './components/Footer';
+import { Footer, AppView } from './components/Footer';
+import { useLanguage } from './context/LanguageContext';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
 import {
   Lecture,
@@ -70,16 +71,22 @@ function sanitizeProfileImageUrl(url?: string): string {
   return url;
 }
 
-const ViewLoadingFallback = () => (
-  <div className="min-h-[60vh] flex items-center justify-center p-8">
-    <div className="flex flex-col items-center gap-3 text-teal-600 dark:text-teal-400">
-      <div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-600 rounded-full animate-spin" />
-      <span className="text-xs font-bold font-kufi">جاري التحميل بسرعة فائقة...</span>
+const ViewLoadingFallback = () => {
+  const { lang } = useLanguage();
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center p-8">
+      <div className="flex flex-col items-center gap-3 text-teal-600 dark:text-teal-400">
+        <div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-600 rounded-full animate-spin" />
+        <span className="text-xs font-bold font-cairo">
+          {lang === 'en' ? 'Loading workspace...' : 'جاري التحميل...'}
+        </span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default function App() {
+  const { lang, isRtl } = useLanguage();
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('mm_theme') === 'dark';
   });
@@ -147,9 +154,8 @@ export default function App() {
     message: string;
   } | null>(null);
 
-  const [currentView, setCurrentView] = useState<'landing' | 'student' | 'teacher'>('landing');
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register'>('login');
   const [secretAdminOpen, setSecretAdminOpen] = useState(false);
 
   const [lectures, setLectures] = useState<Lecture[]>(() => {
@@ -363,8 +369,6 @@ export default function App() {
         const target = optimisticAdmin ? 'teacher' : 'student';
         setCurrentView(target);
         sessionStorage.setItem('mm_last_view', target);
-        setLoginModalOpen(false);
-        setRegisterModalOpen(false);
       } else if (!hasManualNavigatedRef.current && savedLastView) {
         if (savedLastView === 'teacher' && optimisticAdmin) {
           setCurrentView('teacher');
@@ -490,9 +494,10 @@ export default function App() {
         if (!mounted) return;
         if (res?.user) {
           clearRedirectFlags();
-          setLoginModalOpen(false);
-          setRegisterModalOpen(false);
-          showNotice('success', 'تم تسجيل الدخول بحساب Google بنجاح!');
+          showNotice(
+            'success',
+            lang === 'en' ? 'Signed in with Google successfully!' : 'تم تسجيل الدخول بحساب Google بنجاح!'
+          );
           await hydrateFirebaseUser(res.user, { fromRedirect: true });
         } else if (pendingBefore) {
           if (typeof auth.authStateReady === 'function') {
@@ -513,13 +518,25 @@ export default function App() {
         if (code === 'auth/unauthorized-domain') {
           showNotice(
             'error',
-            `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
+            lang === 'en'
+              ? `Domain (${window.location.hostname}) is not in Firebase Authorized domains.`
+              : `النطاق (${window.location.hostname}) غير مضاف في Authorized domains داخل Firebase Authentication.`
           );
         } else if (code === 'auth/network-request-failed') {
-          showNotice('error', 'تعذر الاتصال بخدمة تسجيل الدخول، تأكد من الاتصال ثم أعد المحاولة.');
+          showNotice(
+            'error',
+            lang === 'en'
+              ? 'Could not reach sign-in servers. Check your connection and retry.'
+              : 'تعذر الاتصال بخدمة تسجيل الدخول، تأكد من الاتصال ثم أعد المحاولة.'
+          );
         } else if (code) {
-          showNotice('error', 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.');
-          setLoginModalOpen(true);
+          showNotice(
+            'error',
+            lang === 'en'
+              ? 'Could not complete browser sign-in. Please try again.'
+              : 'تعذر إتمام تسجيل الدخول في المتصفح، يرجى المحاولة مرة أخرى.'
+          );
+          setCurrentView('auth');
         }
       } finally {
         redirectCheckDone = true;
@@ -547,8 +564,6 @@ export default function App() {
       const wasRedirectPending = hasPendingRedirectFlag();
       if (wasRedirectPending) {
         clearRedirectFlags();
-        setLoginModalOpen(false);
-        setRegisterModalOpen(false);
       }
 
       await hydrateFirebaseUser(fbUser, { fromRedirect: wasRedirectPending });
@@ -801,17 +816,22 @@ export default function App() {
     }
   }, [currentUser, authReady]);
 
+  const openAuthPage = useCallback((tab: 'login' | 'register' = 'login') => {
+    hasManualNavigatedRef.current = true;
+    setAuthInitialTab(tab);
+    setCurrentView('auth');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   // Strict route guard
   useEffect(() => {
     if (!authReady) return;
     if (currentView === 'teacher' && !isUserAdmin(currentUser)) {
-      setCurrentView('landing');
-      setLoginModalOpen(true);
-    } else if (currentView === 'student' && !currentUser) {
-      setCurrentView('landing');
-      setLoginModalOpen(true);
+      openAuthPage('login');
+    } else if ((currentView === 'student' || currentView === 'onboarding') && !currentUser) {
+      openAuthPage('login');
     }
-  }, [authReady, currentView, currentUser, isUserAdmin]);
+  }, [authReady, currentView, currentUser, isUserAdmin, openAuthPage]);
 
   // Execute an admin Firestore write reliably using live session
   const executeAdminCloudWrite = async (
@@ -819,13 +839,23 @@ export default function App() {
     successMsg?: string
   ): Promise<boolean> => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      showNotice('error', 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.');
+      showNotice(
+        'error',
+        lang === 'en'
+          ? 'No internet connection — check your network to save changes.'
+          : 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.'
+      );
       return false;
     }
 
     if (!auth.currentUser) {
-      setLoginModalOpen(true);
-      showNotice('error', 'انتهت جلسة المشرف، يرجى تسجيل الدخول بحساب Google مرة واحدة للمتابعة.');
+      openAuthPage('login');
+      showNotice(
+        'error',
+        lang === 'en'
+          ? 'Admin session expired. Please sign in with Google to continue.'
+          : 'انتهت جلسة المشرف، يرجى تسجيل الدخول بحساب Google مرة واحدة للمتابعة.'
+      );
       return false;
     }
 
@@ -869,28 +899,37 @@ export default function App() {
     }
   };
 
-  const handleNavigate = (view: 'landing' | 'student' | 'teacher') => {
+  const handleNavigate = (view: AppView) => {
     hasManualNavigatedRef.current = true;
     if (view === 'teacher') {
       if (!isUserAdmin(currentUser)) {
-        setLoginModalOpen(true);
+        openAuthPage('login');
         return;
       }
       setCurrentView('teacher');
       sessionStorage.setItem('mm_last_view', 'teacher');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (view === 'student') {
       if (!currentUser) {
-        setLoginModalOpen(true);
+        openAuthPage('login');
         return;
       }
       setCurrentView('student');
       sessionStorage.setItem('mm_last_view', 'student');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    sessionStorage.setItem('mm_last_view', 'landing');
+    if (view === 'auth') {
+      openAuthPage('login');
+      return;
+    }
+    if (view === 'landing') {
+      sessionStorage.setItem('mm_last_view', 'landing');
+    }
     setCurrentView(view);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleToggleTheme = () => {
@@ -1405,7 +1444,7 @@ export default function App() {
 
   const handleSelectGrade = (grade: GradeLevel) => {
     if (!currentUser) {
-      setLoginModalOpen(true);
+      openAuthPage('login');
       return;
     }
     if (currentUser.profileCompleted) {
@@ -1433,22 +1472,27 @@ export default function App() {
 
   return (
     <div
+      dir={isRtl ? 'rtl' : 'ltr'}
       className={`min-h-screen flex flex-col font-cairo ${getBodyFontClass()} bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-teal-500 selection:text-white w-full max-w-full overflow-x-hidden`}
     >
       {resolvingAuth && (
         <div
-          dir="rtl"
-          className="fixed top-20 left-1/2 -translate-x-1/2 z-[95] px-4 py-2 rounded-xl bg-teal-900/95 text-white border border-teal-400/40 shadow-xl backdrop-blur-md flex items-center gap-2.5 text-xs font-bold font-kufi animate-fade-in"
+          dir={isRtl ? 'rtl' : 'ltr'}
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-[95] px-4 py-2 rounded-xl bg-teal-900/95 text-white border border-teal-400/40 shadow-xl backdrop-blur-md flex items-center gap-2.5 text-xs font-bold font-cairo animate-fade-in"
         >
           <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
-          <span>جاري استكمال تسجيل الدخول بحساب Google...</span>
+          <span>
+            {lang === 'en'
+              ? 'Completing Google Sign-In...'
+              : 'جاري استكمال تسجيل الدخول بحساب Google...'}
+          </span>
         </div>
       )}
 
       {/* Non-blocking Cloud Sync Toast */}
       {syncNotice && (
         <div
-          dir="rtl"
+          dir={isRtl ? 'rtl' : 'ltr'}
           className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-[100] p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex items-start justify-between gap-3 animate-fade-in ${
             syncNotice.type === 'success'
               ? 'bg-emerald-900/95 border-emerald-500/40 text-white'
@@ -1461,7 +1505,7 @@ export default function App() {
             onClick={() => setSyncNotice(null)}
             className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 shrink-0 cursor-pointer"
           >
-            إغلاق
+            {lang === 'en' ? 'Close' : 'إغلاق'}
           </button>
         </div>
       )}
@@ -1471,8 +1515,8 @@ export default function App() {
         darkMode={darkMode}
         onToggleTheme={handleToggleTheme}
         currentUser={currentUser}
-        onOpenLogin={() => setLoginModalOpen(true)}
-        onOpenRegister={() => setLoginModalOpen(true)}
+        onOpenLogin={() => openAuthPage('login')}
+        onOpenRegister={() => openAuthPage('register')}
         onLogout={handleLogout}
         currentView={currentView}
         onNavigate={handleNavigate}
@@ -1488,7 +1532,7 @@ export default function App() {
                 if (currentUser) {
                   setCurrentView('student');
                 } else {
-                  setLoginModalOpen(true);
+                  openAuthPage('login');
                 }
               }}
               onExploreLectures={() => handleScrollToSection('academic-years')}
@@ -1508,7 +1552,35 @@ export default function App() {
           </>
         )}
 
-        {currentView === 'student' && currentUser && (
+        {currentView === 'auth' && (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <AuthModals
+              loginOpen={authInitialTab === 'login'}
+              registerOpen={authInitialTab === 'register'}
+              onClose={() => handleNavigate('landing')}
+              onLoginSuccess={handleLoginSuccess}
+              onSwitchToRegister={() => setAuthInitialTab('register')}
+              onSwitchToLogin={() => setAuthInitialTab('login')}
+              siteConfig={siteConfig}
+            />
+          </Suspense>
+        )}
+
+        {(currentView === 'onboarding' || (currentView === 'student' && shouldShowOnboarding)) &&
+          currentUser &&
+          shouldShowOnboarding && (
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <StudentOnboardingModal
+                isOpen={true}
+                currentUser={currentUser}
+                siteConfig={siteConfig}
+                onSaveProfile={handleUpdateStudentProfile}
+                onCancel={handleLogout}
+              />
+            </Suspense>
+          )}
+
+        {currentView === 'student' && currentUser && !shouldShowOnboarding && (
           <Suspense fallback={<ViewLoadingFallback />}>
             <StudentPortal
               currentUser={currentUser}
@@ -1518,7 +1590,7 @@ export default function App() {
               quizzes={quizzes}
               attachments={attachments}
               rewards={rewards}
-              onBackToHome={() => setCurrentView('landing')}
+              onBackToHome={() => handleNavigate('landing')}
               onOpenTeacherDashboard={() => handleNavigate('teacher')}
               onUpdateStudentProfile={handleUpdateStudentProfile}
               onRedeemCode={handleStudentRedeemCode}
@@ -1552,7 +1624,7 @@ export default function App() {
               onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
               siteConfig={siteConfig}
               onSaveSiteConfig={handleSaveSiteConfig}
-              onBackToHome={() => setCurrentView('landing')}
+              onBackToHome={() => handleNavigate('landing')}
               onOpenStudentPortal={() => handleNavigate('student')}
               onResetAllData={handleResetAllData}
               redeemCodes={redeemCodes}
@@ -1566,6 +1638,107 @@ export default function App() {
             />
           </Suspense>
         )}
+
+        {(currentView === 'privacy' || currentView === 'terms') && (
+          <section className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-6 font-cairo">
+            <button
+              type="button"
+              onClick={() => handleNavigate('landing')}
+              className="inline-flex items-center gap-2 min-h-[42px] px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            >
+              <span>{lang === 'en' ? '← Back to Home' : '→ العودة للصفحة الرئيسية'}</span>
+            </button>
+
+            <article className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-10 space-y-5 shadow-xs">
+              <div className="space-y-1 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="text-xs font-mono text-teal-600 dark:text-teal-400 font-bold">
+                  {lang === 'en' ? 'LEGAL & COMPLIANCE · 2026' : 'السياسات والأحكام · 2026'}
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+                  {currentView === 'privacy'
+                    ? lang === 'en'
+                      ? 'Privacy Policy'
+                      : 'سياسة الخصوصية وحماية البيانات'
+                    : lang === 'en'
+                    ? 'Terms of Use & Platform Guidelines'
+                    : 'شروط الاستخدام والالتزام'}
+                </h1>
+              </div>
+
+              {currentView === 'privacy' ? (
+                <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {lang === 'en' ? (
+                    <>
+                      <p>
+                        We treat student privacy and personal contact information (name, student phone number, parent WhatsApp number, and academic grade) as strictly confidential.
+                      </p>
+                      <p>
+                        Contact details are used exclusively to synchronize lecture access, send guardian academic reports, and display the anti-piracy protective watermark during streaming sessions.
+                      </p>
+                      <p>
+                        Every browser tab maintains an isolated login session so signing in on shared or multi-user devices never exposes accounts across sessions.
+                      </p>
+                      <p className="pt-2 text-xs text-slate-500 dark:text-slate-400">
+                        For account inquiries, contact support at{' '}
+                        <span className="font-mono font-bold text-teal-600" dir="ltr">
+                          {siteConfig.phone1}
+                        </span>{' '}
+                        or <span className="font-mono font-bold text-teal-600">mizoo2y2@gmail.com</span>.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        نلتزم بحماية خصوصية بيانات الطلاب (الاسم الثلاثي، أرقام الهواتف، ولي الأمر، والسجل الأكاديمي) بأعلى معايير الأمان والتشفير.
+                      </p>
+                      <p>
+                        تُستخدم البيانات المسجلة حصرياً لتأكيد الحضور، ومشاركة تقارير المستوى والدرجات مع ولي الأمر، وحماية البث بالعلامة المائية.
+                      </p>
+                      <p>
+                        كل جلسة دخول معزولة بشكل مستقل لكل متصفح وجهاز لضمان عدم تداخل الحسابات أو الصلاحيات.
+                      </p>
+                      <p className="pt-2 text-xs text-slate-500 dark:text-slate-400">
+                        لأي استفسار يخص بياناتك تواصل معنا عبر{' '}
+                        <span className="font-mono font-bold text-teal-600" dir="ltr">
+                          {siteConfig.phone1}
+                        </span>{' '}
+                        أو <span className="font-mono font-bold text-teal-600">mizoo2y2@gmail.com</span>.
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {lang === 'en' ? (
+                    <>
+                      <p>
+                        All chemistry video lectures, PDF handouts, question banks, and interactive explanations are exclusive intellectual property of Mr. Mohamed Mostafa.
+                      </p>
+                      <p>
+                        Screen recording, redistributing video files, or sharing personal account credentials outside the authorized student scope is strictly prohibited.
+                      </p>
+                      <p>
+                        Lecture points, redeem codes, and sequential quizzes are personal to each student account and are automatically verified in real time.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        جميع المحاضرات المصورة، المذكرات الرقمية PDF، وبنوك الأسئلة حقوق ملكية فكرية حصرية للأستاذ محمد مصطفى.
+                      </p>
+                      <p>
+                        يُحظر تماماً تسجيل الشاشة أو إعادة رفع المحتوى أو مشاركة بيانات الحساب خارج الاستخدام الشخصي للطالب المشترك.
+                      </p>
+                      <p>
+                        نقاط المحفظة وأكواد الشحن مخصصة لحساب الطالب المسجل فقط وتخضع للتحقق التلقائي الفوري.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+            </article>
+          </section>
+        )}
       </main>
 
       <div className={currentView === 'student' ? 'hidden lg:block' : ''}>
@@ -1573,50 +1746,16 @@ export default function App() {
           siteConfig={siteConfig}
           onNavigate={handleNavigate}
           onScrollToSection={handleScrollToSection}
-          onOpenLogin={() => setLoginModalOpen(true)}
+          onOpenLogin={() => openAuthPage('login')}
           onOpenSecretAdmin={() => {
             if (isUserAdmin(currentUser)) {
               setSecretAdminOpen(true);
             } else {
-              setLoginModalOpen(true);
+              openAuthPage('login');
             }
           }}
         />
       </div>
-
-      {(loginModalOpen || registerModalOpen) && (
-        <Suspense fallback={null}>
-          <AuthModals
-            loginOpen={loginModalOpen}
-            registerOpen={registerModalOpen}
-            onClose={() => {
-              setLoginModalOpen(false);
-              setRegisterModalOpen(false);
-            }}
-            onLoginSuccess={handleLoginSuccess}
-            onSwitchToRegister={() => {
-              setLoginModalOpen(false);
-              setRegisterModalOpen(true);
-            }}
-            onSwitchToLogin={() => {
-              setRegisterModalOpen(false);
-              setLoginModalOpen(true);
-            }}
-            siteConfig={siteConfig}
-          />
-        </Suspense>
-      )}
-
-      {currentUser && shouldShowOnboarding && (
-        <Suspense fallback={null}>
-          <StudentOnboardingModal
-            isOpen={shouldShowOnboarding}
-            currentUser={currentUser}
-            siteConfig={siteConfig}
-            onSaveProfile={handleUpdateStudentProfile}
-          />
-        </Suspense>
-      )}
 
       {secretAdminOpen && isUserAdmin(currentUser) && (
         <Suspense fallback={null}>

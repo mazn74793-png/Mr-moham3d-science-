@@ -84,16 +84,16 @@ function getChemistryRank(points: number) {
   };
 }
 
-function getRewardCategoryLabel(cat: PointReward['category']): string {
+function getRewardCategoryLabel(cat: PointReward['category'], isEn: boolean): string {
   switch (cat) {
     case 'badge':
-      return 'وسام تميز';
+      return isEn ? 'Achievement Badge' : 'وسام تميز';
     case 'discount':
-      return 'خصم خاص';
+      return isEn ? 'Special Discount' : 'خصم خاص';
     case 'material':
-      return 'محتوى إضافي';
+      return isEn ? 'Bonus Material' : 'محتوى إضافي';
     default:
-      return 'ميزة حصرية';
+      return isEn ? 'Exclusive Perk' : 'ميزة حصرية';
   }
 }
 
@@ -112,6 +112,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
   onOpenLecture,
   onGoToFiles,
 }) => {
+  const isEn = lang === 'en';
   const [codeInput, setCodeInput] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
@@ -152,11 +153,20 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
       const res = await onRedeemCode(codeInput);
       setCodeInput('');
       showCelebration(
-        `تمت إضافة +${res.pointsAdded} نقطة إلى رصيدك بنجاح! 🎉`,
-        `كود الشحن (${res.code}) اتفعل فوراً — رصيدك الحالي الآن ${res.newBalance} نقطة.`
+        isEn
+          ? `Added +${res.pointsAdded} Points to your balance!`
+          : `تمت إضافة +${res.pointsAdded} نقطة إلى رصيدك بنجاح!`,
+        isEn
+          ? `Code (${res.code}) redeemed instantly — New balance: ${res.newBalance} Pts.`
+          : `كود الشحن (${res.code}) اتفعل فوراً — رصيدك الحالي الآن ${res.newBalance} نقطة.`
       );
     } catch (err: any) {
-      setErrorBanner(err?.message || 'تعذر تفعيل الكود، تأكد من صحته وحاول مرة أخرى.');
+      setErrorBanner(
+        err?.message ||
+          (isEn
+            ? 'Could not redeem code. Verify the code and try again.'
+            : 'تعذر تفعيل الكود، تأكد من صحته وحاول مرة أخرى.')
+      );
     } finally {
       setRedeeming(false);
     }
@@ -169,11 +179,16 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
     try {
       await onUnlockLecture(lec);
       showCelebration(
-        `تم فتح محاضرة "${lec.title}" بنجاح! 🔓`,
-        'تم خصم النقاط من محفظتك والمحاضرة مفتوحة لك الآن في أي وقت.'
+        isEn ? `Unlocked "${lec.title}"!` : `تم فتح محاضرة "${lec.title}" بنجاح!`,
+        isEn
+          ? 'Points deducted. You can now watch this lecture anytime.'
+          : 'تم خصم النقاط من محفظتك والمحاضرة مفتوحة لك الآن في أي وقت.'
       );
     } catch (err: any) {
-      setErrorBanner(err?.message || 'تعذر فتح المحاضرة بالنقاط حالياً.');
+      setErrorBanner(
+        err?.message ||
+          (isEn ? 'Could not unlock lecture right now.' : 'تعذر فتح المحاضرة بالنقاط حالياً.')
+      );
     } finally {
       setBusyItemId(null);
     }
@@ -186,11 +201,16 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
     try {
       await onUnlockAttachment(file);
       showCelebration(
-        `تم فتح مذكرة "${file.title}" بنجاح! 📄`,
-        'يمكنك الآن معاينتها وتحميلها من قسم المذكرات.'
+        isEn ? `Unlocked "${file.title}"!` : `تم فتح مذكرة "${file.title}" بنجاح!`,
+        isEn
+          ? 'You can now preview and download it from the Handouts tab.'
+          : 'يمكنك الآن معاينتها وتحميلها من قسم المذكرات.'
       );
     } catch (err: any) {
-      setErrorBanner(err?.message || 'تعذر فتح المذكرة بالنقاط حالياً.');
+      setErrorBanner(
+        err?.message ||
+          (isEn ? 'Could not unlock handout right now.' : 'تعذر فتح المذكرة بالنقاط حالياً.')
+      );
     } finally {
       setBusyItemId(null);
     }
@@ -203,11 +223,14 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
     try {
       await onClaimReward(reward);
       showCelebration(
-        `مبروك! حصلت على "${reward.title}" 🏆`,
-        'تم تسجيل المكافأة في حسابك بنجاح.'
+        isEn ? `Claimed "${reward.title}"!` : `مبروك! حصلت على "${reward.title}"`,
+        isEn ? 'Reward recorded on your account.' : 'تم تسجيل المكافأة في حسابك بنجاح.'
       );
     } catch (err: any) {
-      setErrorBanner(err?.message || 'تعذر استبدال المكافأة حالياً.');
+      setErrorBanner(
+        err?.message ||
+          (isEn ? 'Could not redeem reward right now.' : 'تعذر استبدال المكافأة حالياً.')
+      );
     } finally {
       setBusyItemId(null);
     }
@@ -237,7 +260,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
             onClick={() => setCelebrationBanner(null)}
             className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 cursor-pointer shrink-0"
           >
-            إغلاق
+            {isEn ? 'Close' : 'إغلاق'}
           </button>
         </div>
       )}
@@ -260,28 +283,30 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 text-xs font-bold text-amber-300 font-kufi">
                 <Crown className="w-4 h-4" />
-                <span>محفظة النقاط والمستوى العلمي</span>
+                <span>{isEn ? 'Points Wallet & Academic Rank' : 'محفظة النقاط والمستوى العلمي'}</span>
               </div>
               <div className="flex items-baseline gap-2.5">
                 <span className="text-4xl sm:text-5xl font-extrabold font-mono tabular-nums text-white tracking-tight">
                   {pointsBalance}
                 </span>
                 <span className="text-sm sm:text-base font-bold text-teal-300 font-kufi">
-                  {lang === 'en' ? 'Points' : 'نقطة كيمياء'}
+                  {isEn ? 'Points' : 'نقطة كيمياء'}
                 </span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                اشحن أكواد المستر واجمع النقاط لفتح المحاضرات الخاصة والمذكرات والمكافآت الفورية.
+                {isEn
+                  ? 'Redeem instructor codes to unlock special lectures, PDF handouts, and instant rewards.'
+                  : 'اشحن أكواد المستر واجمع النقاط لفتح المحاضرات الخاصة والمذكرات والمكافآت الفورية.'}
               </p>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 text-center shrink-0 min-w-[108px]">
               <Atom className="w-6 h-6 text-amber-300 mx-auto mb-1" />
               <div className="text-[10px] text-teal-200 font-mono">
-                المستوى {rank.level}
+                {isEn ? `Level ${rank.level}` : `المستوى ${rank.level}`}
               </div>
               <div className="text-xs font-bold text-white font-kufi mt-0.5">
-                {lang === 'en' ? rank.titleEn : rank.titleAr}
+                {isEn ? rank.titleEn : rank.titleAr}
               </div>
             </div>
           </div>
@@ -290,8 +315,12 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
             <div className="flex items-center justify-between text-xs text-teal-100/90 tabular-nums">
               <span className="font-semibold">
                 {rank.pointsToNext > 0
-                  ? `متبقي ${rank.pointsToNext} نقطة للترقية للمستوى التالي`
-                  : 'وصلت إلى أعلى رتبة علمية على المنصة 🏆'}
+                  ? isEn
+                    ? `${rank.pointsToNext} points to next rank`
+                    : `متبقي ${rank.pointsToNext} نقطة للترقية للمستوى التالي`
+                  : isEn
+                  ? 'Maximum platform rank reached'
+                  : 'وصلت إلى أعلى رتبة علمية على المنصة'}
               </span>
               <span className="font-mono font-bold text-amber-300">{rank.progressPct}%</span>
             </div>
@@ -302,11 +331,23 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
               />
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-300 pt-1 tabular-nums">
-              <span>محاضرات مفتوحة بالنقاط: {unlockedLectureIds.length}</span>
+              <span>
+                {isEn
+                  ? `Unlocked lectures: ${unlockedLectureIds.length}`
+                  : `محاضرات مفتوحة بالنقاط: ${unlockedLectureIds.length}`}
+              </span>
               <span aria-hidden="true">·</span>
-              <span>مذكرات مفتوحة: {unlockedAttachmentIds.length}</span>
+              <span>
+                {isEn
+                  ? `Unlocked PDFs: ${unlockedAttachmentIds.length}`
+                  : `مذكرات مفتوحة: ${unlockedAttachmentIds.length}`}
+              </span>
               <span aria-hidden="true">·</span>
-              <span>مكافآت مستبدلة: {claimedRewardIds.length}</span>
+              <span>
+                {isEn
+                  ? `Rewards claimed: ${claimedRewardIds.length}`
+                  : `مكافآت مستبدلة: ${claimedRewardIds.length}`}
+              </span>
             </div>
           </div>
         </div>
@@ -319,10 +360,12 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 text-teal-700 dark:text-teal-400 font-bold text-sm font-kufi">
               <Ticket className="w-5 h-5 text-amber-500" />
-              <span>اشحن رصيدك بكود (Redeem Code)</span>
+              <span>{isEn ? 'Redeem Top-Up Code' : 'اشحن رصيدك بكود (Redeem Code)'}</span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              أدخل الكود الذي حصلت عليه من الأستاذ محمد مصطفى لإضافة النقاط لحسابك فوراً.
+              {isEn
+                ? 'Enter the code provided by Mr. Mohamed Mostafa to credit points immediately.'
+                : 'أدخل الكود الذي حصلت عليه من الأستاذ محمد مصطفى لإضافة النقاط لحسابك فوراً.'}
             </p>
           </div>
 
@@ -331,7 +374,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
               type="text"
               value={codeInput}
               onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-              placeholder="مثال: MM-CHEM-2026"
+              placeholder={isEn ? 'e.g. MM-CHEM-2026' : 'مثال: MM-CHEM-2026'}
               dir="ltr"
               className="w-full min-h-[48px] px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-center font-mono text-base font-bold tracking-widest text-slate-900 dark:text-white uppercase focus:outline-none focus:border-teal-500"
             />
@@ -343,12 +386,12 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
               {redeeming ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>جاري التحقق وشحن النقاط...</span>
+                  <span>{isEn ? 'Verifying code...' : 'جاري التحقق وشحن النقاط...'}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>تفعيل الكود وإضافة النقاط</span>
+                  <span>{isEn ? 'Redeem & Add Points' : 'تفعيل الكود وإضافة النقاط'}</span>
                 </>
               )}
             </button>
@@ -362,20 +405,28 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
           <div>
             <h2 className="text-base sm:text-xl font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
               <Video className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-              <span>محاضرات تفتحها بالنقاط ({gradeTitle})</span>
+              <span>
+                {isEn
+                  ? `Points-Unlockable Lectures (${gradeTitle})`
+                  : `محاضرات تفتحها بالنقاط (${gradeTitle})`}
+              </span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              افتح أي محاضرة مميزة فوراً برصيد نقاطك وشاهدها بلا قيود.
+              {isEn
+                ? 'Unlock special lectures instantly with your points balance.'
+                : 'افتح أي محاضرة مميزة فوراً برصيد نقاطك وشاهدها بلا قيود.'}
             </p>
           </div>
           <span className="text-xs font-mono tabular-nums text-slate-500">
-            {pointLectures.length} محاضرات
+            {pointLectures.length} {isEn ? 'lectures' : 'محاضرات'}
           </span>
         </div>
 
         {pointLectures.length === 0 ? (
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
-            لا توجد محاضرات مسعّرة بالنقاط لهذا الصف حالياً — استعمل أكوادك في المكافآت والمذكرات أو ترقب الإضافات الجديدة.
+            {isEn
+              ? 'No points-priced lectures for this grade yet — use your balance for handouts & rewards.'
+              : 'لا توجد محاضرات مسعّرة بالنقاط لهذا الصف حالياً — استعمل أكوادك في المكافآت والمذكرات أو ترقب الإضافات الجديدة.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -402,7 +453,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                             : 'text-amber-600 dark:text-amber-400'
                         }`}
                       >
-                        {isUnlocked ? 'مفتوحة ✓' : `${cost} نقطة`}
+                        {isUnlocked ? (isEn ? 'Unlocked ✓' : 'مفتوحة ✓') : `${cost} ${isEn ? 'Pts' : 'نقطة'}`}
                       </span>
                     </div>
                     <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug">
@@ -420,7 +471,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                       className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Play className="w-4 h-4" />
-                      <span>مشاهدة المحاضرة الآن</span>
+                      <span>{isEn ? 'Watch Lecture' : 'مشاهدة المحاضرة الآن'}</span>
                     </button>
                   ) : (
                     <button
@@ -442,9 +493,15 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                       )}
                       <span>
                         {isBusy
-                          ? 'جاري الفتح...'
+                          ? isEn
+                            ? 'Unlocking...'
+                            : 'جاري الفتح...'
                           : canAfford
-                          ? `افتح المحاضرة بـ ${cost} نقطة`
+                          ? isEn
+                            ? `Unlock for ${cost} Pts`
+                            : `افتح المحاضرة بـ ${cost} نقطة`
+                          : isEn
+                          ? `Need ${cost - pointsBalance} more Pts`
                           : `ينقصك ${cost - pointsBalance} نقطة`}
                       </span>
                     </button>
@@ -463,16 +520,18 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
               <Gift className="w-5 h-5 text-amber-500" />
-              <span>متجر المكافآت والمزايا</span>
+              <span>{isEn ? 'Rewards Store' : 'متجر المكافآت والمزايا'}</span>
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
-              {visibleRewards.length} متاح
+              {visibleRewards.length} {isEn ? 'available' : 'متاح'}
             </span>
           </div>
 
           {visibleRewards.length === 0 ? (
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
-              سيضيف الأستاذ محمد مصطفى مكافآت وخصومات حصرية هنا قريباً.
+              {isEn
+                ? 'Exclusive rewards and discounts will appear here soon.'
+                : 'سيضيف الأستاذ محمد مصطفى مكافآت وخصومات حصرية هنا قريباً.'}
             </div>
           ) : (
             <div className="space-y-3">
@@ -489,11 +548,11 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                         <span className="font-bold text-teal-700 dark:text-teal-400">
-                          {getRewardCategoryLabel(reward.category)}
+                          {getRewardCategoryLabel(reward.category, isEn)}
                         </span>
                         <span aria-hidden="true">·</span>
                         <span className="font-mono tabular-nums font-bold text-amber-600 dark:text-amber-400">
-                          {reward.pointsCost} نقطة
+                          {reward.pointsCost} {isEn ? 'Pts' : 'نقطة'}
                         </span>
                       </div>
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white">
@@ -509,7 +568,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                     {isClaimed ? (
                       <span className="min-h-[40px] px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0">
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>تم الحصول عليها</span>
+                        <span>{isEn ? 'Claimed' : 'تم الحصول عليها'}</span>
                       </span>
                     ) : (
                       <button
@@ -527,7 +586,15 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                         ) : (
                           <Award className="w-4 h-4" />
                         )}
-                        <span>{isBusy ? 'جاري الاستبدال...' : 'استبدال النقاط'}</span>
+                        <span>
+                          {isBusy
+                            ? isEn
+                              ? 'Redeeming...'
+                              : 'جاري الاستبدال...'
+                            : isEn
+                            ? 'Redeem'
+                            : 'استبدال النقاط'}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -542,16 +609,18 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
               <FileText className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-              <span>مذكرات تفتحها بالنقاط</span>
+              <span>{isEn ? 'Points-Unlockable Handouts' : 'مذكرات تفتحها بالنقاط'}</span>
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
-              {pointAttachments.length} ملفات
+              {pointAttachments.length} {isEn ? 'files' : 'ملفات'}
             </span>
           </div>
 
           {pointAttachments.length === 0 ? (
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
-              كل المذكرات المتاحة لهذا الصف مفتوحة مجاناً حالياً في قسم المذكرات.
+              {isEn
+                ? 'All available handouts for this grade are currently free in the Handouts tab.'
+                : 'كل المذكرات المتاحة لهذا الصف مفتوحة مجاناً حالياً في قسم المذكرات.'}
             </div>
           ) : (
             <div className="space-y-3">
@@ -571,7 +640,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                         <span>{file.chapter}</span>
                         <span aria-hidden="true">·</span>
                         <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-                          {cost} نقطة
+                          {cost} {isEn ? 'Pts' : 'نقطة'}
                         </span>
                       </div>
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
@@ -586,7 +655,7 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                         className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>مفتوحة — افتح المذكرات</span>
+                        <span>{isEn ? 'Unlocked — View Handout' : 'مفتوحة — افتح المذكرات'}</span>
                       </button>
                     ) : (
                       <button
@@ -604,7 +673,15 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
                         ) : (
                           <Unlock className="w-4 h-4" />
                         )}
-                        <span>{isBusy ? 'جاري الفتح...' : `فتح بـ ${cost} نقطة`}</span>
+                        <span>
+                          {isBusy
+                            ? isEn
+                              ? 'Unlocking...'
+                              : 'جاري الفتح...'
+                            : isEn
+                            ? `Unlock (${cost} Pts)`
+                            : `فتح بـ ${cost} نقطة`}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -620,16 +697,18 @@ export const PointsWalletTab: React.FC<PointsWalletTabProps> = ({
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <h3 className="font-bold text-sm sm:text-base font-kufi text-slate-900 dark:text-white flex items-center gap-2">
             <History className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span>سجل عمليات النقاط والشحن</span>
+            <span>{isEn ? 'Points Activity History' : 'سجل عمليات النقاط والشحن'}</span>
           </h3>
           <span className="text-xs font-mono tabular-nums text-slate-500">
-            آخر {history.length} عمليات
+            {isEn ? `Last ${history.length}` : `آخر ${history.length} عمليات`}
           </span>
         </div>
 
         {history.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-500">
-            لم تقم بأي عمليات شحن أو استبدال بعد — ابدأ بإدخال أول كود في الأعلى!
+            {isEn
+              ? 'No transactions yet — redeem your first code above to get started.'
+              : 'لم تقم بأي عمليات شحن أو استبدال بعد — ابدأ بإدخال أول كود في الأعلى!'}
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto">

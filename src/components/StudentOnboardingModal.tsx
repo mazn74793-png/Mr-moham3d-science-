@@ -1,43 +1,54 @@
 import React, { useState } from 'react';
-import { User, Phone, GraduationCap, MapPin, CheckCircle2, Sparkles, ShieldCheck } from 'lucide-react';
+import {
+  User,
+  Phone,
+  GraduationCap,
+  MapPin,
+  CheckCircle2,
+  Sparkles,
+  ShieldCheck,
+  LogOut,
+} from 'lucide-react';
 import { GradeLevel, UserProfile } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
+import { useLanguage } from '../context/LanguageContext';
 
 interface StudentOnboardingModalProps {
   isOpen: boolean;
   currentUser: UserProfile;
   siteConfig?: SiteConfig;
   onSaveProfile: (updatedProfile: UserProfile) => void;
+  onCancel?: () => void;
 }
 
-const EGYPT_GOVERNORATES = [
-  'القاهرة',
-  'الجيزة',
-  'الإسكندرية',
-  'الدقهلية (المنصورة)',
-  'الغربية (طنطا / المحلة)',
-  'القليوبية',
-  'الشرقية (الزقازيق)',
-  'المنوفية',
-  'البحيرة (دمنهور)',
-  'كفر الشيخ',
-  'دمياط',
-  'بورسعيد',
-  'الإسماعيلية',
-  'السويس',
-  'الفيوم',
-  'بني سويف',
-  'المنيا',
-  'أسيوط',
-  'سوهاج',
-  'قنا',
-  'الأقصر',
-  'أسوان',
-  'البحر الأحمر',
-  'شمال سيناء',
-  'جنوب سيناء',
-  'مطروح',
-  'الوادي الجديد',
+const EGYPT_GOVERNORATES: Array<{ ar: string; en: string }> = [
+  { ar: 'القاهرة', en: 'Cairo' },
+  { ar: 'الجيزة', en: 'Giza' },
+  { ar: 'الإسكندرية', en: 'Alexandria' },
+  { ar: 'الدقهلية (المنصورة)', en: 'Dakahlia (Mansoura)' },
+  { ar: 'الغربية (طنطا / المحلة)', en: 'Gharbia (Tanta / Mahalla)' },
+  { ar: 'القليوبية', en: 'Qalyubia' },
+  { ar: 'الشرقية (الزقازيق)', en: 'Sharqia (Zagazig)' },
+  { ar: 'المنوفية', en: 'Monufia' },
+  { ar: 'البحيرة (دمنهور)', en: 'Beheira (Damanhour)' },
+  { ar: 'كفر الشيخ', en: 'Kafr El Sheikh' },
+  { ar: 'دمياط', en: 'Damietta' },
+  { ar: 'بورسعيد', en: 'Port Said' },
+  { ar: 'الإسماعيلية', en: 'Ismailia' },
+  { ar: 'السويس', en: 'Suez' },
+  { ar: 'الفيوم', en: 'Faiyum' },
+  { ar: 'بني سويف', en: 'Beni Suef' },
+  { ar: 'المنيا', en: 'Minya' },
+  { ar: 'أسيوط', en: 'Asyut' },
+  { ar: 'سوهاج', en: 'Sohag' },
+  { ar: 'قنا', en: 'Qena' },
+  { ar: 'الأقصر', en: 'Luxor' },
+  { ar: 'أسوان', en: 'Aswan' },
+  { ar: 'البحر الأحمر', en: 'Red Sea' },
+  { ar: 'شمال سيناء', en: 'North Sinai' },
+  { ar: 'جنوب سيناء', en: 'South Sinai' },
+  { ar: 'مطروح', en: 'Matrouh' },
+  { ar: 'الوادي الجديد', en: 'New Valley' },
 ];
 
 export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
@@ -45,13 +56,17 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
   currentUser,
   siteConfig,
   onSaveProfile,
+  onCancel,
 }) => {
+  const { lang, isRtl } = useLanguage();
   const resolvedGrades = getResolvedGrades(siteConfig);
   const [name, setName] = useState(currentUser.name || '');
   const [grade, setGrade] = useState<GradeLevel>(
     currentUser.grade || resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
   );
-  const [phone, setPhone] = useState(currentUser.phone && currentUser.phone !== '010XXXXXXXX' ? currentUser.phone : '');
+  const [phone, setPhone] = useState(
+    currentUser.phone && currentUser.phone !== '010XXXXXXXX' ? currentUser.phone : ''
+  );
   const [parentPhone, setParentPhone] = useState(currentUser.parentPhone || '');
   const [governorate, setGovernorate] = useState(currentUser.governorate || 'القاهرة');
   const [onboardError, setOnboardError] = useState<string | null>(null);
@@ -62,19 +77,23 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
     e.preventDefault();
     setOnboardError(null);
     if (!name.trim() || !phone.trim() || !parentPhone.trim()) {
-      setOnboardError('من فضلك أكمل جميع البيانات المطلوبة لتفعيل حسابك.');
+      setOnboardError(
+        lang === 'en'
+          ? 'Please complete all required fields to activate your account.'
+          : 'من فضلك أكمل جميع البيانات المطلوبة لتفعيل حسابك.'
+      );
       return;
     }
 
     const updated: UserProfile = {
       ...currentUser,
       name: name.trim(),
-      grade: grade,
+      grade,
       phone: phone.trim(),
       parentPhone: parentPhone.trim(),
-      governorate: governorate,
+      governorate,
       profileCompleted: true,
-      score: 0, // Zeroed out as explicitly requested
+      score: currentUser.score ?? 0,
       watchedLectureIds: currentUser.watchedLectureIds || [],
       passedQuizIds: currentUser.passedQuizIds || [],
       quizScores: currentUser.quizScores || {},
@@ -85,56 +104,72 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in-up">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border-2 border-teal-500/30 text-right space-y-6 max-h-[92vh] overflow-y-auto">
-        
+    <section
+      dir={isRtl ? 'rtl' : 'ltr'}
+      className="min-h-[calc(100vh-5rem)] py-8 sm:py-12 px-4 sm:px-6 bg-slate-50 dark:bg-slate-950 font-cairo flex flex-col justify-center"
+    >
+      <div className="max-w-2xl mx-auto w-full bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-9 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
         {/* Header */}
-        <div className="space-y-2 text-center sm:text-right border-b border-slate-100 dark:border-slate-800 pb-5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-semibold mb-1">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>خطوة واحدة لتفعيل منصتك</span>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-700 dark:text-teal-400">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>{lang === 'en' ? 'One Step to Activate' : 'خطوة واحدة لتفعيل منصتك'}</span>
+            </div>
+
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+              {lang === 'en' ? 'Complete Student Profile' : 'استكمال بيانات الطالب'}
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+              {lang === 'en'
+                ? 'Choose your academic year and contact details to personalize your lectures and enable your security watermark.'
+                : 'حدد سنتك الدراسية وبيانات الاتصال لتخصيص محتواك الدراسي بدقة وتفعيل العلامة المائية الآمنة على حصصك.'}
+            </p>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-bold font-kufi text-slate-900 dark:text-white">
-            استكمال بيانات الطالب 🧪
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-sans leading-relaxed">
-            مرحباً بك يا بطل! حدد سنتك الدراسية وبيانات الاتصال لتخصيص محتواك الدراسي بدقة وتفعيل العلامة المائية الآمنة على حصصك.
-          </p>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="shrink-0 min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-rose-600 flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>{lang === 'en' ? 'Sign Out' : 'خروج'}</span>
+            </button>
+          )}
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          
+        <form onSubmit={handleSubmit} className="space-y-5">
           {onboardError && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 text-rose-700 dark:text-rose-300 text-xs font-bold">
+            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold">
               {onboardError}
             </div>
           )}
 
           {/* Name */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-teal-600" />
-              <span>الاسم الثلاثي للطالب *</span>
+              <span>{lang === 'en' ? 'Full Student Name *' : 'الاسم الثلاثي للطالب *'}</span>
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="مثال: أحمد محمود كمال"
-              className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              placeholder={lang === 'en' ? 'e.g. Ahmed Mahmoud Kamal' : 'مثال: أحمد محمود كمال'}
+              className="w-full min-h-[44px] px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
           </div>
 
-          {/* Academic Grade (Radio Cards) */}
+          {/* Academic Grade */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <GraduationCap className="w-3.5 h-3.5 text-teal-600" />
-              <span>الصف الدراسي (المحتوى المخصص) *</span>
+              <span>{lang === 'en' ? 'Academic Grade *' : 'الصف الدراسي (المحتوى المخصص) *'}</span>
             </label>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {resolvedGrades.map((g) => {
                 const isSelected = grade === g.id;
@@ -146,91 +181,111 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
                     className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer ${
                       isSelected
                         ? g.isPopular
-                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
-                          : 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 font-bold shadow-xs'
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-bold'
+                          : 'border-teal-500 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 font-bold'
                         : 'border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    <div className="text-sm font-bold font-kufi">{g.badgeAr}</div>
-                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">{g.yearLabelAr || 'دفعة 2026'}</div>
+                    <div className="text-sm font-bold">
+                      {lang === 'en' ? g.badgeEn || g.badgeAr : g.badgeAr}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                      {lang === 'en' ? g.yearLabelEn || 'Class of 2026' : g.yearLabelAr || 'دفعة 2026'}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Student Phone & Parent Phone */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">
+          {/* Phones */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-teal-600" />
-                <span>رقم هاتف الطالب (واتساب) *</span>
+                <span>{lang === 'en' ? 'Student Phone (WhatsApp) *' : 'رقم هاتف الطالب (واتساب) *'}</span>
               </label>
               <input
                 type="tel"
                 required
+                dir="ltr"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="010XXXXXXXX"
-                className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono dir-ltr text-right"
+                className="w-full min-h-[44px] px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
               />
-              <p className="text-[10px] text-slate-500">يظهر كعلامة مائية أمنية متحركة على الفيديو</p>
+              <p className="text-[11px] text-slate-500">
+                {lang === 'en'
+                  ? 'Displayed as a protective security watermark on lectures'
+                  : 'يظهر كعلامة مائية أمنية متحركة على الفيديو'}
+              </p>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-amber-500" />
-                <span>رقم ولي الأمر (للمتابعة) *</span>
+                <span>{lang === 'en' ? 'Parent Phone Number *' : 'رقم ولي الأمر (للمتابعة) *'}</span>
               </label>
               <input
                 type="tel"
                 required
+                dir="ltr"
                 value={parentPhone}
                 onChange={(e) => setParentPhone(e.target.value)}
                 placeholder="011XXXXXXXX"
-                className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono dir-ltr text-right"
+                className="w-full min-h-[44px] px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
               />
-              <p className="text-[10px] text-slate-500">لإرسال درجات الكويزات وتقارير الغياب</p>
+              <p className="text-[11px] text-slate-500">
+                {lang === 'en'
+                  ? 'Used for quiz scores & attendance reports'
+                  : 'لإرسال درجات الكويزات وتقارير الغياب'}
+              </p>
             </div>
           </div>
 
           {/* Governorate */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi flex items-center gap-1.5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-teal-600" />
-              <span>المحافظة *</span>
+              <span>{lang === 'en' ? 'Governorate *' : 'المحافظة *'}</span>
             </label>
             <select
               value={governorate}
               onChange={(e) => setGovernorate(e.target.value)}
-              className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full min-h-[44px] px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
               {EGYPT_GOVERNORATES.map((gov) => (
-                <option key={gov} value={gov}>
-                  {gov}
+                <option key={gov.ar} value={gov.ar}>
+                  {lang === 'en' ? gov.en : gov.ar}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Security Guarantee Notice */}
-          <div className="p-3 rounded-2xl bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 flex items-center gap-2.5 text-[11px] text-teal-800 dark:text-teal-300">
+          {/* Security Notice */}
+          <div className="p-3.5 rounded-2xl bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 flex items-center gap-2.5 text-xs text-teal-800 dark:text-teal-300">
             <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
-            <span>بياناتك مؤمنة بالكامل ومشفرة لحفظ حقوق حسابك وربط نتائجك الدراسية.</span>
+            <span>
+              {lang === 'en'
+                ? 'Your academic details and quiz records are securely encrypted.'
+                : 'بياناتك مؤمنة بالكامل ومشفرة لحفظ حقوق حسابك وربط نتائجك الدراسية.'}
+            </span>
           </div>
 
-          {/* Submit Button */}
+          {/* Submit */}
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 transition-all shadow-lg shadow-teal-700/25 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full min-h-[48px] py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 transition-all shadow-md active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>حفظ البيانات وتفعيل منصتي الدراسية</span>
+            <span>
+              {lang === 'en'
+                ? 'Save & Activate My Learning Portal'
+                : 'حفظ البيانات وتفعيل منصتي الدراسية'}
+            </span>
           </button>
-
         </form>
-
       </div>
-    </div>
+    </section>
   );
 };

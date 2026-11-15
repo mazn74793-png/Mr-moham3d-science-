@@ -23,10 +23,8 @@ import {
   FlaskConical,
   Clock3,
   User,
-  Edit3,
-  MapPin,
-  Phone,
-  Target,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Lecture,
@@ -40,7 +38,7 @@ import {
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { useLanguage } from '../context/LanguageContext';
-import { MediaPreviewModal, detectMediaKind } from './MediaPreview';
+import { detectMediaKind } from './MediaPreview';
 import { QuizRunner } from './student/QuizRunner';
 import { HandoutsTab } from './student/HandoutsTab';
 import { StudyLabTab } from './student/StudyLabTab';
@@ -109,15 +107,25 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [currentUser?.grade, isTeacher]);
 
   const [activeTab, setActiveTab] = useState<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'profile'
   >('lectures');
+  const lastTabBeforeProfileRef = React.useRef<'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub'>('lectures');
+
+  const openProfilePage = () => {
+    if (activeTab !== 'profile') {
+      lastTabBeforeProfileRef.current = activeTab;
+    }
+    setActiveQuiz(null);
+    setActiveTab('profile');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const [inlineCodeInput, setInlineCodeInput] = useState('');
   const [inlineBusy, setInlineBusy] = useState(false);
   const [inlineNotice, setInlineNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [lectureSearch, setLectureSearch] = useState('');
   const [lectureFilter, setLectureFilter] = useState<'all' | 'available' | 'completed' | 'bookmarked'>('all');
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   const studentStorageKey = currentUser?.id || 'guest';
   const [customProfile, setCustomProfile] = useState<StudentCustomProfile>(() =>
@@ -195,6 +203,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [showQuizCelebration, setShowQuizCelebration] = useState<string | null>(null);
 
+  // Reset inline PDF preview when switching lectures
+  useEffect(() => {
+    setLecturePdfPreviewOpen(false);
+  }, [activeLecture?.id]);
+
   // Per-lecture persistent quick notes
   const [studentNotes, setStudentNotes] = useState<string>('');
   useEffect(() => {
@@ -203,9 +216,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       ?? localStorage.getItem(`mm_note_${activeLecture.id}`);
     setStudentNotes(
       saved ??
-        'ملاحظة: تذكر أن عنصر الكروم والنحاس شواذ في التوزيع الإلكتروني لاستقرار المستوى الفرعي 3d.'
+        (lang === 'en'
+          ? 'Note: Remember Chromium & Copper have anomalous electron configurations for 3d orbital stability.'
+          : 'ملاحظة: تذكر أن عنصر الكروم والنحاس شواذ في التوزيع الإلكتروني لاستقرار المستوى الفرعي 3d.')
     );
-  }, [activeLecture?.id, studentStorageKey]);
+  }, [activeLecture?.id, studentStorageKey, lang]);
 
   const handleNotesChange = (val: string) => {
     setStudentNotes(val);
@@ -317,7 +332,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       if (percentage >= 60 && !currentPassed.includes(activeQuiz.id)) {
         currentPassed.push(activeQuiz.id);
         setShowQuizCelebration(
-          `أحسنت! حققت ${percentage}% وتم فتح الحصة التالية بنجاح.`
+          lang === 'en'
+            ? `Well done! You scored ${percentage}% and unlocked the next session.`
+            : `أحسنت! حققت ${percentage}% وتم فتح الحصة التالية بنجاح.`
         );
       }
 
@@ -411,9 +428,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               {/* Clickable Student Identity Avatar & Title */}
               <button
                 type="button"
-                onClick={() => setProfileModalOpen(true)}
-                title="تعديل الملف الشخصي"
-                className="flex items-center gap-2.5 min-w-0 text-right group cursor-pointer"
+                onClick={openProfilePage}
+                title={lang === 'en' ? 'Open Profile' : 'فتح الملف الشخصي'}
+                className="flex items-center gap-2.5 min-w-0 text-start group cursor-pointer"
               >
                 {currentUser.avatarUrl ? (
                   <img
@@ -438,12 +455,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         ? `Welcome, ${currentUser.name.split(' ')[0]}`
                         : `مرحباً، ${currentUser.name.split(' ')[0]}`}
                     </h1>
-                    {customProfile.titleBadge && (
-                      <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/70 border border-teal-200 dark:border-teal-800 text-[10px] font-bold text-teal-700 dark:text-teal-300 shrink-0">
-                        <Sparkles className="w-3 h-3 text-amber-500" />
-                        <span>{customProfile.titleBadge}</span>
-                      </span>
-                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                     <span className="font-semibold text-teal-700 dark:text-teal-400">
@@ -469,14 +480,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setProfileModalOpen(true)}
-                aria-label="ملفي الشخصي"
-                className="min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-800 dark:text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                onClick={openProfilePage}
+                aria-label={lang === 'en' ? 'My Profile' : 'ملفي الشخصي'}
+                className={`min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'profile'
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-800 dark:text-slate-200'
+                }`}
               >
-                <User className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <User className={`w-4 h-4 ${activeTab === 'profile' ? 'text-white' : 'text-teal-600 dark:text-teal-400'}`} />
                 <span className="sm:hidden">{lang === 'en' ? 'Profile' : 'ملفي'}</span>
                 <span className="hidden sm:inline">
-                  {lang === 'en' ? 'My Profile' : 'ملفي الشخصي'}
+                  {lang === 'en' ? 'Profile' : 'ملفي الشخصي'}
                 </span>
               </button>
 
@@ -668,91 +683,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           )}
         </div>
 
-        {/* Prominent Student Profile Identity Card */}
-        {!activeQuiz && (() => {
-          const cardTheme = STUDENT_CARD_THEMES[customProfile.cardTheme] || STUDENT_CARD_THEMES.teal;
-          return (
-            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
-              <div className={`h-2.5 w-full ${cardTheme.cardBg}`} />
-              <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                  {currentUser.avatarUrl ? (
-                    <img
-                      src={currentUser.avatarUrl}
-                      alt={currentUser.name}
-                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shrink-0 shadow-xs"
-                    />
-                  ) : (
-                    <div
-                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-sm ${cardTheme.cardBg}`}
-                    >
-                      {renderStudentAvatarIcon(customProfile.avatarIcon, 'w-7 h-7')}
-                    </div>
-                  )}
-
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white truncate">
-                        {currentUser.name}
-                      </h2>
-                      {customProfile.titleBadge && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-amber-800 dark:text-amber-300">
-                          <Sparkles className="w-3 h-3 text-amber-500" />
-                          <span>{customProfile.titleBadge}</span>
-                        </span>
-                      )}
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 text-[11px] font-bold text-teal-700 dark:text-teal-300">
-                        {getGradeTitle(selectedGrade)}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
-                      {currentUser.phone && (
-                        <span className="inline-flex items-center gap-1 font-mono tabular-nums" dir="ltr">
-                          <Phone className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                          {currentUser.phone}
-                        </span>
-                      )}
-                      {currentUser.governorate && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                          {currentUser.governorate}
-                        </span>
-                      )}
-                      {customProfile.targetScore && (
-                        <span className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300">
-                          <Target className="w-3.5 h-3.5 text-amber-500" />
-                          <span>الدرجة المستهدفة: {customProfile.targetScore}</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {customProfile.studyGoal && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
-                        هدفي: {customProfile.studyGoal}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
-                  <button
-                    type="button"
-                    onClick={() => setProfileModalOpen(true)}
-                    className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-900 dark:bg-teal-600 hover:bg-slate-800 dark:hover:bg-teal-700 text-white text-xs font-bold transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>تعديل بياناتي وتخصيص البطاقة</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
         <div className="flex flex-col gap-6">
-          {/* Compact 4-Metric Quick Strip */}
-          {!activeQuiz && (
+          {/* Compact 4-Metric Quick Strip (hidden on active quiz or full-page profile view) */}
+          {!activeQuiz && activeTab !== 'profile' && (
             <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
               <button
                 type="button"
@@ -763,7 +696,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Watched' : 'الحصص المشاهدة'}</span>
@@ -866,7 +799,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                   {activeLecture.duration}
                                 </span>
                                 <span aria-hidden="true">·</span>
-                                <span>{activeLecture.viewsCount} مشاهدة</span>
+                                <span>
+                                  {activeLecture.viewsCount}{' '}
+                                  {lang === 'en' ? 'views' : 'مشاهدة'}
+                                </span>
                               </div>
 
                               <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
@@ -881,10 +817,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             <button
                               type="button"
                               onClick={() => toggleLectureBookmark(activeLecture.id)}
-                              aria-label="حفظ الحصة في المفضلة"
+                              aria-label={lang === 'en' ? 'Bookmark Lecture' : 'حفظ الحصة في المفضلة'}
                               title={
                                 bookmarkedLectureIds.includes(activeLecture.id)
-                                  ? 'إزالة من المحفوظات'
+                                  ? lang === 'en'
+                                    ? 'Remove bookmark'
+                                    : 'إزالة من المحفوظات'
+                                  : lang === 'en'
+                                  ? 'Save for review'
                                   : 'حفظ الحصة للمراجعة'
                               }
                               className={`min-w-[44px] min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
@@ -901,55 +841,117 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 }`}
                               />
                               <span className="hidden sm:inline">
-                                {bookmarkedLectureIds.includes(activeLecture.id) ? 'محفوظة' : 'حفظ'}
+                                {bookmarkedLectureIds.includes(activeLecture.id)
+                                  ? lang === 'en'
+                                    ? 'Saved'
+                                    : 'محفوظة'
+                                  : lang === 'en'
+                                  ? 'Save'
+                                  : 'حفظ'}
                               </span>
                             </button>
                           </div>
 
                           {/* Attached PDF Handout Row */}
                           {activeLecture.pdfTitle && (
-                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                                  <FileText className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                    {activeLecture.pdfTitle}
+                            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                    <FileText className="w-5 h-5" />
                                   </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                                    مذكرة الشرح والتدريبات لهذه الحصة
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                      {activeLecture.pdfTitle}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {lang === 'en'
+                                        ? 'Session study notes & practice worksheet'
+                                        : 'مذكرة الشرح والتدريبات لهذه الحصة'}
+                                    </div>
                                   </div>
                                 </div>
+
+                                {activeLecture.pdfUrl && activeLecture.pdfUrl !== '#' ? (
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setLecturePdfPreviewOpen((p) => !p)}
+                                      className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      {lecturePdfPreviewOpen ? (
+                                        <X className="w-4 h-4" />
+                                      ) : (
+                                        <Eye className="w-4 h-4" />
+                                      )}
+                                      <span>
+                                        {lecturePdfPreviewOpen
+                                          ? lang === 'en'
+                                            ? 'Close Preview'
+                                            : 'إغلاق المعاينة'
+                                          : lang === 'en'
+                                          ? 'Preview'
+                                          : 'معاينة'}
+                                      </span>
+                                    </button>
+                                    <a
+                                      href={activeLecture.pdfUrl}
+                                      download
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                      <Download className="w-4 h-4" />
+                                      <span>{lang === 'en' ? 'Download PDF' : 'تحميل المذكرة PDF'}</span>
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <span className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 shrink-0 cursor-not-allowed">
+                                    <Download className="w-4 h-4" />
+                                    <span>{lang === 'en' ? 'Unavailable' : 'غير متاح حالياً'}</span>
+                                  </span>
+                                )}
                               </div>
 
-                              {activeLecture.pdfUrl && activeLecture.pdfUrl !== '#' ? (
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => setLecturePdfPreviewOpen(true)}
-                                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                    <span>معاينة</span>
-                                  </button>
-                                  <a
-                                    href={activeLecture.pdfUrl}
-                                    download
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    <span>تحميل المذكرة PDF</span>
-                                  </a>
-                                </div>
-                              ) : (
-                                <span className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 flex items-center justify-center gap-2 shrink-0 cursor-not-allowed">
-                                  <Download className="w-4 h-4" />
-                                  <span>غير متاح حالياً</span>
-                                </span>
-                              )}
+                              {/* Inline Collapsible Lecture PDF Reader (Zero Popup Modals) */}
+                              {lecturePdfPreviewOpen &&
+                                activeLecture.pdfUrl &&
+                                activeLecture.pdfUrl !== '#' && (() => {
+                                  const inlineKind = detectMediaKind(activeLecture.pdfUrl, 'pdf');
+                                  return (
+                                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 space-y-2.5 animate-fade-in">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                                          {activeLecture.pdfTitle ||
+                                            (lang === 'en' ? 'Lecture Handout' : 'مذكرة الحصة')}
+                                        </span>
+                                        <a
+                                          href={activeLecture.pdfUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline shrink-0"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                          <span>{lang === 'en' ? 'Open Tab' : 'فتح في تبويب'}</span>
+                                        </a>
+                                      </div>
+
+                                      {inlineKind === 'image' ? (
+                                        <img
+                                          src={activeLecture.pdfUrl}
+                                          alt={activeLecture.pdfTitle || 'Handout'}
+                                          className="w-full max-h-[560px] object-contain rounded-xl mx-auto"
+                                        />
+                                      ) : (
+                                        <iframe
+                                          src={activeLecture.pdfUrl}
+                                          title={activeLecture.pdfTitle || 'Lecture PDF'}
+                                          className="w-full h-[520px] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                             </div>
                           )}
 
@@ -958,7 +960,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                                 <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                                <span>ملاحظاتك السريعة على الحصة (تُحفظ تلقائياً):</span>
+                                <span>
+                                  {lang === 'en'
+                                    ? 'Quick Lecture Notes (auto-saved):'
+                                    : 'ملاحظاتك السريعة على الحصة (تُحفظ تلقائياً):'}
+                                </span>
                               </label>
                               <button
                                 type="button"
@@ -966,7 +972,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 className="min-h-[34px] px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/70 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                               >
                                 <Clock3 className="w-3.5 h-3.5" />
-                                <span>+ إضافة توقيت الفيديو</span>
+                                <span>
+                                  {lang === 'en' ? '+ Add Video Timestamp' : '+ إضافة توقيت الفيديو'}
+                                </span>
                               </button>
                             </div>
                             <textarea
@@ -974,7 +982,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               onChange={(e) => handleNotesChange(e.target.value)}
                               rows={2}
                               className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                              placeholder="اكتب معادلة أو ملاحظة هامة تريد الرجوع لها..."
+                              placeholder={
+                                lang === 'en'
+                                  ? 'Write a reaction equation or study note to revisit...'
+                                  : 'اكتب معادلة أو ملاحظة هامة تريد الرجوع لها...'
+                              }
                             />
                           </div>
 
@@ -986,6 +998,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               curIdx >= 0 && curIdx + 1 < filteredLectures.length
                                 ? filteredLectures[curIdx + 1]
                                 : null;
+                            const PrevIcon = isRtl ? ChevronRight : ChevronLeft;
+                            const NextIcon = isRtl ? ChevronLeft : ChevronRight;
                             return (
                               <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                                 <button
@@ -994,8 +1008,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                   onClick={() => prevL && setActiveLecture(prevL)}
                                   className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
                                 >
-                                  <ChevronRight className="w-4 h-4" />
-                                  <span>الحصة السابقة</span>
+                                  <PrevIcon className="w-4 h-4" />
+                                  <span>{lang === 'en' ? 'Previous' : 'الحصة السابقة'}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -1003,8 +1017,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                   onClick={() => nextL && setActiveLecture(nextL)}
                                   className="min-h-[42px] px-3.5 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/60 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
                                 >
-                                  <span>الحصة التالية</span>
-                                  <ChevronLeft className="w-4 h-4" />
+                                  <span>{lang === 'en' ? 'Next Session' : 'الحصة التالية'}</span>
+                                  <NextIcon className="w-4 h-4" />
                                 </button>
                               </div>
                             );
@@ -1020,19 +1034,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                         <div className="space-y-1.5 max-w-md mx-auto">
                           <div className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                            محاضرة خاصة تُفتح بالنقاط · {activeLecture.pointsCost} نقطة
+                            {lang === 'en'
+                              ? `Points-Gated Lecture · ${activeLecture.pointsCost} Pts`
+                              : `محاضرة خاصة تُفتح بالنقاط · ${activeLecture.pointsCost} نقطة`}
                           </div>
                           <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
                             {activeLecture.title}
                           </h3>
                           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed tabular-nums">
-                            رصيدك الحالي:{' '}
+                            {lang === 'en' ? 'Current balance:' : 'رصيدك الحالي:'}{' '}
                             <span className="font-mono font-bold text-slate-900 dark:text-white">
-                              {currentUser?.points ?? 0} نقطة
+                              {currentUser?.points ?? 0} {lang === 'en' ? 'Pts' : 'نقطة'}
                             </span>{' '}
-                            · تكلفة الفتح:{' '}
+                            · {lang === 'en' ? 'Unlock cost:' : 'تكلفة الفتح:'}{' '}
                             <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-                              {activeLecture.pointsCost} نقطة
+                              {activeLecture.pointsCost} {lang === 'en' ? 'Pts' : 'نقطة'}
                             </span>
                           </p>
                         </div>
@@ -1064,12 +1080,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 await onUnlockLecture(activeLecture);
                                 setInlineNotice({
                                   type: 'success',
-                                  text: 'تم فتح المحاضرة بنجاح! استمتع بالمشاهدة.',
+                                  text:
+                                    lang === 'en'
+                                      ? 'Lecture unlocked! Enjoy watching.'
+                                      : 'تم فتح المحاضرة بنجاح! استمتع بالمشاهدة.',
                                 });
                               } catch (err: any) {
                                 setInlineNotice({
                                   type: 'error',
-                                  text: err?.message || 'تعذر فتح المحاضرة بالنقاط.',
+                                  text:
+                                    err?.message ||
+                                    (lang === 'en'
+                                      ? 'Could not unlock lecture.'
+                                      : 'تعذر فتح المحاضرة بالنقاط.'),
                                 });
                               } finally {
                                 setInlineBusy(false);
@@ -1088,7 +1111,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             )}
                             <span>
                               {(currentUser?.points ?? 0) >= (activeLecture.pointsCost || 0)
-                                ? `افتح المحاضرة الآن بـ ${activeLecture.pointsCost} نقطة`
+                                ? lang === 'en'
+                                  ? `Unlock Now for ${activeLecture.pointsCost} Pts`
+                                  : `افتح المحاضرة الآن بـ ${activeLecture.pointsCost} نقطة`
+                                : lang === 'en'
+                                ? `Need ${
+                                    (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
+                                  } more points`
                                 : `رصيدك غير كافٍ — ينقصك ${
                                     (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
                                   } نقطة`}
@@ -1107,12 +1136,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 setInlineCodeInput('');
                                 setInlineNotice({
                                   type: 'success',
-                                  text: `تم شحن +${res.pointsAdded} نقطة! رصيدك الآن ${res.newBalance} نقطة.`,
+                                  text:
+                                    lang === 'en'
+                                      ? `Added +${res.pointsAdded} Pts! Balance is now ${res.newBalance} Pts.`
+                                      : `تم شحن +${res.pointsAdded} نقطة! رصيدك الآن ${res.newBalance} نقطة.`,
                                 });
                               } catch (err: any) {
                                 setInlineNotice({
                                   type: 'error',
-                                  text: err?.message || 'الكود غير صحيح أو منتهي.',
+                                  text:
+                                    err?.message ||
+                                    (lang === 'en'
+                                      ? 'Invalid or expired code.'
+                                      : 'الكود غير صحيح أو منتهي.'),
                                 });
                               } finally {
                                 setInlineBusy(false);
@@ -1124,7 +1160,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               type="text"
                               value={inlineCodeInput}
                               onChange={(e) => setInlineCodeInput(e.target.value.toUpperCase())}
-                              placeholder="معاك كود شحن؟ اكتبه هنا"
+                              placeholder={lang === 'en' ? 'Have a redeem code?' : 'معاك كود شحن؟ اكتبه هنا'}
                               dir="ltr"
                               className="flex-1 min-h-[42px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-xs font-bold uppercase text-center"
                             />
@@ -1134,7 +1170,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               className="min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
                             >
                               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                              <span>شحن الكود</span>
+                              <span>{lang === 'en' ? 'Redeem' : 'شحن الكود'}</span>
                             </button>
                           </form>
                         </div>
@@ -1148,13 +1184,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                         <div className="space-y-1.5 max-w-md mx-auto">
                           <div className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                            الحصة مقفلة حتى إتمام الشروط السابقة
+                            {lang === 'en'
+                              ? 'Locked Until Prerequisites Are Complete'
+                              : 'الحصة مقفلة حتى إتمام الشروط السابقة'}
                           </div>
                           <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
                             {activeLecture.title}
                           </h3>
                           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                            أنهِ مشاهدة الحصة السابقة واجتز اختبارها لفتح هذه المحاضرة تلقائياً.
+                            {lang === 'en'
+                              ? 'Finish watching the previous lecture and pass its quiz to unlock automatically.'
+                              : 'أنهِ مشاهدة الحصة السابقة واجتز اختبارها لفتح هذه المحاضرة تلقائياً.'}
                           </p>
                         </div>
 
@@ -1162,7 +1202,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           const prereq = getPrerequisiteDetails(activeLecture);
                           if (!prereq) return null;
                           return (
-                            <div className="max-w-lg mx-auto border-t border-slate-100 dark:border-slate-800 pt-4 text-right space-y-3">
+                            <div className="max-w-lg mx-auto border-t border-slate-100 dark:border-slate-800 pt-4 text-start space-y-3">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
                                 <div className="flex items-center gap-2.5">
                                   {prereq.prevWatched ? (
@@ -1172,11 +1212,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                   )}
                                   <div>
                                     <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                      1. مشاهدة الحصة {prereq.prevLec.sessionOrder || 1}:{' '}
-                                      {prereq.prevLec.title}
+                                      {lang === 'en'
+                                        ? `1. Watch Lecture ${prereq.prevLec.sessionOrder || 1}: ${prereq.prevLec.title}`
+                                        : `1. مشاهدة الحصة ${prereq.prevLec.sessionOrder || 1}: ${prereq.prevLec.title}`}
                                     </div>
                                     <div className="text-[11px] text-slate-500">
-                                      {prereq.prevWatched ? 'مكتمل' : 'غير مكتمل'}
+                                      {prereq.prevWatched
+                                        ? lang === 'en'
+                                          ? 'Completed'
+                                          : 'مكتمل'
+                                        : lang === 'en'
+                                        ? 'Not completed'
+                                        : 'غير مكتمل'}
                                     </div>
                                   </div>
                                 </div>
@@ -1187,7 +1234,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                     onClick={() => setActiveLecture(prereq.prevLec)}
                                     className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 cursor-pointer shrink-0"
                                   >
-                                    الانتقال للحصة
+                                    {lang === 'en' ? 'Go to Lecture' : 'الانتقال للحصة'}
                                   </button>
                                 )}
                               </div>
@@ -1202,13 +1249,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                     )}
                                     <div>
                                       <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                        2. اجتياز {prereq.prevQuiz.title} (60% فأعلى)
+                                        {lang === 'en'
+                                          ? `2. Pass ${prereq.prevQuiz.title} (60%+)`
+                                          : `2. اجتياز ${prereq.prevQuiz.title} (60% فأعلى)`}
                                       </div>
                                       <div className="text-[11px] text-slate-500 tabular-nums">
                                         {prereq.prevQuizPassed
-                                          ? `تم الاجتياز بنسبة ${
-                                              currentUser?.quizScores?.[prereq.prevQuiz.id] || 100
-                                            }%`
+                                          ? lang === 'en'
+                                            ? `Passed (${currentUser?.quizScores?.[prereq.prevQuiz.id] || 100}%)`
+                                            : `تم الاجتياز بنسبة ${currentUser?.quizScores?.[prereq.prevQuiz.id] || 100}%`
+                                          : lang === 'en'
+                                          ? 'Quiz passing required'
                                           : 'مطلوب اجتياز الاختبار'}
                                       </div>
                                     </div>
@@ -1219,7 +1270,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                     onClick={() => handleStartQuiz(prereq.prevQuiz!)}
                                     className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 cursor-pointer shrink-0"
                                   >
-                                    بدء الاختبار
+                                    {lang === 'en' ? 'Start Quiz' : 'بدء الاختبار'}
                                   </button>
                                 </div>
                               )}
@@ -1230,7 +1281,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     )
                   ) : (
                     <div className="p-10 text-center text-sm text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                      لا توجد محاضرات متاحة حالياً لهذا الصف.
+                      {lang === 'en'
+                        ? 'No lectures published for this grade yet.'
+                        : 'لا توجد محاضرات متاحة حالياً لهذا الصف.'}
                     </div>
                   )}
                 </div>
@@ -1240,32 +1293,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                        قائمة حصص المنهج
+                        {lang === 'en' ? 'Curriculum Playlist' : 'قائمة حصص المنهج'}
                       </h3>
                       <span className="text-xs font-mono tabular-nums text-slate-500">
-                        {filteredLectures.length} حصص
+                        {filteredLectures.length} {lang === 'en' ? 'sessions' : 'حصص'}
                       </span>
                     </div>
 
                     {filteredLectures.length > 0 && (
                       <>
                         <div className="relative">
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+                          <Search
+                            className={`w-3.5 h-3.5 text-slate-400 absolute top-2.5 pointer-events-none ${
+                              isRtl ? 'right-3' : 'left-3'
+                            }`}
+                          />
                           <input
                             type="text"
                             value={lectureSearch}
                             onChange={(e) => setLectureSearch(e.target.value)}
-                            placeholder="ابحث عن حصة أو باب..."
-                            className="w-full min-h-[36px] pr-8 pl-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            placeholder={lang === 'en' ? 'Search lecture or unit...' : 'ابحث عن حصة أو باب...'}
+                            className={`w-full min-h-[36px] py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+                              isRtl ? 'pr-8 pl-3' : 'pl-8 pr-3'
+                            }`}
                           />
                         </div>
 
                         <div className="flex flex-wrap gap-1">
                           {[
-                            { id: 'all', label: 'الكل' },
-                            { id: 'available', label: 'متاحة' },
-                            { id: 'completed', label: 'مكتملة' },
-                            { id: 'bookmarked', label: 'المحفوظة' },
+                            { id: 'all', label: lang === 'en' ? 'All' : 'الكل' },
+                            { id: 'available', label: lang === 'en' ? 'Available' : 'متاحة' },
+                            { id: 'completed', label: lang === 'en' ? 'Completed' : 'مكتملة' },
+                            { id: 'bookmarked', label: lang === 'en' ? 'Saved' : 'المحفوظة' },
                           ].map((f) => (
                             <button
                               key={f.id}
@@ -1322,7 +1381,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 ?.scrollIntoView({ behavior: 'smooth' });
                             }
                           }}
-                          className={`w-full min-h-[64px] px-4 py-3 text-right transition-colors cursor-pointer flex items-center gap-3 ${
+                          className={`w-full min-h-[64px] px-4 py-3 text-start transition-colors cursor-pointer flex items-center gap-3 ${
                             isCurrent
                               ? 'bg-teal-50/80 dark:bg-teal-950/40'
                               : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -1379,10 +1438,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               >
                                 {!unlocked
                                   ? (lec.pointsCost || 0) > 0
-                                    ? `تُفتح بـ ${lec.pointsCost} نقطة`
+                                    ? lang === 'en'
+                                      ? `${lec.pointsCost} Pts`
+                                      : `تُفتح بـ ${lec.pointsCost} نقطة`
+                                    : lang === 'en'
+                                    ? 'Locked'
                                     : 'مقفلة'
                                   : isWatched
-                                  ? 'مكتملة'
+                                  ? lang === 'en'
+                                    ? 'Completed'
+                                    : 'مكتملة'
+                                  : lang === 'en'
+                                  ? 'Available'
                                   : 'متاحة'}
                               </span>
                             </div>
@@ -1453,7 +1520,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 rewards={rewards}
                 onRedeemCode={async (code) => {
                   if (!onRedeemCode) {
-                    throw new Error('خدمة شحن الأكواد غير متاحة حالياً.');
+                    throw new Error(
+                      lang === 'en'
+                        ? 'Code redemption service is currently unavailable.'
+                        : 'خدمة شحن الأكواد غير متاحة حالياً.'
+                    );
                   }
                   return await onRedeemCode(code);
                 }}
@@ -1479,13 +1550,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             {activeTab === 'study-hub' && !activeQuiz && (
               <StudyLabTab studentId={currentUser?.id} />
             )}
+
+            {/* 6. DEDICATED FULL-PAGE STUDENT PROFILE */}
+            {activeTab === 'profile' && !activeQuiz && currentUser && (
+              <StudentProfileModal
+                isOpen={true}
+                onClose={() => setActiveTab(lastTabBeforeProfileRef.current || 'lectures')}
+                currentUser={currentUser}
+                siteConfig={siteConfig}
+                cloudinaryConfig={cloudinaryConfig}
+                completedLecturesCount={completedLecturesCount}
+                passedQuizzesCount={passedQuizzesCount}
+                onSaveProfile={(updatedUser, nextCustom) => {
+                  setCustomProfile(nextCustom);
+                  if (updatedUser.grade) {
+                    setSelectedGrade(updatedUser.grade);
+                  }
+                  onUpdateStudentProfile?.(
+                    updatedUser,
+                    lang === 'en'
+                      ? 'Profile updated successfully!'
+                      : 'تم حفظ وتحديث ملفك الشخصي بنجاح!'
+                  );
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
 
       {/* Fixed Mobile Bottom Tab Bar */}
       <nav
-        aria-label="التنقل الرئيسي للطالب"
+        aria-label={lang === 'en' ? 'Student Navigation' : 'التنقل الرئيسي للطالب'}
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)]"
       >
         <div className="grid grid-cols-5 h-14 max-w-lg mx-auto">
@@ -1552,9 +1648,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
           <button
             type="button"
-            onClick={() => setProfileModalOpen(true)}
+            onClick={openProfilePage}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              profileModalOpen
+              activeTab === 'profile'
                 ? 'text-teal-600 dark:text-teal-400'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
@@ -1564,37 +1660,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </button>
         </div>
       </nav>
-
-      {/* Lecture Attached PDF In-App Preview Modal */}
-      {activeLecture?.pdfUrl && activeLecture.pdfUrl !== '#' && (
-        <MediaPreviewModal
-          isOpen={lecturePdfPreviewOpen}
-          onClose={() => setLecturePdfPreviewOpen(false)}
-          url={activeLecture.pdfUrl}
-          title={activeLecture.pdfTitle || 'مذكرة الحصة'}
-          kind={detectMediaKind(activeLecture.pdfUrl, 'pdf')}
-        />
-      )}
-
-      {/* Student Profile & Personalization Modal */}
-      {currentUser && (
-        <StudentProfileModal
-          isOpen={profileModalOpen}
-          onClose={() => setProfileModalOpen(false)}
-          currentUser={currentUser}
-          siteConfig={siteConfig}
-          cloudinaryConfig={cloudinaryConfig}
-          completedLecturesCount={completedLecturesCount}
-          passedQuizzesCount={passedQuizzesCount}
-          onSaveProfile={(updatedUser, nextCustom) => {
-            setCustomProfile(nextCustom);
-            if (updatedUser.grade) {
-              setSelectedGrade(updatedUser.grade);
-            }
-            onUpdateStudentProfile?.(updatedUser, 'تم حفظ وتحديث ملفك الشخصي بنجاح!');
-          }}
-        />
-      )}
     </div>
   );
 };

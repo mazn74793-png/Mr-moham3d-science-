@@ -170,17 +170,17 @@ const translations: Record<Language, Record<string, string>> = {
 };
 
 const LanguageContext = createContext<LanguageContextType>({
-  lang: 'ar',
+  lang: 'en',
   setLang: () => {},
   toggleLang: () => {},
-  isRtl: true,
+  isRtl: false,
   t: (key: string) => key,
 });
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<Language>(() => {
     const saved = localStorage.getItem('mm_lang');
-    return (saved === 'en' || saved === 'ar') ? saved : 'ar';
+    return (saved === 'en' || saved === 'ar') ? saved : 'en';
   });
 
   const isRtl = lang === 'ar';
@@ -201,7 +201,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [lang, isRtl]);
 
   const t = (key: string): string => {
-    return translations[lang]?.[key] || translations.ar[key] || key;
+    return translations[lang]?.[key] || translations.en[key] || key;
   };
 
   return (

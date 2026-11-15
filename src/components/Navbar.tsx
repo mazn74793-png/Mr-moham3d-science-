@@ -7,6 +7,8 @@ import { UserProfile } from '../types';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 
+import { AppView } from './Footer';
+
 interface NavbarProps {
   siteConfig: SiteConfig;
   darkMode: boolean;
@@ -15,8 +17,8 @@ interface NavbarProps {
   onOpenLogin: () => void;
   onOpenRegister: () => void;
   onLogout: () => void;
-  currentView: 'landing' | 'student' | 'teacher';
-  onNavigate: (view: 'landing' | 'student' | 'teacher') => void;
+  currentView: AppView;
+  onNavigate: (view: AppView) => void;
   onScrollToSection: (sectionId: string) => void;
 }
 
@@ -180,7 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Dark / Light Mode Toggle */}
           <button
             onClick={onToggleTheme}
-            aria-label="تبديل المظهر"
+            aria-label={lang === 'en' ? 'Toggle Theme' : 'تبديل المظهر'}
             className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
           >
             {darkMode ? (
@@ -269,7 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="lg:hidden h-9 w-9 flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer shrink-0 transition-colors"
-            aria-label="القائمة الرئيسية"
+            aria-label={lang === 'en' ? 'Main Menu' : 'القائمة الرئيسية'}
           >
             {mobileMenuOpen ? <X className="w-5 h-5 text-teal-600" /> : <Menu className="w-5 h-5" />}
           </button>

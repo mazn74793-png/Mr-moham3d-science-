@@ -18,6 +18,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { Lecture, UserProfile } from '../types';
+import { useLanguage } from '../context/LanguageContext';
 import {
   optimizeVideoStreamUrl,
   isCloudinaryVideoUrl,
@@ -38,10 +39,16 @@ interface SecureVideoPlayerProps {
 
 const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
-const QUALITY_OPTIONS: Array<{ id: VideoQualityMode; labelAr: string; shortLabel: string }> = [
-  { id: 'fast', labelAr: 'أصلي سريع', shortLabel: 'سريع' },
-  { id: 'eco', labelAr: 'توفير البيانات', shortLabel: 'توفير' },
-  { id: 'hd', labelAr: 'جودة عالية HD', shortLabel: 'HD' },
+const QUALITY_OPTIONS: Array<{
+  id: VideoQualityMode;
+  labelAr: string;
+  labelEn: string;
+  shortLabelAr: string;
+  shortLabelEn: string;
+}> = [
+  { id: 'fast', labelAr: 'أصلي سريع', labelEn: 'Fast Original', shortLabelAr: 'سريع', shortLabelEn: 'Fast' },
+  { id: 'eco', labelAr: 'توفير البيانات', labelEn: 'Data Saver', shortLabelAr: 'توفير', shortLabelEn: 'Eco' },
+  { id: 'hd', labelAr: 'جودة عالية HD', labelEn: 'High Quality HD', shortLabelAr: 'HD', shortLabelEn: 'HD' },
 ];
 
 function formatTime(seconds: number): string {
@@ -83,6 +90,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   onTakeQuiz,
   onRegisterTimeGetter,
 }) => {
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrubTrackRef = useRef<HTMLDivElement>(null);
@@ -248,7 +257,11 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    showNotice('تم تعطيل قائمة الخيارات لحماية محتوى المحاضرة.');
+    showNotice(
+      isEn
+        ? 'Context menu disabled to protect lecture content.'
+        : 'تم تعطيل قائمة الخيارات لحماية محتوى المحاضرة.'
+    );
     return false;
   };
 
@@ -258,13 +271,13 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     setShowControls(true);
     if (vid.paused) {
       vid.play().catch(() => {
-        showNotice('اضغط مرة أخرى لبدء تشغيل الفيديو.');
+        showNotice(isEn ? 'Tap again to start playback.' : 'اضغط مرة أخرى لبدء تشغيل الفيديو.');
       });
       scheduleHideControls();
     } else {
       vid.pause();
     }
-  }, [scheduleHideControls, showNotice]);
+  }, [isEn, scheduleHideControls, showNotice]);
 
   const skipSeconds = useCallback(
     (delta: number) => {
@@ -463,7 +476,11 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
         (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))
       ) {
         e.preventDefault();
-        showNotice('تصوير أو حفظ محتوى المحاضرة غير مصرح به.');
+        showNotice(
+          isEn
+            ? 'Screen capture or saving lecture content is not permitted.'
+            : 'تصوير أو حفظ محتوى المحاضرة غير مصرح به.'
+        );
         return;
       }
 
@@ -494,7 +511,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDirectVideo, showNotice, skipSeconds, toggleFullscreen, toggleMute, togglePlayPause]);
+  }, [isDirectVideo, isEn, showNotice, skipSeconds, toggleFullscreen, toggleMute, togglePlayPause]);
 
   const handleSurfaceTap = () => {
     if (!isDirectVideo || isDraggingRef.current) return;
@@ -519,12 +536,14 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   const displayTime = isDragging && dragTime !== null ? dragTime : currentTime;
   const progressPct =
     effectiveDuration > 0 ? Math.min(100, Math.max(0, (displayTime / effectiveDuration) * 100)) : 0;
-  const currentQualityLabel =
-    QUALITY_OPTIONS.find((q) => q.id === videoQuality)?.shortLabel || 'سريع';
+  const matchedQuality = QUALITY_OPTIONS.find((q) => q.id === videoQuality);
+  const currentQualityLabel = isEn
+    ? matchedQuality?.shortLabelEn || 'Fast'
+    : matchedQuality?.shortLabelAr || 'سريع';
   const supportsPiP =
     typeof document !== 'undefined' && Boolean((document as any).pictureInPictureEnabled);
 
-  const studentDisplayName = currentUser?.name || 'طالب المنصة';
+  const studentDisplayName = currentUser?.name || (isEn ? 'Platform Student' : 'طالب المنصة');
   const studentDisplayPhone = currentUser?.phone || '';
   const studentDisplayCode = currentUser?.id ? currentUser.id.slice(-6) : '2026';
 
@@ -641,9 +660,13 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
             {hasError && (
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 p-6 text-center space-y-3">
                 <AlertTriangle className="w-9 h-9 text-amber-400" />
-                <p className="text-sm font-bold text-white">تعذر تحميل الفيديو حالياً</p>
+                <p className="text-sm font-bold text-white">
+                  {isEn ? 'Unable to load video right now' : 'تعذر تحميل الفيديو حالياً'}
+                </p>
                 <p className="text-xs text-slate-400 max-w-xs">
-                  يرجى المحاولة مرة أخرى لتشغيل المحاضرة.
+                  {isEn
+                    ? 'Please retry loading the session stream.'
+                    : 'يرجى المحاولة مرة أخرى لتشغيل المحاضرة.'}
                 </p>
                 <button
                   type="button"
@@ -651,7 +674,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                   className="min-h-[44px] px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>إعادة تحميل الفيديو</span>
+                  <span>{isEn ? 'Retry Video' : 'إعادة تحميل الفيديو'}</span>
                 </button>
               </div>
             )}
@@ -679,14 +702,16 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                   onClick={handleSurfaceTap}
                   className="bg-gradient-to-b from-black/75 via-black/30 to-transparent px-3 sm:px-4 pt-2.5 sm:pt-3 pb-6 flex items-center justify-between gap-2"
                 >
-                  <div className="min-w-0 text-right">
+                  <div className={`min-w-0 ${isEn ? 'text-left' : 'text-right'}`}>
                     <div className="text-xs sm:text-sm font-bold text-white truncate">
                       {lecture.title}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-white/75 font-mono shrink-0">
                     <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-                    <span className="hidden xs:inline">بث سريع محمي</span>
+                    <span className="hidden xs:inline">
+                      {isEn ? 'Protected Stream' : 'بث سريع محمي'}
+                    </span>
                   </div>
                 </div>
 
@@ -703,7 +728,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       e.stopPropagation();
                       skipSeconds(-10);
                     }}
-                    aria-label="ترجيع 10 ثوانٍ"
+                    aria-label={isEn ? 'Rewind 10 seconds' : 'ترجيع 10 ثوانٍ'}
                     className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/55 hover:bg-black/75 text-white flex flex-col items-center justify-center backdrop-blur-xs transition-transform active:scale-90 cursor-pointer"
                   >
                     <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -716,7 +741,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       e.stopPropagation();
                       togglePlayPause();
                     }}
-                    aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل الفيديو'}
+                    aria-label={isPlaying ? (isEn ? 'Pause' : 'إيقاف مؤقت') : isEn ? 'Play video' : 'تشغيل الفيديو'}
                     className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-teal-600 hover:bg-teal-500 text-white shadow-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
                   >
                     {isPlaying ? (
@@ -732,7 +757,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       e.stopPropagation();
                       skipSeconds(10);
                     }}
-                    aria-label="تقديم 10 ثوانٍ"
+                    aria-label={isEn ? 'Forward 10 seconds' : 'تقديم 10 ثوانٍ'}
                     className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/55 hover:bg-black/75 text-white flex flex-col items-center justify-center backdrop-blur-xs transition-transform active:scale-90 cursor-pointer"
                   >
                     <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -751,7 +776,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                     dir="ltr"
                     role="slider"
                     tabIndex={0}
-                    aria-label="شريط تقديم وترجيع الفيديو"
+                    aria-label={isEn ? 'Video scrub bar' : 'شريط تقديم وترجيع الفيديو'}
                     aria-valuemin={0}
                     aria-valuemax={Math.round(effectiveDuration)}
                     aria-valuenow={Math.round(displayTime)}
@@ -821,7 +846,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       <button
                         type="button"
                         onClick={togglePlayPause}
-                        aria-label={isPlaying ? 'إيقاف' : 'تشغيل'}
+                        aria-label={isPlaying ? (isEn ? 'Pause' : 'إيقاف') : isEn ? 'Play' : 'تشغيل'}
                         className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-white hover:bg-white/15 transition-colors cursor-pointer"
                       >
                         {isPlaying ? (
@@ -834,7 +859,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       <button
                         type="button"
                         onClick={toggleMute}
-                        aria-label={isMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
+                        aria-label={isMuted ? (isEn ? 'Unmute' : 'تشغيل الصوت') : isEn ? 'Mute' : 'كتم الصوت'}
                         className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-white hover:bg-white/15 transition-colors cursor-pointer"
                       >
                         {isMuted ? (
@@ -854,8 +879,12 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                         <button
                           type="button"
                           onClick={cycleVideoQuality}
-                          aria-label="تغيير جودة البث"
-                          title="تبديل جودة الفيديو (سريع / توفير / HD)"
+                          aria-label={isEn ? 'Switch stream quality' : 'تغيير جودة البث'}
+                          title={
+                            isEn
+                              ? 'Switch stream quality (Fast / Eco / HD)'
+                              : 'تبديل جودة الفيديو (سريع / توفير / HD)'
+                          }
                           className="min-h-[36px] px-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                         >
                           <Gauge className="w-3.5 h-3.5 text-teal-300" />
@@ -866,7 +895,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       <button
                         type="button"
                         onClick={cyclePlaybackSpeed}
-                        aria-label="تغيير سرعة التشغيل"
+                        aria-label={isEn ? 'Playback speed' : 'تغيير سرعة التشغيل'}
                         className="min-h-[36px] px-2.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-mono tabular-nums font-bold transition-colors cursor-pointer"
                       >
                         {playbackRate}x
@@ -876,8 +905,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                         <button
                           type="button"
                           onClick={togglePictureInPicture}
-                          aria-label="نافذة عائمة"
-                          title="تشغيل في نافذة مصغرة"
+                          aria-label={isEn ? 'Floating window' : 'نافذة عائمة'}
+                          title={isEn ? 'Picture in Picture' : 'تشغيل في نافذة مصغرة'}
                           className="hidden sm:flex min-w-[36px] min-h-[36px] items-center justify-center rounded-lg text-white hover:bg-white/15 transition-colors cursor-pointer"
                         >
                           <PictureInPicture2 className="w-4 h-4" />
@@ -887,7 +916,15 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                       <button
                         type="button"
                         onClick={toggleFullscreen}
-                        aria-label={isFullscreen ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'}
+                        aria-label={
+                          isFullscreen
+                            ? isEn
+                              ? 'Exit fullscreen'
+                              : 'إنهاء ملء الشاشة'
+                            : isEn
+                            ? 'Fullscreen'
+                            : 'ملء الشاشة'
+                        }
                         className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-white hover:bg-white/15 transition-colors cursor-pointer"
                       >
                         {isFullscreen ? (
@@ -942,7 +979,11 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         <div className="text-xs text-slate-600 dark:text-slate-400">
           {isWatched
-            ? 'تم تسجيل حضورك في هذه الحصة ويمكنك المتابعة للحصة التالية.'
+            ? isEn
+              ? 'Session attendance recorded — you can continue to the next lecture.'
+              : 'تم تسجيل حضورك في هذه الحصة ويمكنك المتابعة للحصة التالية.'
+            : isEn
+            ? 'Finish watching and confirm completion to unlock the quiz and next session.'
             : 'أكمل مشاهدة الحصة واضغط تأكيد الحضور لفتح الكويز والحصة التالية.'}
         </div>
 
@@ -959,7 +1000,13 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span className="whitespace-nowrap">
-              {isWatched ? 'تم تسجيل الحضور' : 'تأكيد إتمام الحصة'}
+              {isWatched
+                ? isEn
+                  ? 'Attendance Recorded'
+                  : 'تم تسجيل الحضور'
+                : isEn
+                ? 'Mark Session Complete'
+                : 'تأكيد إتمام الحصة'}
             </span>
           </button>
 
@@ -970,7 +1017,9 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
               className="flex-1 sm:flex-initial min-h-[44px] px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 transition-colors flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
             >
               <Award className="w-4 h-4 shrink-0" />
-              <span className="whitespace-nowrap">حل كويز الحصة</span>
+              <span className="whitespace-nowrap">
+                {isEn ? 'Take Session Quiz' : 'حل كويز الحصة'}
+              </span>
             </button>
           )}
         </div>
