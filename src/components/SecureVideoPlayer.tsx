@@ -23,6 +23,7 @@ import {
   isCloudinaryVideoUrl,
   getVideoPosterUrl,
   prefetchVideoStream,
+  parseDurationStringToSeconds,
   VideoQualityMode,
 } from '../utils/mediaOptimizer';
 
@@ -38,8 +39,8 @@ interface SecureVideoPlayerProps {
 const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 const QUALITY_OPTIONS: Array<{ id: VideoQualityMode; labelAr: string; shortLabel: string }> = [
-  { id: 'fast', labelAr: 'سريع (تلقائي)', shortLabel: 'سريع' },
-  { id: 'eco', labelAr: 'توفير (سلس)', shortLabel: 'توفير' },
+  { id: 'fast', labelAr: 'أصلي سريع', shortLabel: 'سريع' },
+  { id: 'eco', labelAr: 'توفير البيانات', shortLabel: 'توفير' },
   { id: 'hd', labelAr: 'جودة عالية HD', shortLabel: 'HD' },
 ];
 
@@ -54,6 +55,26 @@ function formatTime(seconds: number): string {
   return `${pad(mins)}:${pad(secs)}`;
 }
 
+/**
+ * Resolves full accurate video duration even when streams report Infinity, NaN,
+ * or update duration lazily after initial metadata.
+ */
+function resolveElementDuration(vid: HTMLVideoElement): number {
+  const raw = vid.duration;
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  try {
+    if (vid.seekable && vid.seekable.length > 0) {
+      const end = vid.seekable.end(vid.seekable.length - 1);
+      if (Number.isFinite(end) && end > 0) return end;
+    }
+  } catch {
+    // ignore seekable read errors
+  }
+  return 0;
+}
+
 export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   lecture,
   currentUser,
@@ -64,9 +85,12 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scrubTrackRef = useRef<HTMLDivElement>(null);
   const hideControlsTimerRef = useRef<number | null>(null);
   const lastSavedPosRef = useRef<number>(0);
   const restoredForLectureRef = useRef<string | null>(null);
+  const isDraggingRef = useRef<boolean>(false);
+  const lastSeekCommitRef = useRef<number>(0);
 
   const [securityNotice, setSecurityNotice] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -85,14 +109,19 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
+  // Smooth drag-scrub & hover preview state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTime, setDragTime] = useState<number | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{ pct: number; time: number } | null>(null);
+
   const canOptimizeCloudinary = isCloudinaryVideoUrl(lecture.videoUrl);
   const resolvedVideoSrc =
     fallbackToRaw || !canOptimizeCloudinary
       ? lecture.videoUrl
       : optimizeVideoStreamUrl(lecture.videoUrl, videoQuality);
   const posterUrl = getVideoPosterUrl(lecture.videoUrl, lecture.thumbnailUrl);
+  const expectedLectureSeconds = parseDurationStringToSeconds(lecture.duration);
 
-  // Register live video time getter for quick timestamped notes
   useEffect(() => {
     onRegisterTimeGetter?.(() => videoRef.current?.currentTime || 0);
   }, [onRegisterTimeGetter, lecture.id]);
@@ -122,6 +151,10 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     setDuration(0);
     setBufferedPercent(0);
     setShowControls(true);
+    setIsDragging(false);
+    setDragTime(null);
+    setHoverInfo(null);
+    isDraggingRef.current = false;
     restoredForLectureRef.current = null;
     lastSavedPosRef.current = 0;
 
@@ -131,7 +164,6 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     prefetchVideoStream(lecture.videoUrl, videoQuality);
   }, [lecture.id, lecture.videoUrl, videoQuality]);
 
-  // Listen for native fullscreen exit (Esc key / swipe down)
   useEffect(() => {
     const onFsChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
@@ -150,6 +182,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       window.clearTimeout(hideControlsTimerRef.current);
     }
     hideControlsTimerRef.current = window.setTimeout(() => {
+      if (isDraggingRef.current) return;
       if (videoRef.current && !videoRef.current.paused) {
         setShowControls(false);
       }
@@ -164,7 +197,29 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     };
   }, []);
 
-  // Determine whether video is direct stream (Cloudinary / server uploads / mp4 / webm / mkv) or iframe embed
+  const syncDurationFromVideo = useCallback(
+    (v: HTMLVideoElement) => {
+      const resolved = resolveElementDuration(v);
+      if (resolved <= 0) return;
+
+      // Guard against transformed streams that truncate large videos to ~1s
+      if (
+        !fallbackToRaw &&
+        canOptimizeCloudinary &&
+        resolvedVideoSrc !== lecture.videoUrl &&
+        resolved < 3 &&
+        expectedLectureSeconds > 10
+      ) {
+        setFallbackToRaw(true);
+        return;
+      }
+
+      setDuration((prev) => (Math.abs(prev - resolved) > 0.25 ? resolved : prev));
+    },
+    [fallbackToRaw, canOptimizeCloudinary, resolvedVideoSrc, lecture.videoUrl, expectedLectureSeconds]
+  );
+
+  // Determine whether video is direct stream or iframe embed
   const isDirectVideo = Boolean(
     lecture.videoUrl &&
       (lecture.videoUrl.includes('cloudinary.com') ||
@@ -215,21 +270,99 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     (delta: number) => {
       const vid = videoRef.current;
       if (!vid) return;
-      const next = Math.min(vid.duration || Infinity, Math.max(0, vid.currentTime + delta));
+      const totalDur = resolveElementDuration(vid) || duration;
+      const maxTime = totalDur > 0 ? totalDur : Infinity;
+      const next = Math.min(maxTime, Math.max(0, vid.currentTime + delta));
       vid.currentTime = next;
       setCurrentTime(next);
       setShowControls(true);
       scheduleHideControls();
     },
-    [scheduleHideControls]
+    [duration, scheduleHideControls]
   );
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const vid = videoRef.current;
-    const target = Number(e.target.value);
-    if (!vid || Number.isNaN(target)) return;
-    vid.currentTime = target;
-    setCurrentTime(target);
+  const effectiveDuration = duration > 0 ? duration : Math.max(currentTime, 0);
+
+  const computeScrubFromClientX = useCallback(
+    (clientX: number) => {
+      const track = scrubTrackRef.current;
+      if (!track || effectiveDuration <= 0) {
+        return { pct: 0, time: 0 };
+      }
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
+      return {
+        pct: ratio * 100,
+        time: ratio * effectiveDuration,
+      };
+    },
+    [effectiveDuration]
+  );
+
+  const handleScrubPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (effectiveDuration <= 0) return;
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore if synthetic event
+    }
+
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    setShowControls(true);
+    if (hideControlsTimerRef.current) {
+      window.clearTimeout(hideControlsTimerRef.current);
+    }
+
+    const { time } = computeScrubFromClientX(e.clientX);
+    setDragTime(time);
+    setCurrentTime(time);
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      lastSeekCommitRef.current = performance.now();
+    }
+  };
+
+  const handleScrubPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (effectiveDuration <= 0) return;
+    const { pct, time } = computeScrubFromClientX(e.clientX);
+    setHoverInfo({ pct, time });
+
+    if (!isDraggingRef.current) return;
+    e.stopPropagation();
+    setDragTime(time);
+    setCurrentTime(time);
+
+    const now = performance.now();
+    if (videoRef.current && now - lastSeekCommitRef.current >= 65) {
+      videoRef.current.currentTime = time;
+      lastSeekCommitRef.current = now;
+    }
+  };
+
+  const finalizeScrubDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    e.stopPropagation();
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+
+    const { time } = computeScrubFromClientX(e.clientX);
+    const finalTime = dragTime !== null ? time : currentTime;
+    if (videoRef.current && effectiveDuration > 0) {
+      videoRef.current.currentTime = finalTime;
+    }
+    setCurrentTime(finalTime);
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    setDragTime(null);
     scheduleHideControls();
   };
 
@@ -364,7 +497,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
   }, [isDirectVideo, showNotice, skipSeconds, toggleFullscreen, toggleMute, togglePlayPause]);
 
   const handleSurfaceTap = () => {
-    if (!isDirectVideo) return;
+    if (!isDirectVideo || isDraggingRef.current) return;
     if (!showControls) {
       setShowControls(true);
       scheduleHideControls();
@@ -383,7 +516,9 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     vid.load();
   };
 
-  const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const displayTime = isDragging && dragTime !== null ? dragTime : currentTime;
+  const progressPct =
+    effectiveDuration > 0 ? Math.min(100, Math.max(0, (displayTime / effectiveDuration) * 100)) : 0;
   const currentQualityLabel =
     QUALITY_OPTIONS.find((q) => q.id === videoQuality)?.shortLabel || 'سريع';
   const supportsPiP =
@@ -395,7 +530,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      {/* Theater Video Container - Edge-to-edge on mobile, crisp framed stage on desktop */}
+      {/* Theater Video Container */}
       <div
         ref={containerRef}
         onContextMenu={handleContextMenu}
@@ -416,7 +551,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
               src={resolvedVideoSrc}
               poster={posterUrl}
               playsInline
-              preload="auto"
+              preload="metadata"
               controlsList="nodownload"
               onClick={handleSurfaceTap}
               onPlay={() => {
@@ -433,11 +568,18 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                 } catch {}
               }}
               onWaiting={() => setIsBuffering(true)}
-              onCanPlay={() => setIsBuffering(false)}
+              onCanPlay={(e) => {
+                setIsBuffering(false);
+                syncDurationFromVideo(e.currentTarget);
+              }}
+              onLoadedData={(e) => syncDurationFromVideo(e.currentTarget)}
+              onDurationChange={(e) => syncDurationFromVideo(e.currentTarget)}
+              onProgress={(e) => syncDurationFromVideo(e.currentTarget)}
+              onSeeked={(e) => syncDurationFromVideo(e.currentTarget)}
               onLoadedMetadata={(e) => {
                 const v = e.currentTarget;
-                const dur = v.duration || 0;
-                setDuration(dur);
+                syncDurationFromVideo(v);
+                const dur = resolveElementDuration(v);
                 v.playbackRate = playbackRate;
 
                 if (restoredForLectureRef.current !== lecture.id) {
@@ -453,13 +595,20 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
               }}
               onTimeUpdate={(e) => {
                 const v = e.currentTarget;
+                syncDurationFromVideo(v);
+                const dur = resolveElementDuration(v) || duration;
                 const nowSec = v.currentTime || 0;
-                setCurrentTime(nowSec);
-                if (v.buffered.length > 0 && v.duration > 0) {
-                  const end = v.buffered.end(v.buffered.length - 1);
-                  setBufferedPercent(Math.min(100, (end / v.duration) * 100));
+
+                // Never let playback updates overwrite user's active scrub drag
+                if (!isDraggingRef.current) {
+                  setCurrentTime(nowSec);
                 }
-                if (Math.abs(nowSec - lastSavedPosRef.current) >= 4) {
+
+                if (v.buffered.length > 0 && dur > 0) {
+                  const end = v.buffered.end(v.buffered.length - 1);
+                  setBufferedPercent(Math.min(100, (end / dur) * 100));
+                }
+                if (!isDraggingRef.current && Math.abs(nowSec - lastSavedPosRef.current) >= 4) {
                   lastSavedPosRef.current = nowSec;
                   try {
                     if (nowSec > 5) {
@@ -508,7 +657,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
             )}
 
             {/* Buffering Spinner */}
-            {isBuffering && !hasError && (
+            {isBuffering && !hasError && !isDragging && (
               <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
                 <div className="w-12 h-12 rounded-full bg-slate-950/70 flex items-center justify-center">
                   <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
@@ -520,12 +669,12 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
             {!hasError && (
               <div
                 className={`absolute inset-0 z-20 flex flex-col justify-between transition-opacity duration-200 ${
-                  showControls || !isPlaying
+                  showControls || !isPlaying || isDragging
                     ? 'opacity-100'
                     : 'opacity-0 pointer-events-none'
                 }`}
               >
-                {/* Top Scrim Bar: Lecture title & subtle security badge */}
+                {/* Top Scrim Bar */}
                 <div
                   onClick={handleSurfaceTap}
                   className="bg-gradient-to-b from-black/75 via-black/30 to-transparent px-3 sm:px-4 pt-2.5 sm:pt-3 pb-6 flex items-center justify-between gap-2"
@@ -591,14 +740,60 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                   </button>
                 </div>
 
-                {/* Bottom Scrim Bar: Scrub Track + Time + Speed + Quality + PiP + Mute + Fullscreen */}
+                {/* Bottom Scrim Bar: Interactive Pointer-Capture Scrub Track + Controls */}
                 <div
                   onClick={(e) => e.stopPropagation()}
                   className="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 sm:px-4 pt-6 pb-2.5 sm:pb-3 space-y-1.5"
                 >
-                  {/* Interactive Scrub Track (LTR locked so left=start, right=end) */}
-                  <div className="relative h-6 flex items-center" dir="ltr">
-                    <div className="w-full h-1.5 bg-white/25 rounded-full overflow-hidden relative">
+                  {/* Custom Smooth Drag Scrub Track (LTR locked so left=start, right=end) */}
+                  <div
+                    ref={scrubTrackRef}
+                    dir="ltr"
+                    role="slider"
+                    tabIndex={0}
+                    aria-label="شريط تقديم وترجيع الفيديو"
+                    aria-valuemin={0}
+                    aria-valuemax={Math.round(effectiveDuration)}
+                    aria-valuenow={Math.round(displayTime)}
+                    onPointerDown={handleScrubPointerDown}
+                    onPointerMove={handleScrubPointerMove}
+                    onPointerUp={finalizeScrubDrag}
+                    onPointerCancel={finalizeScrubDrag}
+                    onPointerLeave={() => {
+                      if (!isDraggingRef.current) setHoverInfo(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        skipSeconds(5);
+                      } else if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        skipSeconds(-5);
+                      }
+                    }}
+                    className="relative h-8 flex items-center cursor-pointer touch-none select-none group/scrub focus:outline-none"
+                  >
+                    {/* Live Floating Timestamp Preview Tooltip during Drag or Hover */}
+                    {(isDragging || hoverInfo) && effectiveDuration > 0 && (
+                      <div
+                        className="absolute -top-7 -translate-x-1/2 px-2 py-0.5 rounded-md bg-slate-900/95 border border-white/15 text-white text-[11px] font-mono tabular-nums font-bold shadow-lg pointer-events-none whitespace-nowrap"
+                        style={{
+                          left: `${Math.min(
+                            94,
+                            Math.max(6, isDragging ? progressPct : hoverInfo?.pct ?? progressPct)
+                          )}%`,
+                        }}
+                      >
+                        {formatTime(isDragging ? displayTime : hoverInfo?.time ?? displayTime)}
+                      </div>
+                    )}
+
+                    {/* Track Bar */}
+                    <div
+                      className={`w-full rounded-full overflow-hidden relative transition-all ${
+                        isDragging ? 'h-2.5 bg-white/30' : 'h-1.5 group-hover/scrub:h-2 bg-white/25'
+                      }`}
+                    >
                       <div
                         className="absolute inset-y-0 left-0 bg-white/35 rounded-full"
                         style={{ width: `${bufferedPercent}%` }}
@@ -608,19 +803,15 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
+
+                    {/* Draggable Thumb */}
                     <div
-                      className="absolute w-3.5 h-3.5 rounded-full bg-teal-400 shadow-md pointer-events-none -translate-x-1/2"
+                      className={`absolute rounded-full bg-teal-400 ring-2 ring-white shadow-md pointer-events-none -translate-x-1/2 transition-transform ${
+                        isDragging
+                          ? 'w-5 h-5 scale-110'
+                          : 'w-3.5 h-3.5 group-hover/scrub:w-4 group-hover/scrub:h-4'
+                      }`}
                       style={{ left: `${progressPct}%` }}
-                    />
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration || 100}
-                      step={0.5}
-                      value={currentTime}
-                      onChange={handleSeek}
-                      aria-label="شريط تقديم الفيديو"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                   </div>
 
@@ -653,8 +844,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                         )}
                       </button>
 
-                      <span className="text-[11px] sm:text-xs font-mono tabular-nums text-white/90 px-1">
-                        {formatTime(currentTime)} / {formatTime(duration)}
+                      <span className="text-[11px] sm:text-xs font-mono tabular-nums text-white/95 px-1">
+                        {formatTime(displayTime)} / {duration > 0 ? formatTime(duration) : '--:--'}
                       </span>
                     </div>
 

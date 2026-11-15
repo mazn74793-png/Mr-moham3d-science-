@@ -1290,7 +1290,7 @@ export default function App() {
     return ok;
   };
 
-  const handleUpdateStudentProfile = (updatedUser: UserProfile) => {
+  const handleUpdateStudentProfile = (updatedUser: UserProfile, successMessage?: string) => {
     const finalized: UserProfile = { ...updatedUser, profileCompleted: true };
     setCurrentUser(finalized);
 
@@ -1325,6 +1325,10 @@ export default function App() {
       }
       return [finalized, ...prev];
     });
+
+    if (successMessage) {
+      showNotice('success', successMessage);
+    }
   };
 
   const handleSaveCloudinaryConfig = async (config: CloudinaryConfig): Promise<boolean> => {
@@ -1487,6 +1491,7 @@ export default function App() {
             <StudentPortal
               currentUser={currentUser}
               siteConfig={siteConfig}
+              cloudinaryConfig={cloudinaryConfig}
               lectures={lectures}
               quizzes={quizzes}
               attachments={attachments}

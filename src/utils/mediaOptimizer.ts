@@ -1,4 +1,4 @@
-// Fast-start video stream & thumbnail optimizer with smart Cloudinary transforms and lightweight prefetching
+// Fast-start video stream & thumbnail optimizer with reliable MP4 range streaming
 
 export type VideoQualityMode = 'fast' | 'eco' | 'hd';
 
@@ -11,9 +11,40 @@ export function isCloudinaryVideoUrl(url?: string): boolean {
 }
 
 /**
- * Injects fast-streaming Cloudinary transformations (adaptive codec + auto quality)
- * so heavy raw uploaded videos begin playing immediately with far less buffering.
- * Leaves non-Cloudinary or already-transformed URLs untouched.
+ * Parses human-readable lecture duration strings (e.g. "45 دقيقة", "1:15:00", "32:10", "90 min")
+ * into approximate seconds so the player can detect malformed 1-second container headers.
+ */
+export function parseDurationStringToSeconds(durationStr?: string): number {
+  if (!durationStr) return 0;
+  const raw = durationStr.trim();
+  if (!raw) return 0;
+
+  // HH:MM:SS or MM:SS
+  const colonParts = raw.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (colonParts) {
+    if (colonParts[3] !== undefined) {
+      return Number(colonParts[1]) * 3600 + Number(colonParts[2]) * 60 + Number(colonParts[3]);
+    }
+    return Number(colonParts[1]) * 60 + Number(colonParts[2]);
+  }
+
+  // Arabic/English minutes e.g. "45 دقيقة" or "45 min"
+  const numMatch = raw.match(/(\d+(?:\.\d+)?)/);
+  if (numMatch) {
+    const val = Number(numMatch[1]);
+    if (/ساع|hour|hr/i.test(raw)) return Math.round(val * 3600);
+    if (/ثان|sec/i.test(raw)) return Math.round(val);
+    return Math.round(val * 60);
+  }
+
+  return 0;
+}
+
+/**
+ * Returns a reliable playable stream URL:
+ * - 'fast' and 'hd' serve the direct original MP4 CDN stream (supports native HTTP 206 byte-range seeking & exact full duration)
+ *   or converts legacy non-web formats (.mov/.mkv/.avi) to standard MP4 without vc_auto duration truncation.
+ * - 'eco' serves a compact 854px MP4 stream using explicit `f_mp4` (never `vc_auto`) so duration metadata stays accurate.
  */
 export function optimizeVideoStreamUrl(url: string, quality: VideoQualityMode = 'fast'): string {
   if (!url) return '';
@@ -25,20 +56,26 @@ export function optimizeVideoStreamUrl(url: string, quality: VideoQualityMode = 
   const prefix = url.slice(0, idx + CLOUDINARY_VIDEO_UPLOAD_MARKER.length);
   const rest = url.slice(idx + CLOUDINARY_VIDEO_UPLOAD_MARKER.length);
 
-  // If the URL already carries explicit Cloudinary transform directives before version/filename, keep as-is
+  // Respect URLs that already have explicit transforms
   const firstSegment = rest.split('/')[0] || '';
   if (firstSegment && !/^v\d+$/.test(firstSegment) && firstSegment.includes('_')) {
     return url;
   }
 
-  const transform =
-    quality === 'eco'
-      ? 'f_auto,vc_auto,q_auto:low,w_854,c_limit'
-      : quality === 'hd'
-      ? 'f_auto,vc_auto,q_auto:good'
-      : 'f_auto,vc_auto,q_auto:eco,w_1280,c_limit';
+  const isNonStandardContainer = /\.(mov|mkv|avi|wmv|flv)(\?.*)?$/i.test(url);
 
-  return `${prefix}${transform}/${rest}`;
+  if (quality === 'eco') {
+    const cleanRest = rest.replace(/\.(mov|mkv|avi|wmv|flv|webm)(\?.*)?$/i, '.mp4$2');
+    return `${prefix}f_mp4,q_auto:eco,w_854,c_limit/${cleanRest}`;
+  }
+
+  if (isNonStandardContainer) {
+    const cleanRest = rest.replace(/\.(mov|mkv|avi|wmv|flv)(\?.*)?$/i, '.mp4$2');
+    return `${prefix}f_mp4,q_auto:good/${cleanRest}`;
+  }
+
+  // Original CDN file guarantees exact MOOV duration metadata & fast 206 byte-range seeking
+  return url;
 }
 
 export function optimizeImageUrl(url?: string, maxWidth = 900): string {
@@ -103,7 +140,6 @@ export function prefetchVideoStream(rawUrl?: string, quality: VideoQualityMode =
   if (warmedUrls.has(optimized)) return;
   warmedUrls.add(optimized);
 
-  // Keep memory cache bounded
   if (warmedUrls.size > 24) {
     const first = warmedUrls.values().next().value;
     if (first) warmedUrls.delete(first);

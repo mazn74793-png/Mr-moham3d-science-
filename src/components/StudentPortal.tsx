@@ -23,8 +23,17 @@ import {
   Search,
   FlaskConical,
   Clock3,
+  User,
 } from 'lucide-react';
-import { Lecture, Quiz, AttachmentFile, GradeLevel, UserProfile, PointReward } from '../types';
+import {
+  Lecture,
+  Quiz,
+  AttachmentFile,
+  GradeLevel,
+  UserProfile,
+  PointReward,
+  CloudinaryConfig,
+} from '../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { useLanguage } from '../context/LanguageContext';
@@ -34,6 +43,13 @@ import { HandoutsTab } from './student/HandoutsTab';
 import { PeriodicTableTab } from './student/PeriodicTableTab';
 import { StudyLabTab } from './student/StudyLabTab';
 import { PointsWalletTab } from './student/PointsWalletTab';
+import {
+  StudentProfileModal,
+  StudentCustomProfile,
+  loadStudentCustomProfile,
+  renderStudentAvatarIcon,
+  STUDENT_CARD_THEMES,
+} from './student/StudentProfileModal';
 import { prefetchVideoStream } from '../utils/mediaOptimizer';
 
 interface StudentPortalProps {
@@ -43,9 +59,10 @@ interface StudentPortalProps {
   attachments: AttachmentFile[];
   rewards?: PointReward[];
   siteConfig?: SiteConfig;
+  cloudinaryConfig?: CloudinaryConfig;
   onBackToHome: () => void;
   onOpenTeacherDashboard: () => void;
-  onUpdateStudentProfile?: (updatedUser: UserProfile) => void;
+  onUpdateStudentProfile?: (updatedUser: UserProfile, successMessage?: string) => void;
   onRedeemCode?: (code: string) => Promise<{ pointsAdded: number; newBalance: number; code: string }>;
   onUnlockLecture?: (lecture: Lecture) => Promise<void>;
   onUnlockAttachment?: (file: AttachmentFile) => Promise<void>;
@@ -59,6 +76,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   attachments,
   rewards = [],
   siteConfig,
+  cloudinaryConfig,
   onBackToHome,
   onOpenTeacherDashboard,
   onUpdateStudentProfile,
@@ -97,8 +115,16 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   const [lectureSearch, setLectureSearch] = useState('');
   const [lectureFilter, setLectureFilter] = useState<'all' | 'available' | 'completed' | 'bookmarked'>('all');
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   const studentStorageKey = currentUser?.id || 'guest';
+  const [customProfile, setCustomProfile] = useState<StudentCustomProfile>(() =>
+    loadStudentCustomProfile(currentUser?.id)
+  );
+
+  useEffect(() => {
+    setCustomProfile(loadStudentCustomProfile(currentUser?.id));
+  }, [currentUser?.id]);
   const [bookmarkedLectureIds, setBookmarkedLectureIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(`mm_study_${studentStorageKey}_bookmarks`);
@@ -369,7 +395,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <button
                 type="button"
                 onClick={onBackToHome}
@@ -380,33 +406,78 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 <span className="hidden sm:inline">{lang === 'en' ? 'Home' : 'الرئيسية'}</span>
               </button>
 
-              <div className="min-w-0">
-                <h1 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white truncate">
-                  {lang === 'en'
-                    ? `Welcome, ${currentUser.name.split(' ')[0]}`
-                    : `مرحباً، ${currentUser.name.split(' ')[0]}`}
-                </h1>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                  <span className="font-semibold text-teal-700 dark:text-teal-400">
-                    {getGradeTitle(selectedGrade)}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {lang === 'en'
-                      ? `Progress ${progressPercentage}%`
-                      : `التقدم ${progressPercentage}%`}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {lang === 'en'
-                      ? `Score ${studentCumulativeScore}%`
-                      : `المعدل ${studentCumulativeScore}%`}
-                  </span>
+              {/* Clickable Student Identity Avatar & Title */}
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(true)}
+                title="تعديل الملف الشخصي"
+                className="flex items-center gap-2.5 min-w-0 text-right group cursor-pointer"
+              >
+                {currentUser.avatarUrl ? (
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                  />
+                ) : (
+                  <div
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl text-white flex items-center justify-center shrink-0 shadow-xs ${
+                      (STUDENT_CARD_THEMES[customProfile.cardTheme] || STUDENT_CARD_THEMES.teal).cardBg
+                    }`}
+                  >
+                    {renderStudentAvatarIcon(customProfile.avatarIcon, 'w-5 h-5')}
+                  </div>
+                )}
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h1 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                      {lang === 'en'
+                        ? `Welcome, ${currentUser.name.split(' ')[0]}`
+                        : `مرحباً، ${currentUser.name.split(' ')[0]}`}
+                    </h1>
+                    {customProfile.titleBadge && (
+                      <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/70 border border-teal-200 dark:border-teal-800 text-[10px] font-bold text-teal-700 dark:text-teal-300 shrink-0">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        <span>{customProfile.titleBadge}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                    <span className="font-semibold text-teal-700 dark:text-teal-400">
+                      {getGradeTitle(selectedGrade)}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {lang === 'en'
+                        ? `Progress ${progressPercentage}%`
+                        : `التقدم ${progressPercentage}%`}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {lang === 'en'
+                        ? `Score ${studentCumulativeScore}%`
+                        : `المعدل ${studentCumulativeScore}%`}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(true)}
+                aria-label="ملفي الشخصي"
+                className="min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border border-slate-200 dark:border-slate-700 hover:border-teal-300 text-slate-800 dark:text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <User className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span className="sm:hidden">{lang === 'en' ? 'Profile' : 'ملفي'}</span>
+                <span className="hidden sm:inline">
+                  {lang === 'en' ? 'My Profile' : 'ملفي الشخصي'}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -1438,6 +1509,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           url={activeLecture.pdfUrl}
           title={activeLecture.pdfTitle || 'مذكرة الحصة'}
           kind={detectMediaKind(activeLecture.pdfUrl, 'pdf')}
+        />
+      )}
+
+      {/* Student Profile & Personalization Modal */}
+      {currentUser && (
+        <StudentProfileModal
+          isOpen={profileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+          currentUser={currentUser}
+          siteConfig={siteConfig}
+          cloudinaryConfig={cloudinaryConfig}
+          completedLecturesCount={completedLecturesCount}
+          passedQuizzesCount={passedQuizzesCount}
+          onSaveProfile={(updatedUser, nextCustom) => {
+            setCustomProfile(nextCustom);
+            if (updatedUser.grade) {
+              setSelectedGrade(updatedUser.grade);
+            }
+            onUpdateStudentProfile?.(updatedUser, 'تم حفظ وتحديث ملفك الشخصي بنجاح!');
+          }}
         />
       )}
     </div>
