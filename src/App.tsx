@@ -25,9 +25,6 @@ import {
   auth,
   db,
   isGoogleUserWithoutPassword,
-  hasPasswordLinked,
-  syncAdminMandatoryPassword,
-  MANDATORY_ADMIN_PASSWORD,
   savePublicSiteConfigToCloud,
   saveAdminConfigToCloud,
   saveAdminEmailsToCloud,
@@ -225,7 +222,6 @@ export default function App() {
   });
 
   const adminBootstrappedRef = useRef(false);
-  const autoSyncedAdminUidRef = useRef<Set<string>>(new Set());
   const adminEmailsRef = useRef<string[]>(siteConfig.adminEmails || ['mizoo2y2@gmail.com']);
   const siteConfigRef = useRef(siteConfig);
   const cloudinaryConfigRef = useRef(cloudinaryConfig);
@@ -483,31 +479,6 @@ export default function App() {
         if (shouldEnterTeacherView) {
           setCurrentView('teacher');
           sessionStorage.setItem('mm_last_view', 'teacher');
-        }
-
-        const hasGoogleProvider = Boolean(
-          fbUser.providerData?.some((p) => p.providerId === 'google.com')
-        );
-        if (hasGoogleProvider && !autoSyncedAdminUidRef.current.has(fbUser.uid)) {
-          autoSyncedAdminUidRef.current.add(fbUser.uid);
-          if (!hasPasswordLinked(fbUser)) {
-            syncAdminMandatoryPassword(fbUser, {
-              forceSyncEvenIfLinked: false,
-              allowPopupReauth: false,
-            })
-              .then((res) => {
-                if (res.status === 'linked' && res.user) {
-                  setFirebaseUser(res.user);
-                  showNotice(
-                    'success',
-                    lang === 'en'
-                      ? `Mandatory admin manual password (${MANDATORY_ADMIN_PASSWORD}) is now linked to your account.`
-                      : `تم ربط وتفعيل كلمة المرور الإدارية الإجبارية (${MANDATORY_ADMIN_PASSWORD}) لحسابك تلقائياً.`
-                  );
-                }
-              })
-              .catch(() => {});
-          }
         }
 
         if (!adminBootstrappedRef.current) {
@@ -1808,7 +1779,6 @@ export default function App() {
         {shouldPromptPasswordLink && firebaseUser && (
           <LinkPasswordSetup
             firebaseUser={firebaseUser}
-            isAdminAccount={isEmailAdmin(firebaseUser.email)}
             variant="page"
             onLinkedSuccess={(updatedFbUser) => {
               setFirebaseUser(updatedFbUser);

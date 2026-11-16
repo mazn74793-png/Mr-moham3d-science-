@@ -619,7 +619,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {auth.currentUser && !hasPasswordLinked(auth.currentUser) && (
-                <LinkPasswordSetup firebaseUser={auth.currentUser} isAdminAccount variant="inline" />
+                <LinkPasswordSetup firebaseUser={auth.currentUser} variant="inline" />
               )}
               <OverviewTab
                 siteConfig={siteConfig}

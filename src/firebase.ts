@@ -102,8 +102,6 @@ export const auth = createSessionIsolatedAuth();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-export const MANDATORY_ADMIN_PASSWORD = 'admin2222';
-
 export function hasPasswordLinked(fbUser?: FirebaseUser | null): boolean {
   if (!fbUser) return false;
   return Boolean(fbUser.providerData?.some((p) => p.providerId === 'password'));
@@ -188,34 +186,6 @@ export async function linkPasswordToCurrentUser(
   } catch {}
 
   return auth.currentUser || user;
-}
-
-export async function syncAdminMandatoryPassword(
-  fbUser?: FirebaseUser | null,
-  options: { forceSyncEvenIfLinked?: boolean; allowPopupReauth?: boolean } = {}
-): Promise<{
-  status: 'linked' | 'already-linked' | 'requires-recent-login' | 'error';
-  user: FirebaseUser | null;
-}> {
-  const target = fbUser || auth.currentUser;
-  if (!target || !target.email || !target.emailVerified) {
-    return { status: 'error', user: target || null };
-  }
-  const { forceSyncEvenIfLinked = false, allowPopupReauth = false } = options;
-  if (hasPasswordLinked(target) && !forceSyncEvenIfLinked) {
-    return { status: 'already-linked', user: target };
-  }
-  try {
-    const updated = await linkPasswordToCurrentUser(MANDATORY_ADMIN_PASSWORD, {
-      allowPopupReauth,
-    });
-    return { status: 'linked', user: updated };
-  } catch (err: any) {
-    if (err?.code === 'auth/requires-recent-login') {
-      return { status: 'requires-recent-login', user: target };
-    }
-    return { status: 'error', user: target };
-  }
 }
 
 export async function resendVerificationEmail(): Promise<void> {
