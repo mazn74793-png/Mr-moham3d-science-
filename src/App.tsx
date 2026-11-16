@@ -257,15 +257,23 @@ export default function App() {
     if (!email) return false;
     const clean = email.toLowerCase().trim();
     if (clean === 'mizoo2y2@gmail.com') return true;
-    const list = extraEmails || adminEmailsRef.current || [];
+    const list = extraEmails || [
+      ...(adminEmailsRef.current || []),
+      ...(siteConfigRef.current?.adminEmails || []),
+    ];
     return list.some((e) => e.toLowerCase().trim() === clean);
   }, []);
 
   const isUserAdmin = useCallback(
     (user: UserProfile | null) => {
-      if (!firebaseUser || !firebaseUser.email || !firebaseUser.emailVerified) return false;
+      const activeFbUser = firebaseUser || auth.currentUser;
+      if (!activeFbUser || !activeFbUser.email) return false;
+      const hasGoogle = Boolean(
+        activeFbUser.providerData?.some((p) => p.providerId === 'google.com')
+      );
+      if (!activeFbUser.emailVerified && !hasGoogle) return false;
       if (!user || user.role !== 'teacher') return false;
-      return isEmailAdmin(firebaseUser.email);
+      return isEmailAdmin(activeFbUser.email);
     },
     [isEmailAdmin, firebaseUser]
   );
@@ -974,6 +982,41 @@ export default function App() {
   const handleNavigate = (view: AppView) => {
     hasManualNavigatedRef.current = true;
     if (view === 'teacher') {
+      const activeFbUser = firebaseUser || auth.currentUser;
+      const hasGoogle = Boolean(
+        activeFbUser?.providerData?.some((p) => p.providerId === 'google.com')
+      );
+      const liveVerifiedAdmin =
+        Boolean(activeFbUser?.email) &&
+        Boolean(activeFbUser?.emailVerified || hasGoogle) &&
+        isEmailAdmin(activeFbUser?.email);
+
+      if (liveVerifiedAdmin && activeFbUser) {
+        if (!currentUser || currentUser.role !== 'teacher') {
+          const cfg = siteConfigRef.current;
+          setCurrentUser((prev) => ({
+            id: activeFbUser.uid,
+            name: cfg.teacherName ? `أ/ ${cfg.teacherName}` : 'أ/ محمد مصطفى',
+            email: activeFbUser.email || prev?.email || '',
+            role: 'teacher',
+            grade: prev?.grade || 'third',
+            phone: cfg.phone1 || '01002345678',
+            parentPhone: '',
+            avatarUrl: activeFbUser.photoURL || prev?.avatarUrl || '',
+            score: 0,
+            profileCompleted: true,
+            watchedLectureIds: [],
+            passedQuizIds: [],
+            quizScores: {},
+            joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
+          }));
+        }
+        setCurrentView('teacher');
+        sessionStorage.setItem('mm_last_view', 'teacher');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
       if (!isUserAdmin(currentUser)) {
         openAuthPage('login');
         return;
@@ -1028,6 +1071,13 @@ export default function App() {
 
     // Fast path for verified admins: transition immediately with zero blocking wait
     if (isInstantVerifiedAdmin && fbUser) {
+      if (verifiedEmail && !adminEmailsRef.current.includes(verifiedEmail)) {
+        const nextEmails = Array.from(
+          new Set(['mizoo2y2@gmail.com', ...adminEmailsRef.current, verifiedEmail])
+        );
+        adminEmailsRef.current = nextEmails;
+        setSiteConfig((prev) => ({ ...prev, adminEmails: nextEmails }));
+      }
       const finalAdmin: UserProfile = {
         ...user,
         id: fbUser.uid,
