@@ -84,10 +84,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up">
         <div
           onClick={() => onNavigateTab('lectures-list')}
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-teal-500 transition-all cursor-pointer"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-teal-500 hover-card-lift cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
             <span>{isEn ? 'Lectures' : 'المحاضرات'}</span>
@@ -103,7 +103,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         <div
           onClick={() => onNavigateTab('files')}
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-amber-500 transition-all cursor-pointer"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-amber-500 hover-card-lift cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
             <span>{isEn ? 'Handouts & Files' : 'المذكرات والملفات'}</span>
@@ -119,7 +119,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         <div
           onClick={() => onNavigateTab('all-students')}
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-emerald-500 transition-all cursor-pointer"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-emerald-500 hover-card-lift cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
             <span>{isEn ? 'Students' : 'الطلاب المشتركون'}</span>
@@ -135,7 +135,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         <div
           onClick={() => onNavigateTab('co-admins')}
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-sky-500 transition-all cursor-pointer"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1 hover:border-sky-500 hover-card-lift cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-sans">
             <span>{isEn ? 'Admin Team' : 'فريق الإدارة (Admins)'}</span>
@@ -207,7 +207,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('upload-lecture')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover-card-lift text-start group cursor-pointer"
           >
             <Plus className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -221,7 +221,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('points-codes')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover-card-lift text-start group cursor-pointer"
           >
             <Ticket className="w-6 h-6 text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -235,7 +235,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('all-students')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 hover-card-lift text-start group cursor-pointer"
           >
             <Users className="w-6 h-6 text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -249,7 +249,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('files')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500 hover-card-lift text-start group cursor-pointer"
           >
             <FileText className="w-6 h-6 text-rose-500 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -263,7 +263,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('academic-years')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover-card-lift text-start group cursor-pointer"
           >
             <GraduationCap className="w-6 h-6 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -277,7 +277,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('co-admins')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover-card-lift text-start group cursor-pointer"
           >
             <ShieldCheck className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -291,7 +291,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('notifications')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 hover-card-lift text-start group cursor-pointer"
           >
             <Bell className="w-6 h-6 text-teal-600 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -305,7 +305,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('site-customizer')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-500 hover:shadow-sm text-start transition-all group cursor-pointer"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-500 hover-card-lift text-start group cursor-pointer"
           >
             <Palette className="w-6 h-6 text-purple-500 mb-2 group-hover:scale-110 transition-transform" />
             <div className="text-xs font-bold text-slate-900 dark:text-white">

@@ -144,7 +144,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
             {/* Social Proof Stats Strip with Card Lift */}
             <div className="pt-6 border-t border-slate-200/80 dark:border-slate-800 grid grid-cols-3 gap-3 sm:gap-4 max-w-lg">
-              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60">
+              <div className="p-2.5 rounded-xl hover-card-lift hover:bg-white/80 dark:hover:bg-slate-900/80 border border-transparent hover:border-teal-200/60 dark:hover:border-teal-800/60 cursor-default">
                 <div className="text-xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
                   14,800+
                 </div>
@@ -153,7 +153,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 </div>
               </div>
 
-              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60">
+              <div className="p-2.5 rounded-xl hover-card-lift hover:bg-white/80 dark:hover:bg-slate-900/80 border border-transparent hover:border-teal-200/60 dark:hover:border-teal-800/60 cursor-default">
                 <div className="text-xl sm:text-3xl font-extrabold text-teal-600 dark:text-teal-400 font-mono tabular-nums">
                   98.6%
                 </div>
@@ -162,7 +162,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 </div>
               </div>
 
-              <div className="p-2 rounded-xl transition-all duration-300 hover:bg-white/60 dark:hover:bg-slate-900/60">
+              <div className="p-2.5 rounded-xl hover-card-lift hover:bg-white/80 dark:hover:bg-slate-900/80 border border-transparent hover:border-amber-200/60 dark:hover:border-amber-800/60 cursor-default">
                 <div className="text-xl sm:text-3xl font-extrabold text-amber-500 font-mono tabular-nums">
                   15+
                 </div>
@@ -175,7 +175,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           </div>
 
           {/* Teacher Photo Column */}
-          <div className="lg:col-span-5 flex justify-center lg:justify-end">
+          <div className="lg:col-span-5 flex justify-center lg:justify-end animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
             <div className="relative w-full max-w-sm sm:max-w-md flex flex-col items-center">
               
               {/* Soft atmospheric radial glow */}
@@ -243,7 +243,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 )}
 
                 {/* Elegant Glass Floating Badge for the Teacher */}
-                <div className="absolute bottom-4 backdrop-blur-md bg-white/90 dark:bg-slate-900/90 border border-teal-200/60 dark:border-teal-700/50 rounded-2xl px-4 py-2.5 shadow-xl shadow-teal-900/10 flex items-center gap-3 transition-transform duration-300 group-hover:-translate-y-1">
+                <div className="absolute bottom-4 backdrop-blur-md bg-white/90 dark:bg-slate-900/90 border border-teal-200/60 dark:border-teal-700/50 rounded-2xl px-4 py-2.5 shadow-xl shadow-teal-900/10 flex items-center gap-3 transition-transform duration-300 group-hover:-translate-y-1.5 animate-float-slow z-20">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm font-mono shadow-xs">
                     M.M
                   </div>

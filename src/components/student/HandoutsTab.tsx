@@ -289,7 +289,7 @@ export const HandoutsTab: React.FC<HandoutsTabProps> = ({
             return (
               <article
                 key={file.id}
-                className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between transition-colors hover:border-teal-400"
+                className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between hover-card-lift hover:border-teal-400 animate-fade-in-up"
               >
                 {/* Visual Handout Cover Header */}
                 <div className="relative">

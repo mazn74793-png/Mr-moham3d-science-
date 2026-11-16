@@ -873,7 +873,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         <div className="flex flex-col gap-6">
           {/* Compact 4-Metric Quick Strip (hidden on active quiz or full-page profile view) */}
           {!activeQuiz && activeTab !== 'profile' && (
-            <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in-up">
               <button
                 type="button"
                 onClick={() => {
@@ -883,7 +883,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Watched' : 'الحصص المشاهدة'}</span>
@@ -903,7 +903,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     setActiveTab('quizzes');
                   }
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Quizzes Passed' : 'الاختبارات المجتازة'}</span>
@@ -917,7 +917,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('files')}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'PDF Handouts' : 'المذكرات المتاحة'}</span>
@@ -934,7 +934,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   setActiveTab('points');
                   setActiveQuiz(null);
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Points Wallet' : 'رصيد النقاط والأكواد'}</span>

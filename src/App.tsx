@@ -30,6 +30,7 @@ import {
   MANDATORY_ADMIN_PASSWORD,
   savePublicSiteConfigToCloud,
   saveAdminConfigToCloud,
+  saveAdminEmailsToCloud,
   saveLectureToCloud,
   deleteLectureFromCloud,
   saveAttachmentToCloud,
@@ -230,8 +231,10 @@ export default function App() {
   const cloudinaryConfigRef = useRef(cloudinaryConfig);
   const studentsRef = useRef(students);
   const currentUserRef = useRef(currentUser);
+  const currentViewRef = useRef<AppView>(currentView);
   const hasManualNavigatedRef = useRef(false);
   const lastLoginHydratedRef = useRef<{ uid: string; ts: number } | null>(null);
+  const justSignedInAuthRef = useRef<number>(0);
 
   useEffect(() => {
     adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
@@ -249,6 +252,10 @@ export default function App() {
   useEffect(() => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
+
+  useEffect(() => {
+    currentViewRef.current = currentView;
+  }, [currentView]);
 
   const isEmailAdmin = useCallback((email?: string | null, extraEmails?: string[]) => {
     if (!email) return false;
@@ -316,6 +323,10 @@ export default function App() {
       const email = fbUser.email || '';
       const cleanEmail = email.toLowerCase().trim();
       const cfg = siteConfigRef.current;
+      const isMidAuthFlow =
+        currentViewRef.current === 'auth' ||
+        Boolean(options?.fromRedirect) ||
+        Date.now() - justSignedInAuthRef.current < 10000;
 
       // 1. Instant optimistic user hydration BEFORE awaiting Firestore so returning users are logged in immediately
       const optimisticAdmin =
@@ -338,7 +349,7 @@ export default function App() {
           quizScores: {},
           joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
         }));
-      } else {
+      } else if (!isMidAuthFlow) {
         const localMatch = studentsRef.current.find(
           (s) =>
             s.id === fbUser.uid ||
@@ -350,6 +361,9 @@ export default function App() {
           localStorage.getItem(`mm_profile_done_${fbUser.uid}`) === 'true';
 
         setCurrentUser((prev) => {
+          if (prev && prev.id === fbUser.uid && prev.role === 'teacher') {
+            return prev;
+          }
           if (prev && prev.id === fbUser.uid && prev.role === 'student') {
             return {
               ...prev,
@@ -387,29 +401,32 @@ export default function App() {
 
       // Restore portal view ONLY within the same isolated tab session
       const savedLastView = sessionStorage.getItem('mm_last_view');
-      if (options?.fromRedirect) {
-        const target = optimisticAdmin ? 'teacher' : 'student';
-        setCurrentView(target);
-        sessionStorage.setItem('mm_last_view', target);
+      if (options?.fromRedirect && optimisticAdmin) {
+        setCurrentView('teacher');
+        sessionStorage.setItem('mm_last_view', 'teacher');
       } else if (!hasManualNavigatedRef.current && savedLastView) {
         if (savedLastView === 'teacher' && optimisticAdmin) {
           setCurrentView('teacher');
-        } else if (savedLastView === 'student') {
+        } else if (savedLastView === 'student' && !isMidAuthFlow) {
           setCurrentView('student');
         }
       }
 
-      // Avoid duplicate Firestore fetches if handleLoginSuccess already triggered them within 2s
+      // Avoid duplicate Firestore fetches if handleLoginSuccess already triggered them within 3s
       const now = Date.now();
       const skipDuplicateViewSwap =
         lastLoginHydratedRef.current &&
         lastLoginHydratedRef.current.uid === fbUser.uid &&
         now - lastLoginHydratedRef.current.ts < 3000;
 
-      // 2. Single deduplicated background Firestore verification & sync (capped at 2.5s timeout)
+      const hasGoogle = Boolean(fbUser.providerData?.some((p) => p.providerId === 'google.com'));
+
+      // 2. Single deduplicated background Firestore verification & sync (up to 8s for cold connections)
       const [adminCfg, cloudStudent] = await Promise.all([
-        fbUser.emailVerified ? fetchAdminConfigIfAuthorized(2500) : Promise.resolve(null),
-        !optimisticAdmin ? getStudentFromCloud(fbUser.uid, 2500) : Promise.resolve(null),
+        fbUser.emailVerified || hasGoogle
+          ? fetchAdminConfigIfAuthorized(8000)
+          : Promise.resolve(null),
+        !optimisticAdmin ? getStudentFromCloud(fbUser.uid, 3500) : Promise.resolve(null),
       ]);
 
       if (adminCfg) {
@@ -435,7 +452,7 @@ export default function App() {
       }
 
       const verifiedIsAdmin =
-        Boolean(fbUser.emailVerified) &&
+        Boolean((auth.currentUser || fbUser).emailVerified || hasGoogle) &&
         (cleanEmail === 'mizoo2y2@gmail.com' ||
           Boolean(adminCfg && isEmailAdmin(cleanEmail, adminCfg.adminEmails)));
 
@@ -457,7 +474,13 @@ export default function App() {
           joinedAt: prev?.joinedAt || new Date().toISOString().split('T')[0],
         }));
 
-        if (!skipDuplicateViewSwap && (options?.fromRedirect || savedLastView === 'teacher')) {
+        const shouldEnterTeacherView =
+          Boolean(options?.fromRedirect) ||
+          currentViewRef.current === 'auth' ||
+          Date.now() - justSignedInAuthRef.current < 12000 ||
+          (!skipDuplicateViewSwap && savedLastView === 'teacher');
+
+        if (shouldEnterTeacherView) {
           setCurrentView('teacher');
           sessionStorage.setItem('mm_last_view', 'teacher');
         }
@@ -828,13 +851,19 @@ export default function App() {
         onSnapshot(
           ownStudentQuery,
           (snap) => {
+            if (isEmailAdmin(firebaseUser.email) || currentUserRef.current?.role === 'teacher') {
+              return;
+            }
             if (!snap.empty) {
               const docData = snap.docs[0].data() as UserProfile;
-              setCurrentUser((prev) => ({
-                ...docData,
-                avatarUrl: prev?.avatarUrl || docData.avatarUrl || '',
-                profileCompleted: Boolean(docData.profileCompleted),
-              }));
+              setCurrentUser((prev) => {
+                if (prev?.role === 'teacher') return prev;
+                return {
+                  ...docData,
+                  avatarUrl: prev?.avatarUrl || docData.avatarUrl || '',
+                  profileCompleted: Boolean(docData.profileCompleted),
+                };
+              });
             }
           },
           (error) => {
@@ -1010,14 +1039,16 @@ export default function App() {
 
   const handleLoginSuccess = async (user: UserProfile) => {
     hasManualNavigatedRef.current = true;
+    justSignedInAuthRef.current = Date.now();
     const fbUser = auth.currentUser;
     if (fbUser) {
       setFirebaseUser(fbUser);
       lastLoginHydratedRef.current = { uid: fbUser.uid, ts: Date.now() };
     }
 
+    const hasGoogle = Boolean(fbUser?.providerData?.some((p) => p.providerId === 'google.com'));
     const verifiedEmail =
-      fbUser && fbUser.emailVerified && fbUser.email
+      fbUser && (fbUser.emailVerified || hasGoogle) && fbUser.email
         ? fbUser.email.toLowerCase().trim()
         : '';
     const isInstantVerifiedAdmin =
@@ -1036,13 +1067,28 @@ export default function App() {
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
       sessionStorage.setItem('mm_last_view', 'teacher');
+      fetchAdminConfigIfAuthorized(8000)
+        .then((adminCfg) => {
+          if (adminCfg?.adminEmails?.length) {
+            const merged = Array.from(
+              new Set(
+                ['mizoo2y2@gmail.com', ...adminCfg.adminEmails]
+                  .map((e) => e.toLowerCase().trim())
+                  .filter(Boolean)
+              )
+            );
+            adminEmailsRef.current = merged;
+            setSiteConfig((prev) => ({ ...prev, adminEmails: merged }));
+          }
+        })
+        .catch(() => {});
       return;
     }
 
-    // For students or newly-added co-admins: finish immediately if already resolved in AuthModals (deduplicated 1.5s cache)
+    // For students or co-admins: verify against cloud adminConfig before deciding portal view
     let isCloudAdmin = false;
-    if (fbUser && fbUser.emailVerified && verifiedEmail) {
-      const adminCfg = await fetchAdminConfigIfAuthorized(1500);
+    if (fbUser && (fbUser.emailVerified || hasGoogle) && verifiedEmail) {
+      const adminCfg = await fetchAdminConfigIfAuthorized(8000);
       if (adminCfg) {
         const mergedEmails = Array.from(
           new Set(
@@ -1537,7 +1583,13 @@ export default function App() {
 
   const handleSaveCloudinaryConfig = async (config: CloudinaryConfig): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
-      () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config),
+      () =>
+        saveAdminConfigToCloud(
+          adminEmailsRef.current || siteConfig.adminEmails || ['mizoo2y2@gmail.com'],
+          config,
+          undefined,
+          { preserveExistingAdmins: true }
+        ),
       lang === 'en'
         ? 'Cloudinary settings saved and synced.'
         : 'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
@@ -1548,24 +1600,43 @@ export default function App() {
     return ok;
   };
 
+  const handleSaveAdminEmails = async (adminEmails: string[]): Promise<boolean> => {
+    let savedEmails: string[] = [];
+    const ok = await executeAdminCloudWrite(
+      async () => {
+        savedEmails = await saveAdminEmailsToCloud(adminEmails, cloudinaryConfigRef.current);
+      },
+      lang === 'en'
+        ? 'Co-Admin permissions saved to cloud!'
+        : 'تم حفظ صلاحيات المشرفين في السحابة بنجاح!'
+    );
+    if (ok && savedEmails.length > 0) {
+      adminEmailsRef.current = savedEmails;
+      setSiteConfig((prev) => ({
+        ...prev,
+        adminEmails: savedEmails,
+      }));
+    }
+    return ok;
+  };
+
   const handleSaveSiteConfig = async (newConfig: SiteConfig): Promise<boolean> => {
-    const cleanEmails = Array.from(
+    const preservedEmails = Array.from(
       new Set(
-        ['mizoo2y2@gmail.com', ...(newConfig.adminEmails || [])]
+        ['mizoo2y2@gmail.com', ...(adminEmailsRef.current || siteConfig.adminEmails || [])]
           .map((e) => e.toLowerCase().trim())
           .filter(Boolean)
       )
     );
     const sanitized: SiteConfig = {
       ...newConfig,
-      adminEmails: cleanEmails,
+      adminEmails: preservedEmails,
       profileImageUrl: sanitizeProfileImageUrl(newConfig.profileImageUrl),
     };
 
     const ok = await executeAdminCloudWrite(
       async () => {
         await savePublicSiteConfigToCloud(sanitized);
-        await saveAdminConfigToCloud(cleanEmails, cloudinaryConfig);
       },
       lang === 'en'
         ? 'Site updates published live for everyone.'
@@ -1573,7 +1644,6 @@ export default function App() {
     );
 
     if (ok) {
-      adminEmailsRef.current = cleanEmails;
       setSiteConfig(sanitized);
     }
     return ok;
@@ -1826,6 +1896,7 @@ export default function App() {
               onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
               siteConfig={siteConfig}
               onSaveSiteConfig={handleSaveSiteConfig}
+              onSaveAdminEmails={handleSaveAdminEmails}
               onBackToHome={() => {
                 setTeacherInitialTab('overview');
                 handleNavigate('landing');

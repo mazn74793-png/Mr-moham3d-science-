@@ -117,6 +117,15 @@ body {
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -150,14 +159,20 @@ body {
 
 .animate-float-slow {
   animation: floatSlow 5.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  will-change: transform;
 }
 
 .animate-float-reverse {
   animation: floatReverse 6.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  will-change: transform;
 }
 
 .animate-glow-pulse {
   animation: glowPulse 4s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.35s ease-out forwards;
 }
 
 .animate-fade-in-up {
@@ -175,30 +190,32 @@ body {
 /* Alternating Tilted Floating Animation for Feature Cards */
 @keyframes floatCardLeft {
   0%, 100% {
-    transform: translateY(0px) rotate(-2.2deg);
+    transform: translateY(0px) rotate(-1.6deg);
   }
   50% {
-    transform: translateY(-9px) rotate(-1deg);
+    transform: translateY(-9px) rotate(-0.6deg);
   }
 }
 
 @keyframes floatCardRight {
   0%, 100% {
-    transform: translateY(0px) rotate(2.2deg);
+    transform: translateY(0px) rotate(1.6deg);
   }
   50% {
-    transform: translateY(9px) rotate(1deg);
+    transform: translateY(9px) rotate(0.6deg);
   }
 }
 
 .animate-tilt-left {
   animation: floatCardLeft 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease, border-color 0.3s ease;
+  will-change: transform;
 }
 
 .animate-tilt-right {
   animation: floatCardRight 5.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease, border-color 0.3s ease;
+  will-change: transform;
 }
 
 .animate-tilt-left:hover,
@@ -207,13 +224,13 @@ body {
   transform: translateY(-8px) rotate(0deg) scale(1.03) !important;
 }
 
-
 /* Card Lift & Polish */
 .hover-card-lift {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
 }
 .hover-card-lift:hover {
-  transform: translateY(-6px);
+  transform: translateY(-5px);
+  box-shadow: 0 14px 30px -10px rgba(13, 148, 136, 0.16);
 }
 
 /* Smooth custom scrollbars */

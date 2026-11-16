@@ -112,11 +112,11 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
 
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-12 space-y-2 sm:space-y-3">
+        <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-12 space-y-2 sm:space-y-3 animate-fade-in-up">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 text-xs font-bold">
             <GraduationCap className="w-3.5 h-3.5" />
             <span>{lang === 'en' ? 'Secondary School Curriculum' : 'المراحل والصفوف الدراسية'}</span>
-            <Sparkles className="w-3 h-3 text-amber-500" />
+            <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
           </div>
 
           <h2 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 dark:text-white">
@@ -139,10 +139,10 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                 scrollToIndex(idx);
                 setIsAutoPlaying(false);
               }}
-              className={`px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                 currentIndex === idx
-                  ? 'bg-teal-600 text-white shadow-md shadow-teal-700/20 scale-102'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-teal-400'
+                  ? 'bg-teal-600 text-white shadow-md shadow-teal-700/20 scale-105 -translate-y-0.5'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover:-translate-y-0.5'
               }`}
             >
               <span>{lang === 'en' ? item.badgeEn : item.badgeAr}</span>
@@ -151,8 +151,10 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
         </div>
 
         {/* The Flagship Single Slider Card */}
+        <div className="relative max-w-4xl mx-auto animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+          <div className="absolute -inset-4 bg-gradient-to-r from-teal-500/15 via-amber-400/10 to-teal-500/15 rounded-[2.5rem] blur-2xl pointer-events-none animate-glow-pulse -z-10" />
         <div
-          className="relative max-w-4xl mx-auto rounded-3xl bg-white dark:bg-slate-900 border-2 border-teal-200/80 dark:border-slate-800 shadow-xl overflow-hidden"
+          className="relative rounded-3xl bg-white dark:bg-slate-900 border-2 border-teal-200/80 dark:border-slate-800 hover:border-teal-400/80 shadow-xl transition-all duration-300 overflow-hidden"
           onMouseEnter={() => { isInteractingRef.current = true; }}
           onMouseLeave={() => { isInteractingRef.current = false; }}
           onTouchStart={(e) => {
@@ -304,7 +306,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
 
                     {/* Stats Badges */}
                     <div className="grid grid-cols-2 gap-3 sm:gap-4 py-3 border-y border-slate-100 dark:border-slate-800 mb-6 sm:mb-8">
-                      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 font-mono">
+                      <div className="p-2 rounded-xl hover-card-lift hover:bg-teal-50/40 dark:hover:bg-teal-950/30 flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 font-mono">
                         <div className="w-8 h-8 rounded-xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
                           <Video className="w-4 h-4" />
                         </div>
@@ -318,7 +320,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 font-mono">
+                      <div className="p-2 rounded-xl hover-card-lift hover:bg-amber-50/40 dark:hover:bg-amber-950/30 flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 font-mono">
                         <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                           <FileText className="w-4 h-4" />
                         </div>
@@ -339,18 +341,19 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => onSelectGrade(card.grade)}
-                      className={`w-full py-3.5 sm:py-4 px-5 sm:px-6 rounded-2xl font-extrabold text-sm sm:text-lg transition-all flex items-center justify-center gap-2 sm:gap-3 cursor-pointer shadow-lg active:scale-98 min-h-[48px] sm:min-h-[52px] ${
+                      className={`group relative overflow-hidden w-full py-3.5 sm:py-4 px-5 sm:px-6 rounded-2xl font-extrabold text-sm sm:text-lg transition-all duration-300 hover:-translate-y-0.5 flex items-center justify-center gap-2 sm:gap-3 cursor-pointer shadow-lg active:scale-98 min-h-[48px] sm:min-h-[52px] ${
                         card.isPopular
                           ? 'bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 text-slate-950 shadow-amber-500/20'
                           : 'bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white shadow-teal-900/20'
                       }`}
                     >
-                      <span>
+                      <div className="absolute inset-0 w-1/2 h-full bg-white/20 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
+                      <span className="relative z-10">
                         {lang === 'en'
                           ? `Access ${card.badgeEn} Lectures`
                           : `دخول محاضرات ${card.badgeAr}`}
                       </span>
-                      <ActionArrow className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <ActionArrow className={`relative z-10 w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 ${isRtl ? 'group-hover:-translate-x-1.5' : 'group-hover:translate-x-1.5'}`} />
                     </button>
                   </div>
                 </div>
@@ -365,10 +368,10 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
               type="button"
               onClick={() => {
                 setIsAutoPlaying(false);
-                isRtl ? handleNext() : handlePrev();
+                handlePrev();
               }}
               aria-label={lang === 'en' ? 'Previous Grade' : 'الصف السابق'}
-              className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-teal-500 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-colors"
+              className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-teal-500 hover:scale-105 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-all"
             >
               {isRtl ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
             </button>
@@ -382,7 +385,7 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
                     setIsAutoPlaying(false);
                     scrollToIndex(dotIdx);
                   }}
-                  className={`h-2.5 rounded-full transition-all cursor-pointer ${
+                  className={`h-2.5 rounded-full transition-all duration-300 cursor-pointer ${
                     currentIndex === dotIdx
                       ? 'w-8 bg-teal-600 dark:bg-teal-400'
                       : 'w-2.5 bg-slate-300 dark:bg-slate-700 hover:bg-slate-400'
@@ -398,14 +401,15 @@ export const AcademicYearsSection: React.FC<AcademicYearsSectionProps> = ({
               type="button"
               onClick={() => {
                 setIsAutoPlaying(false);
-                isRtl ? handlePrev() : handleNext();
+                handleNext();
               }}
               aria-label={lang === 'en' ? 'Next Grade' : 'الصف التالي'}
-              className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-teal-500 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-colors"
+              className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-teal-500 hover:scale-105 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-all"
             >
               {isRtl ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
           </div>
+        </div>
         </div>
 
       </div>

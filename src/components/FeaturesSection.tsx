@@ -15,10 +15,10 @@ export const FeaturesSection: React.FC<FeaturesSectionProps> = ({ siteConfig }) 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-2 sm:space-y-3">
+        <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-2 sm:space-y-3 animate-fade-in-up">
           <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 text-xs font-bold">
             <span>{t('features.tag')}</span>
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
           </div>
           
           <h2 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 dark:text-white">
@@ -29,13 +29,16 @@ export const FeaturesSection: React.FC<FeaturesSectionProps> = ({ siteConfig }) 
           </p>
         </div>
 
-        {/* Features 2x2 Grid: 2 per row on mobile, 4 on desktop */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4 lg:gap-7 items-stretch py-2">
+        {/* Features 2x2 Grid with Alternating Floating Tilt Animations */}
+        <div className="grid grid-cols-2 gap-3.5 sm:gap-5 md:grid-cols-2 lg:grid-cols-4 lg:gap-7 items-stretch py-4 px-1">
           
           {/* Card 1 */}
-          <div className="group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between cursor-default">
+          <div
+            className="animate-tilt-left group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 shadow-sm hover:shadow-xl flex flex-col justify-between cursor-default relative overflow-hidden"
+            style={{ animationDelay: '0s' }}
+          >
             <div className="space-y-2.5 sm:space-y-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-amber-100 dark:bg-amber-950/70 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs group-hover:scale-105 transition-transform duration-300">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-amber-100 dark:bg-amber-950/70 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                 <Trophy className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" />
               </div>
               <h3 className="text-sm sm:text-lg lg:text-xl font-bold text-slate-900 dark:text-white group-hover:text-amber-500 transition-colors leading-snug">
@@ -52,11 +55,14 @@ export const FeaturesSection: React.FC<FeaturesSectionProps> = ({ siteConfig }) 
           </div>
 
           {/* Card 2 */}
-          <div className="group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-gradient-to-b from-[#0f766e] to-[#042f2e] text-white border border-teal-400/50 shadow-lg shadow-teal-950/25 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-default">
-            <div className="absolute -top-10 -left-10 w-32 h-32 sm:w-44 sm:h-44 bg-teal-300/15 rounded-full blur-2xl pointer-events-none" />
+          <div
+            className="animate-tilt-right group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-gradient-to-b from-[#0f766e] to-[#042f2e] text-white border border-teal-400/50 shadow-lg shadow-teal-950/25 hover:shadow-2xl flex flex-col justify-between relative overflow-hidden cursor-default"
+            style={{ animationDelay: '0.35s' }}
+          >
+            <div className="absolute -top-10 -left-10 w-32 h-32 sm:w-44 sm:h-44 bg-teal-300/15 rounded-full blur-2xl pointer-events-none animate-glow-pulse" />
             
             <div className="space-y-2.5 sm:space-y-4 relative z-10">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-300 shadow-xs group-hover:scale-105 transition-transform duration-300">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-300 shadow-xs group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
                 <Lightbulb className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" />
               </div>
               <div className="text-[11px] font-mono font-bold text-teal-200 tracking-wide">
@@ -77,9 +83,12 @@ export const FeaturesSection: React.FC<FeaturesSectionProps> = ({ siteConfig }) 
           </div>
 
           {/* Card 3 */}
-          <div className="group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between cursor-default">
+          <div
+            className="animate-tilt-left group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-teal-400 dark:hover:border-teal-500 shadow-sm hover:shadow-xl flex flex-col justify-between cursor-default relative overflow-hidden"
+            style={{ animationDelay: '0.7s' }}
+          >
             <div className="space-y-2.5 sm:space-y-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-teal-100 dark:bg-teal-950/70 flex items-center justify-center text-teal-700 dark:text-teal-400 shadow-xs group-hover:scale-105 transition-transform duration-300">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-teal-100 dark:bg-teal-950/70 flex items-center justify-center text-teal-700 dark:text-teal-400 shadow-xs group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                 <Flask className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" />
               </div>
               <h3 className="text-sm sm:text-lg lg:text-xl font-bold text-slate-900 dark:text-white group-hover:text-teal-600 transition-colors leading-snug">
@@ -96,9 +105,12 @@ export const FeaturesSection: React.FC<FeaturesSectionProps> = ({ siteConfig }) 
           </div>
 
           {/* Card 4 */}
-          <div className="group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between cursor-default">
+          <div
+            className="animate-tilt-right group rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 bg-[#fafffb] dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-sky-400 dark:hover:border-sky-500 shadow-sm hover:shadow-xl flex flex-col justify-between cursor-default relative overflow-hidden"
+            style={{ animationDelay: '1.05s' }}
+          >
             <div className="space-y-2.5 sm:space-y-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-sky-100 dark:bg-sky-950/70 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-xs group-hover:scale-105 transition-transform duration-300">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl sm:rounded-2xl bg-sky-100 dark:bg-sky-950/70 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-xs group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
                 <Eye className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" />
               </div>
               <h3 className="text-sm sm:text-lg lg:text-xl font-bold text-slate-900 dark:text-white group-hover:text-sky-500 transition-colors leading-snug">

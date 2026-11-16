@@ -8,12 +8,14 @@ interface CoAdminsTabProps {
   siteForm: SiteConfig;
   setSiteForm: React.Dispatch<React.SetStateAction<SiteConfig>>;
   onSaveSiteConfig: (config: SiteConfig) => Promise<boolean> | boolean | void;
+  onSaveAdminEmails?: (adminEmails: string[]) => Promise<boolean>;
 }
 
 export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
   siteForm,
   setSiteForm,
   onSaveSiteConfig,
+  onSaveAdminEmails,
 }) => {
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [adminNotice, setAdminNotice] = useState<{
@@ -36,12 +38,16 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
       setAdminNotice({ type: 'error', message: 'هذا البريد مسجل كمدير ومسؤول بالفعل!' });
       return;
     }
-    const updatedAdmins = [...currentAdmins, email];
+    const updatedAdmins = Array.from(
+      new Set(['mizoo2y2@gmail.com', ...currentAdmins, email].map((em) => em.toLowerCase().trim()))
+    );
     const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
 
     setSaving(true);
     try {
-      const saved = await onSaveSiteConfig(updatedConfig);
+      const saved = onSaveAdminEmails
+        ? await onSaveAdminEmails(updatedAdmins)
+        : await onSaveSiteConfig(updatedConfig);
       if (saved === false) {
         setAdminNotice({
           type: 'error',
@@ -64,10 +70,12 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
   const handleRemoveCoAdmin = async (emailToRemove: string) => {
     if (emailToRemove === 'mizoo2y2@gmail.com') return;
     const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
-    const updatedAdmins = currentAdmins.filter((em) => em !== emailToRemove);
+    const updatedAdmins = currentAdmins.filter((em) => em.toLowerCase().trim() !== emailToRemove.toLowerCase().trim());
     const updatedConfig: SiteConfig = { ...siteForm, adminEmails: updatedAdmins };
 
-    const saved = await onSaveSiteConfig(updatedConfig);
+    const saved = onSaveAdminEmails
+      ? await onSaveAdminEmails(updatedAdmins)
+      : await onSaveSiteConfig(updatedConfig);
     setDeleteAdminConfirmEmail(null);
     if (saved === false) {
       setAdminNotice({

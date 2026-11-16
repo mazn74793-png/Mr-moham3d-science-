@@ -350,37 +350,53 @@ export interface AdminCloudConfig {
 
 let inflightAdminConfigFetch: {
   uid: string;
-  ts: number;
   promise: Promise<AdminCloudConfig | null>;
 } | null = null;
 
 /**
- * Queries protected adminConfig/settings inside try/catch with a fast timeout + short burst deduplication,
- * and explicitly verifies that the signed-in user's verified email is in the allowed adminEmails list.
+ * Queries protected adminConfig/settings inside try/catch with token sync + retry on transient
+ * first-login token propagation delay, without caching timed-out/failed null lookups.
  */
 export async function fetchAdminConfigIfAuthorized(
-  timeoutMs = 2500
+  timeoutMs = 8000
 ): Promise<AdminCloudConfig | null> {
   const user = auth.currentUser;
-  if (!user || !user.email || !user.emailVerified) return null;
-  const currentEmail = user.email.toLowerCase().trim();
+  if (!user || !user.email) return null;
+  if (!user.emailVerified) {
+    const hasGoogle = Boolean(user.providerData?.some((p) => p.providerId === 'google.com'));
+    if (!hasGoogle) return null;
+    try {
+      await reload(user);
+    } catch {}
+    if (!auth.currentUser?.emailVerified) return null;
+  }
 
-  const now = Date.now();
-  if (
-    inflightAdminConfigFetch &&
-    inflightAdminConfigFetch.uid === user.uid &&
-    now - inflightAdminConfigFetch.ts < 3000
-  ) {
+  const activeUser = auth.currentUser || user;
+  const currentEmail = (activeUser.email || user.email).toLowerCase().trim();
+
+  if (inflightAdminConfigFetch && inflightAdminConfigFetch.uid === activeUser.uid) {
     return inflightAdminConfigFetch.promise;
   }
 
   const runFetch = async (): Promise<AdminCloudConfig | null> => {
     try {
-      const snap = await withTimeout(
-        getDoc(doc(db, 'adminConfig', 'settings')),
-        timeoutMs,
-        null
-      );
+      await withTimeout(activeUser.getIdToken(), 2500, '');
+
+      const readSettingsDoc = async () => {
+        try {
+          return await getDoc(doc(db, 'adminConfig', 'settings'));
+        } catch (err: any) {
+          const code = err?.code || '';
+          if (code === 'permission-denied' || code === 'unauthenticated') {
+            await new Promise((r) => setTimeout(r, 250));
+            await withTimeout(activeUser.getIdToken(true), 2500, '');
+            return await getDoc(doc(db, 'adminConfig', 'settings'));
+          }
+          throw err;
+        }
+      };
+
+      const snap = await withTimeout(readSettingsDoc(), timeoutMs, null);
       if (snap && snap.exists()) {
         const data = snap.data() as AdminCloudConfig;
         const allowedList = Array.from(
@@ -408,8 +424,12 @@ export async function fetchAdminConfigIfAuthorized(
     }
   };
 
-  const promise = runFetch();
-  inflightAdminConfigFetch = { uid: user.uid, ts: now, promise };
+  const promise = runFetch().finally(() => {
+    if (inflightAdminConfigFetch?.promise === promise) {
+      inflightAdminConfigFetch = null;
+    }
+  });
+  inflightAdminConfigFetch = { uid: activeUser.uid, promise };
   return promise;
 }
 
@@ -439,10 +459,65 @@ export async function savePublicSiteConfigToCloud(config: SiteConfig): Promise<v
 export async function saveAdminConfigToCloud(
   adminEmails: string[],
   cloudinaryConfig: CloudinaryConfig,
-  googleClientId?: string
+  googleClientId?: string,
+  options?: { preserveExistingAdmins?: boolean }
 ): Promise<void> {
   const path = 'adminConfig/settings';
   try {
+    let existingData: AdminCloudConfig | null = null;
+    if (options?.preserveExistingAdmins) {
+      try {
+        const snap = await getDoc(doc(db, 'adminConfig', 'settings'));
+        if (snap.exists()) {
+          existingData = snap.data() as AdminCloudConfig;
+        }
+      } catch {}
+    }
+
+    const baseEmails =
+      options?.preserveExistingAdmins && existingData?.adminEmails?.length
+        ? existingData.adminEmails
+        : adminEmails || [];
+
+    const cleanEmails = Array.from(
+      new Set(
+        ['mizoo2y2@gmail.com', ...baseEmails]
+          .map((e) => e.toLowerCase().trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 25);
+
+    const payload: Record<string, any> = {
+      adminEmails: cleanEmails,
+      cloudName: cloudinaryConfig.cloudName || existingData?.cloudName || 'chemistry-egypt',
+      uploadPreset: cloudinaryConfig.uploadPreset || existingData?.uploadPreset || 'chemistry_uploads',
+      updatedAt: serverTimestamp(),
+    };
+    if (googleClientId || existingData?.googleClientId) {
+      payload.googleClientId = googleClientId || existingData?.googleClientId;
+    }
+
+    await setDoc(doc(db, 'adminConfig', 'settings'), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function saveAdminEmailsToCloud(
+  adminEmails: string[],
+  fallbackCloudinary: CloudinaryConfig
+): Promise<string[]> {
+  const path = 'adminConfig/settings';
+  try {
+    const ref = doc(db, 'adminConfig', 'settings');
+    let existingData: AdminCloudConfig | null = null;
+    try {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        existingData = snap.data() as AdminCloudConfig;
+      }
+    } catch {}
+
     const cleanEmails = Array.from(
       new Set(
         ['mizoo2y2@gmail.com', ...(adminEmails || [])]
@@ -453,15 +528,17 @@ export async function saveAdminConfigToCloud(
 
     const payload: Record<string, any> = {
       adminEmails: cleanEmails,
-      cloudName: cloudinaryConfig.cloudName || 'chemistry-egypt',
-      uploadPreset: cloudinaryConfig.uploadPreset || 'chemistry_uploads',
+      cloudName: existingData?.cloudName || fallbackCloudinary.cloudName || 'chemistry-egypt',
+      uploadPreset:
+        existingData?.uploadPreset || fallbackCloudinary.uploadPreset || 'chemistry_uploads',
       updatedAt: serverTimestamp(),
     };
-    if (googleClientId) {
-      payload.googleClientId = googleClientId;
+    if (existingData?.googleClientId) {
+      payload.googleClientId = existingData.googleClientId;
     }
 
-    await setDoc(doc(db, 'adminConfig', 'settings'), payload);
+    await setDoc(ref, payload);
+    return cleanEmails;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

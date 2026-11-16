@@ -199,12 +199,15 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
 
     const [adminCfg, cloudRecord] = await Promise.all([
-      fbUser.emailVerified ? fetchAdminConfigIfAuthorized(1500) : Promise.resolve(null),
-      getStudentFromCloud(fbUser.uid, 1500).catch(() => null),
+      fbUser.emailVerified || hasGoogleProvider
+        ? fetchAdminConfigIfAuthorized(8000)
+        : Promise.resolve(null),
+      getStudentFromCloud(fbUser.uid, 3500).catch(() => null),
     ]);
 
     const isAdmin =
-      Boolean(fbUser.emailVerified) && checkIsAdminEmail(email, adminCfg?.adminEmails);
+      Boolean((auth.currentUser || fbUser).emailVerified || hasGoogleProvider) &&
+      checkIsAdminEmail(email, adminCfg?.adminEmails);
 
     if (isAdmin) {
       if (hasGoogleProvider) {
@@ -398,7 +401,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     setManualLoading(true);
     try {
       const fbUser = await signInManualWithEmail(cleanEmail, loginPassword);
-      const adminCfg = fbUser.emailVerified ? await fetchAdminConfigIfAuthorized(2500) : null;
+      const adminCfg = fbUser.emailVerified ? await fetchAdminConfigIfAuthorized(8000) : null;
       const isVerifiedAdminOrCoAdmin =
         Boolean(fbUser.emailVerified) && checkIsAdminEmail(cleanEmail, adminCfg?.adminEmails);
 

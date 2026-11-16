@@ -42,6 +42,7 @@ interface TeacherDashboardProps {
   onSaveCloudinaryConfig: (config: CloudinaryConfig) => Promise<boolean> | boolean | void;
   siteConfig: SiteConfig;
   onSaveSiteConfig: (newConfig: SiteConfig) => Promise<boolean> | boolean | void;
+  onSaveAdminEmails?: (adminEmails: string[]) => Promise<boolean>;
   onBackToHome: () => void;
   onOpenStudentPortal: () => void;
   onResetAllData?: () => Promise<boolean> | boolean | void;
@@ -96,6 +97,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onSaveCloudinaryConfig,
   siteConfig,
   onSaveSiteConfig,
+  onSaveAdminEmails,
   onBackToHome,
   onOpenStudentPortal,
   onResetAllData,
@@ -653,6 +655,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               siteForm={siteForm}
               setSiteForm={setSiteForm}
               onSaveSiteConfig={onSaveSiteConfig}
+              onSaveAdminEmails={onSaveAdminEmails}
             />
           )}
 
