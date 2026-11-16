@@ -3,7 +3,7 @@ import {
   Trophy, Users, UserX, UserCheck, MessageSquare, Phone, 
   Search, Filter, ExternalLink, Sparkles, Award, ArrowUpRight, 
   CheckCircle2, AlertTriangle, ShieldCheck, Edit3, Trash2, RotateCcw, 
-  UserPlus, X, Check, AlertCircle
+  UserPlus, X, Check, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { UserProfile, GradeLevel, Lecture, Quiz } from '../types';
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
@@ -13,9 +13,11 @@ interface TeacherReportsManagerProps {
   lectures: Lecture[];
   quizzes: Quiz[];
   grades?: GradeItem[];
-  onUpdateStudent?: (student: UserProfile) => void;
-  onDeleteStudent?: (studentId: string) => void;
-  onAddStudent?: (student: UserProfile) => void;
+  onUpdateStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
+  onDeleteStudent?: (studentId: string) => Promise<boolean> | boolean | void;
+  onAddStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
+  studentsSyncError?: string | null;
+  onRetryCloudSync?: () => Promise<void> | void;
 }
 
 export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
@@ -26,7 +28,21 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   onUpdateStudent,
   onDeleteStudent,
   onAddStudent,
+  studentsSyncError = null,
+  onRetryCloudSync,
 }) => {
+  const [retryingSync, setRetryingSync] = useState(false);
+  const [savingAction, setSavingAction] = useState(false);
+
+  const handleRetrySyncClick = async () => {
+    if (!onRetryCloudSync || retryingSync) return;
+    setRetryingSync(true);
+    try {
+      await onRetryCloudSync();
+    } finally {
+      setRetryingSync(false);
+    }
+  };
   const resolvedGrades = grades && grades.length > 0 ? grades : DEFAULT_GRADES;
   const getGradeLabel = (gradeId?: string) => {
     if (!gradeId) return 'غير محدد';
@@ -123,8 +139,8 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
   };
 
   // Reset Student Quizzes / Progress
-  const handleResetStudentProgress = (student: UserProfile) => {
-    if (!onUpdateStudent) return;
+  const handleResetStudentProgress = async (student: UserProfile) => {
+    if (!onUpdateStudent || savingAction) return;
     const updated: UserProfile = {
       ...student,
       watchedLectureIds: [],
@@ -132,22 +148,42 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
       quizScores: {},
       score: 0,
     };
-    onUpdateStudent(updated);
-    showFeedback(`تمت إعادة ضبط محاولات الطالب (${student.name}) بنجاح.`, 'success');
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent(updated);
+      if (ok === false) {
+        showFeedback('تعذر حفظ إعادة الضبط في السحابة — يرجى التحقق من الصلاحيات.', 'error');
+        return;
+      }
+      showFeedback(`تمت إعادة ضبط محاولات الطالب (${student.name}) بنجاح.`, 'success');
+    } finally {
+      setSavingAction(false);
+    }
   };
 
   // Save edited student
-  const handleSaveEditedStudent = (e: React.FormEvent) => {
+  const handleSaveEditedStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStudent || !onUpdateStudent) return;
-    onUpdateStudent(editingStudent);
-    setEditingStudent(null);
-    showFeedback(`تم تحديث بيانات الطالب (${editingStudent.name}) بنجاح!`, 'success');
+    if (!editingStudent || !onUpdateStudent || savingAction) return;
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent(editingStudent);
+      if (ok === false) {
+        showFeedback('تعذر حفظ تعديلات الطالب في السحابة — راجع صلاحيات الجلسة.', 'error');
+        return;
+      }
+      const savedName = editingStudent.name;
+      setEditingStudent(null);
+      showFeedback(`تم تحديث بيانات الطالب (${savedName}) بنجاح!`, 'success');
+    } finally {
+      setSavingAction(false);
+    }
   };
 
   // Handle create manual student
-  const handleCreateStudent = (e: React.FormEvent) => {
+  const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingAction) return;
     if (!newStdName.trim()) {
       showFeedback('يرجى كتابة اسم الطالب.', 'error');
       return;
@@ -169,18 +205,48 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
     };
 
     if (onAddStudent) {
-      onAddStudent(created);
+      setSavingAction(true);
+      try {
+        const ok = await onAddStudent(created);
+        if (ok === false) {
+          showFeedback('تعذر إضافة الطالب في السحابة — تحقق من تأكيد الحساب والصلاحيات.', 'error');
+          return;
+        }
+      } finally {
+        setSavingAction(false);
+      }
     }
     setShowAddStudentModal(false);
     setNewStdName('');
     setNewStdPhone('');
     setNewStdParentPhone('');
-    showFeedback(`تمت إضافة الطالب (${created.name}) بنجاح إلى النظام.`, 'success');
+    showFeedback(`تمت إضافة الطالب (${created.name}) بنجاح إلى السحابة.`, 'success');
   };
 
   return (
     <div className="space-y-8 animate-fade-in text-right">
       
+      {/* Sync Error Alert */}
+      {studentsSyncError && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border-2 border-rose-300 dark:border-rose-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5 text-rose-800 dark:text-rose-200 text-xs sm:text-sm font-bold">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <span>{studentsSyncError}</span>
+          </div>
+          {onRetryCloudSync && (
+            <button
+              type="button"
+              disabled={retryingSync}
+              onClick={handleRetrySyncClick}
+              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${retryingSync ? 'animate-spin' : ''}`} />
+              <span>{retryingSync ? 'جاري التحميل...' : 'إعادة تحميل الطلاب الآن'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Inline Feedback Toast */}
       {feedbackMsg && (
         <div className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs sm:text-sm font-sans font-bold shadow-md ${
@@ -211,15 +277,29 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
           </p>
         </div>
 
-        {onAddStudent && (
-          <button
-            onClick={() => setShowAddStudentModal(true)}
-            className="px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-teal-600 hover:bg-teal-700 shadow-md shadow-teal-900/10 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>إضافة طالب يدوياً</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onRetryCloudSync && (
+            <button
+              type="button"
+              disabled={retryingSync}
+              onClick={handleRetrySyncClick}
+              className="px-3.5 py-2.5 rounded-xl font-bold text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 hover:bg-teal-100 dark:hover:bg-teal-900/60 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${retryingSync ? 'animate-spin' : ''}`} />
+              <span>{retryingSync ? 'جاري التحديث...' : 'تحديث من السحابة'}</span>
+            </button>
+          )}
+
+          {onAddStudent && (
+            <button
+              onClick={() => setShowAddStudentModal(true)}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-teal-600 hover:bg-teal-700 shadow-md shadow-teal-900/10 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>إضافة طالب يدوياً</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 1. SUMMARY STATS METRICS */}
@@ -775,12 +855,23 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                           deleteConfirmId === std.id ? (
                             <div className="flex items-center gap-1">
                               <button
-                                onClick={() => {
-                                  onDeleteStudent(std.id);
-                                  setDeleteConfirmId(null);
-                                  showFeedback(`تم حذف الطالب (${std.name}) من النظام.`, 'info');
+                                disabled={savingAction}
+                                onClick={async () => {
+                                  if (savingAction) return;
+                                  setSavingAction(true);
+                                  try {
+                                    const ok = await onDeleteStudent(std.id);
+                                    if (ok === false) {
+                                      showFeedback('تعذر حذف الطالب من السحابة — تحقق من الصلاحيات.', 'error');
+                                      return;
+                                    }
+                                    setDeleteConfirmId(null);
+                                    showFeedback(`تم حذف الطالب (${std.name}) من النظام.`, 'info');
+                                  } finally {
+                                    setSavingAction(false);
+                                  }
                                 }}
-                                className="px-2 py-1 rounded bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                                className="px-2 py-1 rounded bg-rose-600 text-white text-[10px] font-bold cursor-pointer disabled:opacity-50"
                               >
                                 تأكيد
                               </button>
@@ -812,18 +903,37 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
           </table>
 
           {filteredStudents.length === 0 && (
-            <div className="p-10 text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center mx-auto">
-                <Users className="w-6 h-6" />
+            <div className="p-10 text-center space-y-3">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
+                studentsSyncError
+                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600'
+                  : 'bg-teal-50 dark:bg-teal-950/60 text-teal-600'
+              }`}>
+                {studentsSyncError ? <AlertCircle className="w-6 h-6" /> : <Users className="w-6 h-6" />}
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 font-kufi text-base">
-                لا توجد بيانات طلاب مطابقة
+                {studentsSyncError
+                  ? 'تعذر قراءة سجل الطلاب من السحابة حالياً'
+                  : 'لا توجد بيانات طلاب مطابقة'}
               </h4>
-              <p className="text-xs text-slate-500 font-sans max-w-md mx-auto">
-                {allStudents.length === 0 
+              <p className="text-xs text-slate-500 font-sans max-w-md mx-auto leading-relaxed">
+                {studentsSyncError
+                  ? `${studentsSyncError} (ملاحظة: بيانات الطلاب لم تُحذف، هي محمية في السحابة حتى يتم التحقق من صلاحية الجلسة الحالية).`
+                  : allStudents.length === 0
                   ? 'لم يسجل أي طالب في المنصة حتى الآن. شارك رابط موقعك مع طلابك، وستظهر بياناتهم الحقيقية ودرجاتهم الفعلية هنا فوراً.'
                   : 'جرب تغيير شروط الفلتر أو كتابة اسم طالب آخر في خانة البحث.'}
               </p>
+              {studentsSyncError && onRetryCloudSync && (
+                <button
+                  type="button"
+                  disabled={retryingSync}
+                  onClick={handleRetrySyncClick}
+                  className="mx-auto px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${retryingSync ? 'animate-spin' : ''}`} />
+                  <span>{retryingSync ? 'جاري إعادة التحميل...' : 'تحديث الصلاحيات وإعادة تحميل الطلاب'}</span>
+                </button>
+              )}
             </div>
           )}
         </div>

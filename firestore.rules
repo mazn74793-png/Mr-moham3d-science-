@@ -365,8 +365,8 @@ service cloud.firestore {
 
     // Private Student Profiles (Strict PII Isolation + Zero-Trust Points Accounting)
     match /students/{studentId} {
-      allow get: if isSignedIn() && isValidId(studentId) && (request.auth.uid == studentId || isAdmin());
-      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow get: if isValidId(studentId) && (isAdmin() || (isSignedIn() && request.auth.uid == studentId));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
       allow create: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
         (

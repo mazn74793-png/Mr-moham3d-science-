@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, CheckCircle, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { ShieldCheck, CheckCircle, AlertCircle, Plus, Trash2, RefreshCw, MailCheck } from 'lucide-react';
 import { SiteConfig } from '../../types/siteConfig';
-import { auth } from '../../firebase';
+import { auth, resendVerificationEmail } from '../../firebase';
 import { LinkPasswordSetup } from '../LinkPasswordSetup';
 
 interface CoAdminsTabProps {
@@ -9,6 +9,9 @@ interface CoAdminsTabProps {
   setSiteForm: React.Dispatch<React.SetStateAction<SiteConfig>>;
   onSaveSiteConfig: (config: SiteConfig) => Promise<boolean> | boolean | void;
   onSaveAdminEmails?: (adminEmails: string[]) => Promise<boolean>;
+  adminCloudError?: string | null;
+  lastCloudError?: string | null;
+  onRetryCloudSync?: () => Promise<void> | void;
 }
 
 export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
@@ -16,6 +19,9 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
   setSiteForm,
   onSaveSiteConfig,
   onSaveAdminEmails,
+  adminCloudError = null,
+  lastCloudError = null,
+  onRetryCloudSync,
 }) => {
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [adminNotice, setAdminNotice] = useState<{
@@ -24,6 +30,37 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
   } | null>(null);
   const [deleteAdminConfirmEmail, setDeleteAdminConfirmEmail] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [sendingVerify, setSendingVerify] = useState(false);
+
+  const handleRetryPermissions = async () => {
+    if (!onRetryCloudSync || retrying) return;
+    setRetrying(true);
+    try {
+      await onRetryCloudSync();
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const handleSendVerification = async () => {
+    if (!auth.currentUser || sendingVerify) return;
+    setSendingVerify(true);
+    try {
+      await resendVerificationEmail();
+      setAdminNotice({
+        type: 'success',
+        message: `تم إرسال رابط التفعيل إلى ${auth.currentUser.email}. افتح الرابط ثم اضغط «تحديث وفحص الصلاحيات».`,
+      });
+    } catch {
+      setAdminNotice({
+        type: 'error',
+        message: 'تعذر إرسال رابط التفعيل الآن، يرجى الانتظار قليلاً أو تسجيل الدخول بحساب Google.',
+      });
+    } finally {
+      setSendingVerify(false);
+    }
+  };
 
   const handleAddCoAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +73,13 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
     const currentAdmins = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
     if (currentAdmins.some((em) => em.toLowerCase().trim() === email)) {
       setAdminNotice({ type: 'error', message: 'هذا البريد مسجل كمدير ومسؤول بالفعل!' });
+      return;
+    }
+    if (currentAdmins.length >= 25) {
+      setAdminNotice({
+        type: 'error',
+        message: 'تم الوصول للحد الأقصى المسموح به للمشرفين (25 مشرفاً). يرجى إزالة مشرف غير مستخدم أولاً.',
+      });
       return;
     }
     const updatedAdmins = Array.from(
@@ -51,7 +95,10 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
       if (saved === false) {
         setAdminNotice({
           type: 'error',
-          message: 'تعذر حفظ صلاحيات المشرف في السحابة، يرجى التحقق من الاتصال والصلاحيات.',
+          message:
+            lastCloudError ||
+            adminCloudError ||
+            'تعذر حفظ صلاحيات المشرف في السحابة، يرجى التحقق من الاتصال والصلاحيات.',
         });
         return;
       }
@@ -80,7 +127,10 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
     if (saved === false) {
       setAdminNotice({
         type: 'error',
-        message: 'تعذر تحديث قائمة المشرفين في قاعدة البيانات.',
+        message:
+          lastCloudError ||
+          adminCloudError ||
+          'تعذر تحديث قائمة المشرفين في قاعدة البيانات.',
       });
       return;
     }
@@ -93,6 +143,7 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
   };
 
   const adminList = siteForm.adminEmails || ['mizoo2y2@gmail.com'];
+  const isEmailUnverified = Boolean(auth.currentUser && !auth.currentUser.emailVerified);
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
@@ -112,9 +163,45 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
         </div>
 
         <div className="px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-xs font-bold text-teal-800 dark:text-teal-300 font-mono self-start sm:self-auto">
-          {adminList.length} مدراء نشطون
+          {adminList.length} / 25 مدراء نشطون
         </div>
       </div>
+
+      {(adminCloudError || isEmailUnverified) && (
+        <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 text-xs space-y-2.5">
+          <div className="flex items-start gap-2 font-bold">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span>
+              {adminCloudError ||
+                `حسابك (${auth.currentUser?.email}) غير مؤكد البريد الإلكتروني بعد، لذا قد ترفض قواعد السحابة تعديل قائمة المشرفين حتى يتم التأكيد.`}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {onRetryCloudSync && (
+              <button
+                type="button"
+                disabled={retrying}
+                onClick={handleRetryPermissions}
+                className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${retrying ? 'animate-spin' : ''}`} />
+                <span>{retrying ? 'جاري التحديث...' : 'تحديث وفحص الصلاحيات الآن'}</span>
+              </button>
+            )}
+            {isEmailUnverified && (
+              <button
+                type="button"
+                disabled={sendingVerify}
+                onClick={handleSendVerification}
+                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <MailCheck className="w-3.5 h-3.5" />
+                <span>{sendingVerify ? 'جاري الإرسال...' : 'تأكيد البريد الإلكتروني'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {adminNotice && (
         <div

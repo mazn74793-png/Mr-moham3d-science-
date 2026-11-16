@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
-import { onAuthStateChanged, signOut, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signOut, getRedirectResult, reload, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
@@ -24,6 +24,8 @@ import { LinkPasswordSetup } from './components/LinkPasswordSetup';
 import {
   auth,
   db,
+  extractFirestoreErrorDetails,
+  fetchAllStudentsAsAdmin,
   isGoogleUserWithoutPassword,
   savePublicSiteConfigToCloud,
   saveAdminConfigToCloud,
@@ -154,6 +156,9 @@ export default function App() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [studentsSyncError, setStudentsSyncError] = useState<string | null>(null);
+  const [adminCloudError, setAdminCloudError] = useState<string | null>(null);
+  const [lastCloudError, setLastCloudError] = useState<string | null>(null);
 
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register'>('login');
@@ -506,8 +511,10 @@ export default function App() {
               }
               if (!adminSnap.exists()) {
                 await saveAdminConfigToCloud(
-                  siteConfigRef.current.adminEmails || ['mizoo2y2@gmail.com'],
-                  cloudinaryConfigRef.current
+                  adminEmailsRef.current || siteConfigRef.current.adminEmails || ['mizoo2y2@gmail.com'],
+                  cloudinaryConfigRef.current,
+                  undefined,
+                  { preserveExistingAdmins: true }
                 );
               }
             })
@@ -749,88 +756,150 @@ export default function App() {
 
   // 3. Authenticated Real-Time Firestore Listeners
   useEffect(() => {
-    if (!firebaseUser) return;
+    const activeFbUser = firebaseUser || auth.currentUser;
+    if (!activeFbUser) {
+      setStudentsSyncError(null);
+      setAdminCloudError(null);
+      return;
+    }
 
     const unsubscribers: Array<() => void> = [];
+    const hasGoogle = Boolean(
+      activeFbUser.providerData?.some((p) => p.providerId === 'google.com')
+    );
     const userIsAdmin =
-      Boolean(firebaseUser.emailVerified) && isEmailAdmin(firebaseUser.email);
+      Boolean(activeFbUser.email) &&
+      Boolean(activeFbUser.emailVerified || hasGoogle || currentUser?.role === 'teacher') &&
+      isEmailAdmin(activeFbUser.email);
 
     if (userIsAdmin) {
-      unsubscribers.push(
-        onSnapshot(
-          doc(db, 'adminConfig', 'settings'),
-          (snap) => {
-            if (snap.exists()) {
-              const data = snap.data() as {
-                adminEmails?: string[];
-                cloudName?: string;
-                uploadPreset?: string;
-              };
-              if (data.cloudName && data.uploadPreset) {
-                const nextCloud: CloudinaryConfig = {
-                  cloudName: data.cloudName,
-                  uploadPreset: data.uploadPreset,
+      let cancelled = false;
+
+      const attachAdminListeners = async () => {
+        if (!activeFbUser.emailVerified) {
+          try {
+            await reload(activeFbUser);
+            await activeFbUser.getIdToken(true);
+          } catch {}
+        }
+        if (cancelled) return;
+
+        const refreshedUser = auth.currentUser || activeFbUser;
+        if (!refreshedUser.emailVerified) {
+          const msg =
+            lang === 'en'
+              ? `Account (${refreshedUser.email}) is not email-verified yet, so cloud security rules block reading students & admin settings. Verify your email or sign in with Google.`
+              : `حساب (${refreshedUser.email}) غير مؤكد بالبريد الإلكتروني بعد، لذلك تمنع قواعد الأمان عرض الطلاب والمشرفين. يرجى تأكيد البريد الإلكتروني أو تسجيل الدخول بحساب Google.`;
+          setAdminCloudError(msg);
+          setStudentsSyncError(msg);
+          return;
+        }
+
+        unsubscribers.push(
+          onSnapshot(
+            doc(db, 'adminConfig', 'settings'),
+            (snap) => {
+              setAdminCloudError(null);
+              if (snap.exists()) {
+                const data = snap.data() as {
+                  adminEmails?: string[];
+                  cloudName?: string;
+                  uploadPreset?: string;
                 };
-                setCloudinaryConfig(nextCloud);
+                if (data.cloudName && data.uploadPreset) {
+                  const nextCloud: CloudinaryConfig = {
+                    cloudName: data.cloudName,
+                    uploadPreset: data.uploadPreset,
+                  };
+                  setCloudinaryConfig(nextCloud);
+                }
+                if (Array.isArray(data.adminEmails) && data.adminEmails.length > 0) {
+                  const cleanEmails = Array.from(
+                    new Set(
+                      ['mizoo2y2@gmail.com', ...data.adminEmails]
+                        .map((e) => e.toLowerCase().trim())
+                        .filter(Boolean)
+                    )
+                  );
+                  adminEmailsRef.current = cleanEmails;
+                  setSiteConfig((prev) => ({
+                    ...prev,
+                    adminEmails: cleanEmails,
+                  }));
+                }
               }
-              if (Array.isArray(data.adminEmails) && data.adminEmails.length > 0) {
-                const cleanEmails = Array.from(
-                  new Set(
-                    ['mizoo2y2@gmail.com', ...data.adminEmails]
-                      .map((e) => e.toLowerCase().trim())
-                      .filter(Boolean)
-                  )
-                );
-                adminEmailsRef.current = cleanEmails;
-                setSiteConfig((prev) => ({
-                  ...prev,
-                  adminEmails: cleanEmails,
-                }));
-              }
+            },
+            (error) => {
+              console.warn('AdminConfig listener error:', error.message);
+              const details = extractFirestoreErrorDetails(error);
+              setAdminCloudError(
+                details.isPermissionDenied
+                  ? lang === 'en'
+                    ? 'Cloud permissions check failed for admin settings. Confirm this email is verified & listed in Co-Admins.'
+                    : 'تعذر التحقق من صلاحيات المشرف في السحابة لقراءة قائمة المدراء. تأكد من تأكيد البريد الإلكتروني أو أن الحساب مضاف من المالك الرئيسي.'
+                  : lang === 'en'
+                  ? `Could not sync admin list: ${details.rawMessage}`
+                  : `تعذر مزامنة قائمة المشرفين: ${details.rawMessage}`
+              );
             }
-          },
-          (error) => {
-            console.warn('AdminConfig listener error:', error.message);
-          }
-        )
-      );
+          )
+        );
 
-      unsubscribers.push(
-        onSnapshot(
-          collection(db, 'students'),
-          (snap) => {
-            const list = snap.docs.map((d) => d.data() as UserProfile);
-            setStudents(list);
-          },
-          (error) => {
-            console.warn('Students admin listener error:', error.message);
-          }
-        )
-      );
+        unsubscribers.push(
+          onSnapshot(
+            collection(db, 'students'),
+            (snap) => {
+              setStudentsSyncError(null);
+              const list = snap.docs.map((d) => d.data() as UserProfile);
+              setStudents(list);
+            },
+            (error) => {
+              console.warn('Students admin listener error:', error.message);
+              const details = extractFirestoreErrorDetails(error);
+              setStudentsSyncError(
+                details.isPermissionDenied
+                  ? lang === 'en'
+                    ? 'Could not load students because Firestore rejected admin permissions for this session. Verify your email or refresh credentials.'
+                    : 'تعذر تحميل سجل الطلاب لأن السحابة رفضت التحقق من صلاحيات الجلسة الحالية (ليس معناها أن الطلاب اتمسحوا!). تأكد من تأكيد البريد أو اضغط تحديث الصلاحيات.'
+                  : lang === 'en'
+                  ? `Could not load students directory: ${details.rawMessage}`
+                  : `تعذر تحميل بيانات الطلاب من السحابة: ${details.rawMessage}`
+              );
+            }
+          )
+        );
 
-      unsubscribers.push(
-        onSnapshot(
-          collection(db, 'redeemCodes'),
-          (snap) => {
-            const list = snap.docs.map((d) => d.data() as RedeemCode);
-            list.sort((a, b) => (b.createdAtDate || '').localeCompare(a.createdAtDate || ''));
-            setRedeemCodes(list);
-          },
-          (error) => {
-            console.warn('RedeemCodes admin listener error:', error.message);
-          }
-        )
-      );
+        unsubscribers.push(
+          onSnapshot(
+            collection(db, 'redeemCodes'),
+            (snap) => {
+              const list = snap.docs.map((d) => d.data() as RedeemCode);
+              list.sort((a, b) => (b.createdAtDate || '').localeCompare(a.createdAtDate || ''));
+              setRedeemCodes(list);
+            },
+            (error) => {
+              console.warn('RedeemCodes admin listener error:', error.message);
+            }
+          )
+        );
+      };
+
+      attachAdminListeners();
+
+      return () => {
+        cancelled = true;
+        unsubscribers.forEach((unsub) => unsub());
+      };
     } else {
       const ownStudentQuery = query(
         collection(db, 'students'),
-        where('uid', '==', firebaseUser.uid)
+        where('uid', '==', activeFbUser.uid)
       );
       unsubscribers.push(
         onSnapshot(
           ownStudentQuery,
           (snap) => {
-            if (isEmailAdmin(firebaseUser.email) || currentUserRef.current?.role === 'teacher') {
+            if (isEmailAdmin(activeFbUser.email) || currentUserRef.current?.role === 'teacher') {
               return;
             }
             if (!snap.empty) {
@@ -855,7 +924,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [firebaseUser, isEmailAdmin, currentUser?.role]);
+  }, [firebaseUser, isEmailAdmin, currentUser?.role, lang]);
 
   // Persist public non-sensitive cache in localStorage (never store adminEmails), keep session state in sessionStorage ONLY
   useEffect(() => {
@@ -909,30 +978,110 @@ export default function App() {
     }
   }, [authReady, currentView, currentUser, isUserAdmin, openAuthPage]);
 
-  // Execute an admin Firestore write reliably using live session
+  const handleRetryAdminCloudSync = async () => {
+    const activeUser = auth.currentUser || firebaseUser;
+    if (!activeUser) {
+      openAuthPage('login');
+      return;
+    }
+    try {
+      await reload(activeUser);
+      await activeUser.getIdToken(true);
+      setFirebaseUser(auth.currentUser || activeUser);
+    } catch {}
+
+    const refreshed = auth.currentUser || activeUser;
+    if (!refreshed.emailVerified) {
+      const msg =
+        lang === 'en'
+          ? `Email (${refreshed.email}) is still unverified. Click the verification link in your inbox or sign in with Google once.`
+          : `البريد (${refreshed.email}) لم يتم تأكيده بعد. افتح رسالة التأكيد في بريدك أو سجل الدخول بحساب Google لتفعيل الصلاحيات فوراً.`;
+      setAdminCloudError(msg);
+      setStudentsSyncError(msg);
+      showNotice('error', msg);
+      return;
+    }
+
+    const adminCfg = await fetchAdminConfigIfAuthorized(8000);
+    if (adminCfg?.adminEmails?.length) {
+      const merged = Array.from(
+        new Set(
+          ['mizoo2y2@gmail.com', ...adminCfg.adminEmails]
+            .map((e) => e.toLowerCase().trim())
+            .filter(Boolean)
+        )
+      );
+      adminEmailsRef.current = merged;
+      setSiteConfig((prev) => ({ ...prev, adminEmails: merged }));
+      setAdminCloudError(null);
+    }
+
+    try {
+      const list = await fetchAllStudentsAsAdmin();
+      setStudents(list);
+      setStudentsSyncError(null);
+      setLastCloudError(null);
+      showNotice(
+        'success',
+        lang === 'en'
+          ? `Cloud permissions verified and synced (${list.length} students loaded).`
+          : `تم التحقق من الصلاحيات ومزامنة السحابة بنجاح (${list.length} طالب).`
+      );
+    } catch (err) {
+      const details = extractFirestoreErrorDetails(err);
+      const errMsg = details.isPermissionDenied
+        ? lang === 'en'
+          ? 'Firestore denied admin list access. Ensure this email is verified and added to Co-Admins by the primary owner.'
+          : 'السحابة رفضت صلاحية القراءة لهذا الحساب. تأكد أن البريد مؤكد ومضاف في قائمة المشرفين من المالك الرئيسي (mizoo2y2@gmail.com).'
+        : details.rawMessage;
+      setStudentsSyncError(errMsg);
+      showNotice('error', errMsg);
+    }
+  };
+
+  // Execute an admin Firestore write reliably using live session & automatic token-refresh retry
   const executeAdminCloudWrite = async (
     action: () => Promise<void>,
     successMsg?: string
   ): Promise<boolean> => {
+    setLastCloudError(null);
+
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      showNotice(
-        'error',
+      const msg =
         lang === 'en'
           ? 'No internet connection — check your network to save changes.'
-          : 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.'
-      );
+          : 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.';
+      setLastCloudError(msg);
+      showNotice('error', msg);
       return false;
     }
 
     if (!auth.currentUser) {
       openAuthPage('login');
-      showNotice(
-        'error',
+      const msg =
         lang === 'en'
           ? 'Admin session expired. Please sign in to continue.'
-          : 'انتهت جلسة المشرف، يرجى تسجيل الدخول للمتابعة.'
-      );
+          : 'انتهت جلسة المشرف، يرجى تسجيل الدخول للمتابعة.';
+      setLastCloudError(msg);
+      showNotice('error', msg);
       return false;
+    }
+
+    if (!auth.currentUser.emailVerified) {
+      try {
+        await reload(auth.currentUser);
+        await auth.currentUser.getIdToken(true);
+      } catch {}
+      if (!auth.currentUser.emailVerified) {
+        const msg =
+          lang === 'en'
+            ? `Cannot save to cloud because (${auth.currentUser.email}) is not email-verified yet. Click the verification link in your email or sign in once with Google.`
+            : `لا يمكن الحفظ في السحابة لأن بريد هذا الحساب (${auth.currentUser.email}) غير مؤكد بعد. قم بتأكيد البريد من رسالتك أو سجل الدخول بحساب Google مرة واحدة.`;
+        setLastCloudError(msg);
+        setAdminCloudError(msg);
+        showNotice('error', msg);
+        return false;
+      }
     }
 
     let authorized = isEmailAdmin(auth.currentUser.email);
@@ -952,29 +1101,61 @@ export default function App() {
     }
 
     if (!authorized) {
-      showNotice(
-        'error',
+      const msg =
         lang === 'en'
-          ? 'This account is not enabled as an admin in the cloud database.'
-          : 'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين.'
-      );
+          ? `Account (${auth.currentUser.email}) is not enabled as an admin in the cloud database.`
+          : `حساب (${auth.currentUser.email}) غير مفعل كمشرف في قاعدة البيانات السحابية. يجب إضافته أولاً من المالك الرئيسي (mizoo2y2@gmail.com).`;
+      setLastCloudError(msg);
+      showNotice('error', msg);
       return false;
     }
 
     try {
+      await auth.currentUser.getIdToken().catch(() => '');
       await action();
+      setLastCloudError(null);
       if (successMsg) {
         showNotice('success', successMsg);
       }
       return true;
     } catch (err) {
+      const details = extractFirestoreErrorDetails(err);
+      if ((details.isPermissionDenied || details.isUnauthenticated) && auth.currentUser) {
+        try {
+          await reload(auth.currentUser);
+          await auth.currentUser.getIdToken(true);
+          await action();
+          setLastCloudError(null);
+          if (successMsg) {
+            showNotice('success', successMsg);
+          }
+          return true;
+        } catch (retryErr) {
+          const retryDetails = extractFirestoreErrorDetails(retryErr);
+          console.error('Cloud write error after token refresh:', retryErr);
+          const msg = retryDetails.isPermissionDenied
+            ? lang === 'en'
+              ? `Cloud rejected write permissions for (${auth.currentUser.email}). Verify this email is confirmed and listed in Co-Admins.`
+              : `رفضت قواعد الأمان السحابية التعديل لحساب (${auth.currentUser.email}). تأكد أن الحساب مؤكد البريد ومدرج في قائمة المشرفين بالسحابة.`
+            : lang === 'en'
+            ? `Cloud save failed: ${retryDetails.rawMessage}`
+            : `تعذر الحفظ في السحابة: ${retryDetails.rawMessage}`;
+          setLastCloudError(msg);
+          showNotice('error', msg);
+          return false;
+        }
+      }
+
       console.error('Cloud write error:', err);
-      showNotice(
-        'error',
-        lang === 'en'
-          ? 'Failed to save changes to the cloud database. Please verify your connection.'
-          : 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
-      );
+      const msg = details.isNetworkError
+        ? lang === 'en'
+          ? 'Network error connecting to cloud database. Please check your internet connection.'
+          : 'تعذر الاتصال بقاعدة البيانات السحابية، تأكد من جودة الإنترنت وحاول مرة أخرى.'
+        : lang === 'en'
+        ? `Failed to save changes to cloud: ${details.rawMessage}`
+        : `حدث خطأ أثناء الحفظ في قاعدة البيانات: ${details.rawMessage}`;
+      setLastCloudError(msg);
+      showNotice('error', msg);
       return false;
     }
   };
@@ -1015,6 +1196,15 @@ export default function App() {
         sessionStorage.setItem('mm_last_view', 'teacher');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
+      }
+
+      if (activeFbUser?.email && isEmailAdmin(activeFbUser.email) && !activeFbUser.emailVerified) {
+        showNotice(
+          'error',
+          lang === 'en'
+            ? 'Please verify your email address or sign in with Google once to unlock the Admin Dashboard.'
+            : 'يرجى تأكيد بريدك الإلكتروني من الرسالة المرسلة لك أو الدخول بحساب Google لفتح لوحة الإدارة.'
+        );
       }
 
       if (!isUserAdmin(currentUser)) {
@@ -1216,6 +1406,7 @@ export default function App() {
     } catch {}
     clearRedirectFlags();
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
+    adminBootstrappedRef.current = false;
     adminEmailsRef.current = ['mizoo2y2@gmail.com'];
     setSiteConfig((prev) => ({
       ...prev,
@@ -1224,6 +1415,9 @@ export default function App() {
     setCloudinaryConfig(INITIAL_CLOUDINARY_CONFIG);
     setStudents([]);
     setRedeemCodes([]);
+    setStudentsSyncError(null);
+    setAdminCloudError(null);
+    setLastCloudError(null);
     setFirebaseUser(null);
     setCurrentUser(null);
     setCurrentView('landing');
@@ -1937,6 +2131,10 @@ export default function App() {
               notifications={notifications}
               onSaveNotification={handleSaveNotification}
               onDeleteNotification={handleDeleteNotification}
+              studentsSyncError={studentsSyncError}
+              adminCloudError={adminCloudError}
+              lastCloudError={lastCloudError}
+              onRetryCloudSync={handleRetryAdminCloudSync}
             />
           </Suspense>
         )}

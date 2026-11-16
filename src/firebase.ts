@@ -21,8 +21,10 @@ import {
 } from 'firebase/auth';
 import {
   initializeFirestore,
+  collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -253,6 +255,58 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
+export function extractFirestoreErrorDetails(err: unknown): {
+  rawMessage: string;
+  isPermissionDenied: boolean;
+  isUnauthenticated: boolean;
+  isNetworkError: boolean;
+} {
+  const code = (err as any)?.code || '';
+  let rawMessage = err instanceof Error ? err.message : String(err || '');
+  try {
+    const parsed = JSON.parse(rawMessage);
+    if (parsed && typeof parsed.error === 'string') {
+      rawMessage = parsed.error;
+    }
+  } catch {}
+  const lower = `${code} ${rawMessage}`.toLowerCase();
+  return {
+    rawMessage,
+    isPermissionDenied:
+      code === 'permission-denied' ||
+      lower.includes('permission-denied') ||
+      lower.includes('missing or insufficient permissions'),
+    isUnauthenticated:
+      code === 'unauthenticated' || lower.includes('unauthenticated'),
+    isNetworkError:
+      code === 'unavailable' ||
+      lower.includes('unavailable') ||
+      lower.includes('network') ||
+      lower.includes('offline'),
+  };
+}
+
+async function runWithAdminTokenRetry<T>(operation: () => Promise<T>): Promise<T> {
+  const user = auth.currentUser;
+  if (user) {
+    await withTimeout(user.getIdToken(), 2500, '');
+  }
+  try {
+    return await operation();
+  } catch (err: any) {
+    const details = extractFirestoreErrorDetails(err);
+    if ((details.isPermissionDenied || details.isUnauthenticated) && auth.currentUser) {
+      try {
+        await reload(auth.currentUser);
+      } catch {}
+      await withTimeout(auth.currentUser.getIdToken(true), 3000, '');
+      await new Promise((r) => setTimeout(r, 250));
+      return await operation();
+    }
+    throw err;
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
     let settled = false;
@@ -434,40 +488,47 @@ export async function saveAdminConfigToCloud(
 ): Promise<void> {
   const path = 'adminConfig/settings';
   try {
-    let existingData: AdminCloudConfig | null = null;
-    if (options?.preserveExistingAdmins) {
-      try {
-        const snap = await getDoc(doc(db, 'adminConfig', 'settings'));
-        if (snap.exists()) {
-          existingData = snap.data() as AdminCloudConfig;
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'adminConfig', 'settings');
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const existingData = snap.exists() ? (snap.data() as AdminCloudConfig) : null;
+
+        const baseEmails =
+          options?.preserveExistingAdmins && existingData?.adminEmails?.length
+            ? existingData.adminEmails
+            : adminEmails || [];
+
+        const cleanEmails = Array.from(
+          new Set(
+            ['mizoo2y2@gmail.com', ...baseEmails]
+              .map((e) => e.toLowerCase().trim())
+              .filter(Boolean)
+          )
+        ).slice(0, 25);
+
+        const payload: Record<string, any> = {
+          adminEmails: cleanEmails,
+          cloudName: (
+            cloudinaryConfig.cloudName ||
+            existingData?.cloudName ||
+            'chemistry-egypt'
+          ).slice(0, 150),
+          uploadPreset: (
+            cloudinaryConfig.uploadPreset ||
+            existingData?.uploadPreset ||
+            'chemistry_uploads'
+          ).slice(0, 150),
+          updatedAt: serverTimestamp(),
+        };
+        const resolvedGoogleClient = googleClientId || existingData?.googleClientId;
+        if (resolvedGoogleClient) {
+          payload.googleClientId = String(resolvedGoogleClient).slice(0, 300);
         }
-      } catch {}
-    }
 
-    const baseEmails =
-      options?.preserveExistingAdmins && existingData?.adminEmails?.length
-        ? existingData.adminEmails
-        : adminEmails || [];
-
-    const cleanEmails = Array.from(
-      new Set(
-        ['mizoo2y2@gmail.com', ...baseEmails]
-          .map((e) => e.toLowerCase().trim())
-          .filter(Boolean)
-      )
-    ).slice(0, 25);
-
-    const payload: Record<string, any> = {
-      adminEmails: cleanEmails,
-      cloudName: cloudinaryConfig.cloudName || existingData?.cloudName || 'chemistry-egypt',
-      uploadPreset: cloudinaryConfig.uploadPreset || existingData?.uploadPreset || 'chemistry_uploads',
-      updatedAt: serverTimestamp(),
-    };
-    if (googleClientId || existingData?.googleClientId) {
-      payload.googleClientId = googleClientId || existingData?.googleClientId;
-    }
-
-    await setDoc(doc(db, 'adminConfig', 'settings'), payload);
+        tx.set(ref, payload);
+      });
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -479,15 +540,6 @@ export async function saveAdminEmailsToCloud(
 ): Promise<string[]> {
   const path = 'adminConfig/settings';
   try {
-    const ref = doc(db, 'adminConfig', 'settings');
-    let existingData: AdminCloudConfig | null = null;
-    try {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        existingData = snap.data() as AdminCloudConfig;
-      }
-    } catch {}
-
     const cleanEmails = Array.from(
       new Set(
         ['mizoo2y2@gmail.com', ...(adminEmails || [])]
@@ -496,21 +548,49 @@ export async function saveAdminEmailsToCloud(
       )
     ).slice(0, 25);
 
-    const payload: Record<string, any> = {
-      adminEmails: cleanEmails,
-      cloudName: existingData?.cloudName || fallbackCloudinary.cloudName || 'chemistry-egypt',
-      uploadPreset:
-        existingData?.uploadPreset || fallbackCloudinary.uploadPreset || 'chemistry_uploads',
-      updatedAt: serverTimestamp(),
-    };
-    if (existingData?.googleClientId) {
-      payload.googleClientId = existingData.googleClientId;
-    }
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'adminConfig', 'settings');
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const existingData = snap.exists() ? (snap.data() as AdminCloudConfig) : null;
 
-    await setDoc(ref, payload);
+        const payload: Record<string, any> = {
+          adminEmails: cleanEmails,
+          cloudName: (
+            existingData?.cloudName ||
+            fallbackCloudinary.cloudName ||
+            'chemistry-egypt'
+          ).slice(0, 150),
+          uploadPreset: (
+            existingData?.uploadPreset ||
+            fallbackCloudinary.uploadPreset ||
+            'chemistry_uploads'
+          ).slice(0, 150),
+          updatedAt: serverTimestamp(),
+        };
+        if (existingData?.googleClientId) {
+          payload.googleClientId = String(existingData.googleClientId).slice(0, 300);
+        }
+
+        tx.set(ref, payload);
+      });
+    });
+
     return cleanEmails;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function fetchAllStudentsAsAdmin(): Promise<UserProfile[]> {
+  const path = 'students';
+  try {
+    return await runWithAdminTokenRetry(async () => {
+      const snap = await getDocs(collection(db, 'students'));
+      return snap.docs.map((d) => d.data() as UserProfile);
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
@@ -666,17 +746,19 @@ export async function saveStudentToCloud(
   try {
     const ref = doc(db, 'students', docId);
     const uid = authUid || auth.currentUser?.uid || docId;
+    const cleanGrade =
+      (student.grade || 'third').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'third';
     const baseClean = stripUndefinedDeep({
       id: docId,
       uid,
-      name: student.name || 'طالب منصة',
-      email: student.email || '',
-      role: student.role || 'student',
-      grade: student.grade || 'third',
-      phone: student.phone || '',
-      parentPhone: student.parentPhone || '',
-      governorate: student.governorate || 'القاهرة',
-      avatarUrl: student.avatarUrl || '',
+      name: (student.name || '').trim().slice(0, 200) || 'طالب منصة',
+      email: (student.email || '').trim().slice(0, 200),
+      role: student.role === 'teacher' ? 'teacher' : 'student',
+      grade: cleanGrade,
+      phone: (student.phone || '').trim().slice(0, 50),
+      parentPhone: (student.parentPhone || '').trim().slice(0, 50),
+      governorate: (student.governorate || 'القاهرة').trim().slice(0, 150),
+      avatarUrl: (student.avatarUrl || '').slice(0, 2000),
       score: Number(student.score) || 0,
       profileCompleted: Boolean(student.profileCompleted),
       watchedLectureIds: Array.isArray(student.watchedLectureIds)
@@ -686,7 +768,7 @@ export async function saveStudentToCloud(
         ? student.passedQuizIds.slice(0, 500)
         : [],
       quizScores: student.quizScores || {},
-      joinedAt: student.joinedAt || new Date().toISOString().split('T')[0],
+      joinedAt: (student.joinedAt || new Date().toISOString().split('T')[0]).slice(0, 50),
     });
 
     const snap = await getDoc(ref);

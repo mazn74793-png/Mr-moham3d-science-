@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
-  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell
+  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck
 } from 'lucide-react';
 import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward, PlatformNotification } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
-import { auth, hasPasswordLinked } from '../firebase';
+import { auth, hasPasswordLinked, resendVerificationEmail } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
@@ -57,6 +57,10 @@ interface TeacherDashboardProps {
   notifications?: PlatformNotification[];
   onSaveNotification?: (notif: PlatformNotification) => Promise<boolean>;
   onDeleteNotification?: (id: string) => Promise<boolean>;
+  studentsSyncError?: string | null;
+  adminCloudError?: string | null;
+  lastCloudError?: string | null;
+  onRetryCloudSync?: () => Promise<void> | void;
 }
 
 export type TeacherDashboardTab =
@@ -112,6 +116,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   notifications = [],
   onSaveNotification,
   onDeleteNotification,
+  studentsSyncError = null,
+  adminCloudError = null,
+  lastCloudError = null,
+  onRetryCloudSync,
 }) => {
   const { lang } = useLanguage();
   const isEn = lang === 'en';
@@ -119,6 +127,41 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [retryingSync, setRetryingSync] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationSentMsg, setVerificationSentMsg] = useState<string | null>(null);
+
+  const handleTriggerRetrySync = async () => {
+    if (!onRetryCloudSync || retryingSync) return;
+    setRetryingSync(true);
+    try {
+      await onRetryCloudSync();
+    } finally {
+      setRetryingSync(false);
+    }
+  };
+
+  const handleSendAdminVerification = async () => {
+    if (sendingVerification || !auth.currentUser) return;
+    setSendingVerification(true);
+    setVerificationSentMsg(null);
+    try {
+      await resendVerificationEmail();
+      setVerificationSentMsg(
+        isEn
+          ? `Verification link sent to ${auth.currentUser.email}. Click it then press Refresh Permissions.`
+          : `تم إرسال رابط التفعيل إلى ${auth.currentUser.email}. افتح الرابط ثم اضغط «تحديث وفحص الصلاحيات الآن».`
+      );
+    } catch {
+      setVerificationSentMsg(
+        isEn
+          ? 'Could not send verification email right now. You can sign in once with Google for instant verification.'
+          : 'تعذر إرسال رابط التفعيل الآن (حاول بعد دقيقة أو سجل الدخول بحساب Google للتفعيل الفوري).'
+      );
+    } finally {
+      setSendingVerification(false);
+    }
+  };
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -558,6 +601,79 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
+          {(adminCloudError || studentsSyncError || (auth.currentUser && !auth.currentUser.emailVerified)) && (
+            <div className="w-full rounded-2xl border-2 border-rose-300 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/50 p-4 sm:p-5 space-y-3 shadow-xs">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xs sm:text-sm font-extrabold font-kufi text-rose-900 dark:text-rose-200">
+                      {isEn
+                        ? 'Cloud Permissions / Session Sync Alert'
+                        : 'تنبيه مزامنة الصلاحيات مع السحابة'}
+                    </h3>
+                    <p className="text-xs text-rose-800 dark:text-rose-300 leading-relaxed font-sans">
+                      {adminCloudError ||
+                        studentsSyncError ||
+                        (isEn
+                          ? `Your email (${auth.currentUser?.email}) is not verified yet. Cloud security rules require a verified email before loading students or editing admins.`
+                          : `حسابك الحالي (${auth.currentUser?.email}) لم يتم تأكيد بريده الإلكتروني بعد، ولذلك تمنع قواعد الأمان عرض الطلاب أو إضافة مشرفين.`)}
+                    </p>
+                    {verificationSentMsg && (
+                      <p className="text-[11px] font-bold text-teal-800 dark:text-teal-300 pt-0.5">
+                        {verificationSentMsg}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {onRetryCloudSync && (
+                    <button
+                      type="button"
+                      disabled={retryingSync}
+                      onClick={handleTriggerRetrySync}
+                      className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${retryingSync ? 'animate-spin' : ''}`} />
+                      <span>
+                        {retryingSync
+                          ? isEn
+                            ? 'Checking...'
+                            : 'جاري الفحص...'
+                          : isEn
+                          ? 'Refresh & Check Permissions'
+                          : 'تحديث وفحص الصلاحيات الآن'}
+                      </span>
+                    </button>
+                  )}
+
+                  {auth.currentUser && !auth.currentUser.emailVerified && (
+                    <button
+                      type="button"
+                      disabled={sendingVerification}
+                      onClick={handleSendAdminVerification}
+                      className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <MailCheck className="w-3.5 h-3.5" />
+                      <span>
+                        {sendingVerification
+                          ? isEn
+                            ? 'Sending...'
+                            : 'جاري الإرسال...'
+                          : isEn
+                          ? 'Send Verification Email'
+                          : 'إرسال رابط تأكيد البريد'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Inline Reset Confirmation Bar (Zero Popup) */}
           {resetConfirmOpen && (
             <div className="w-full bg-rose-50 dark:bg-rose-950/40 rounded-3xl p-5 sm:p-6 border border-rose-200 dark:border-rose-900 space-y-4">
@@ -656,6 +772,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               setSiteForm={setSiteForm}
               onSaveSiteConfig={onSaveSiteConfig}
               onSaveAdminEmails={onSaveAdminEmails}
+              adminCloudError={adminCloudError}
+              lastCloudError={lastCloudError}
+              onRetryCloudSync={onRetryCloudSync}
             />
           )}
 
@@ -684,6 +803,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 onUpdateStudent={onUpdateStudent}
                 onDeleteStudent={onDeleteStudent}
                 onAddStudent={onAddStudent}
+                studentsSyncError={studentsSyncError}
+                onRetryCloudSync={onRetryCloudSync}
               />
             </div>
           )}

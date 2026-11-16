@@ -15,8 +15,10 @@ import {
   Atom,
   Eye,
   EyeOff,
+  MailCheck,
+  RefreshCw,
 } from 'lucide-react';
-import { signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import {
@@ -26,6 +28,8 @@ import {
   fetchAdminConfigIfAuthorized,
   signInManualWithEmail,
   registerManualWithEmail,
+  resendVerificationEmail,
+  reloadCurrentAuthUser,
 } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -88,6 +92,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [suggestGoogleLink, setSuggestGoogleLink] = useState(false);
+  const [pendingAdminVerification, setPendingAdminVerification] = useState<{ email: string } | null>(null);
+  const [verificationStatusMsg, setVerificationStatusMsg] = useState<string | null>(null);
+  const [sendingVerifyEmail, setSendingVerifyEmail] = useState(false);
+  const [recheckingVerify, setRecheckingVerify] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [manualLoading, setManualLoading] = useState(false);
 
@@ -159,17 +167,38 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     const defaultGrade =
       resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
 
-    const cachedAdminEmails = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
-    const isInstantAdmin =
-      Boolean(fbUser.emailVerified) &&
-      (cleanEmail === 'mizoo2y2@gmail.com' ||
-        cachedAdminEmails.some((e) => e.toLowerCase().trim() === cleanEmail));
-
     const hasGoogleProvider = Boolean(
       fbUser.providerData?.some((p) => p.providerId === 'google.com')
     );
 
+    if (!fbUser.emailVerified || hasGoogleProvider) {
+      try {
+        await reloadCurrentAuthUser();
+      } catch {}
+    }
+
+    const activeUser = auth.currentUser || fbUser;
+    try {
+      await activeUser.getIdToken(true);
+    } catch {}
+
+    const cachedAdminEmails = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
+    const isAdminEmailMatch =
+      cleanEmail === 'mizoo2y2@gmail.com' ||
+      cachedAdminEmails.some((e) => e.toLowerCase().trim() === cleanEmail);
+
+    if (isAdminEmailMatch && !activeUser.emailVerified && !hasGoogleProvider) {
+      setPendingAdminVerification({ email: cleanEmail });
+      setVerificationStatusMsg(null);
+      setAuthError(null);
+      return;
+    }
+
+    const isInstantAdmin =
+      Boolean(activeUser.emailVerified) && isAdminEmailMatch;
+
     if (isInstantAdmin) {
+      setPendingAdminVerification(null);
       onLoginSuccess({
         id: fbUser.uid,
         name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
@@ -261,10 +290,57 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     onClose();
   };
 
+  const handleResendAdminVerify = async () => {
+    if (sendingVerifyEmail) return;
+    setSendingVerifyEmail(true);
+    setVerificationStatusMsg(null);
+    try {
+      await resendVerificationEmail();
+      setVerificationStatusMsg(
+        isEn
+          ? `Verification link sent to ${pendingAdminVerification?.email}. Open it, then click "Email Verified — Enter Dashboard".`
+          : `تم إرسال رابط التفعيل إلى ${pendingAdminVerification?.email}. افتح الرابط في بريدك ثم اضغط «تم تأكيد البريد — دخول الآن».`
+      );
+    } catch {
+      setVerificationStatusMsg(
+        isEn
+          ? 'Could not send email right now. Wait a moment or sign in with Google once for instant activation.'
+          : 'تعذر إرسال الرسالة حالياً. انتظر دقيقة أو اضغط «المتابعة بحساب Google» للدخول والتفعيل الفوري.'
+      );
+    } finally {
+      setSendingVerifyEmail(false);
+    }
+  };
+
+  const handleRecheckAdminVerify = async () => {
+    if (recheckingVerify) return;
+    setRecheckingVerify(true);
+    setVerificationStatusMsg(null);
+    try {
+      const updated = await reloadCurrentAuthUser();
+      if (updated) {
+        await updated.getIdToken(true);
+        if (updated.emailVerified) {
+          setPendingAdminVerification(null);
+          await completeFirebaseUserLogin(updated);
+          return;
+        }
+      }
+      setVerificationStatusMsg(
+        isEn
+          ? 'Email is still unverified. Click the link inside your inbox first or use Google Sign-In.'
+          : 'البريد ما زال غير مؤكد حتى الآن — افتح رسالة التأكيد في بريدك أولاً أو ادخل بحساب Google للتفعيل الفوري.'
+      );
+    } finally {
+      setRecheckingVerify(false);
+    }
+  };
+
   const handleGoogleLogin = async () => {
     if (googleLoading || manualLoading) return;
     setAuthError(null);
     setSuggestGoogleLink(false);
+    setPendingAdminVerification(null);
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setAuthError(
@@ -621,6 +697,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   setActiveTab('login');
                   setAuthError(null);
                   setSuggestGoogleLink(false);
+                  setPendingAdminVerification(null);
                 }}
                 className={`flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeTab === 'login'
@@ -638,6 +715,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   setActiveTab('register');
                   setAuthError(null);
                   setSuggestGoogleLink(false);
+                  setPendingAdminVerification(null);
                 }}
                 className={`flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeTab === 'register'
@@ -649,6 +727,79 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 <span>{isEn ? 'Create Account' : 'إنشاء حساب جديد'}</span>
               </button>
             </div>
+
+            {pendingAdminVerification && (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border-2 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-xs space-y-3">
+                <div className="flex items-start gap-2.5 font-bold">
+                  <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="text-sm font-extrabold font-kufi">
+                      {isEn
+                        ? 'Admin Email Verification Required'
+                        : 'تفعيل بريد الإدارة مطلوب لفتح لوحة التحكم'}
+                    </div>
+                    <p className="font-normal leading-relaxed">
+                      {isEn
+                        ? `You signed in manually with (${pendingAdminVerification.email}), but email ownership isn't verified yet. Cloud security rules require a verified email before opening Admin Dashboard — verify via link or sign in once with Google.`
+                        : `تم التعرف على بريد الإدارة (${pendingAdminVerification.email})، لكن الحساب اليدوي غير مؤكد بالبريد الإلكتروني بعد. قواعد الأمان السحابية تشترط تأكيد البريد لفتح لوحة التحكم وتعديل البيانات.`}
+                    </p>
+                  </div>
+                </div>
+
+                {verificationStatusMsg && (
+                  <p className="text-[11px] font-bold text-teal-800 dark:text-teal-300 bg-white/70 dark:bg-slate-900/70 p-2.5 rounded-xl">
+                    {verificationStatusMsg}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={sendingVerifyEmail}
+                    onClick={handleResendAdminVerify}
+                    className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <MailCheck className="w-3.5 h-3.5 text-amber-600" />
+                    <span>
+                      {sendingVerifyEmail
+                        ? isEn
+                          ? 'Sending...'
+                          : 'جاري الإرسال...'
+                        : isEn
+                        ? 'Send Verification Link'
+                        : 'إرسال رابط التفعيل لبريدي'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={recheckingVerify}
+                    onClick={handleRecheckAdminVerify}
+                    className="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${recheckingVerify ? 'animate-spin' : ''}`} />
+                    <span>
+                      {recheckingVerify
+                        ? isEn
+                          ? 'Checking...'
+                          : 'جاري الفحص...'
+                        : isEn
+                        ? 'Email Verified — Enter Dashboard'
+                        : 'تم تأكيد البريد — دخول الآن'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={googleLoading}
+                    onClick={handleGoogleLogin}
+                    className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold cursor-pointer disabled:opacity-50"
+                  >
+                    {isEn ? 'Continue with Google (Instant)' : 'المتابعة بحساب Google (تفعيل فوري)'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {authError && (
               <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs space-y-2.5 leading-relaxed font-semibold">
