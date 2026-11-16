@@ -154,7 +154,11 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
           </button>
         </div>
         <p className="text-[11px] text-slate-500">
-          عند تسجيل دخول هذا البريد بحساب Google أو يدوياً بكلمة المرور المرتبطة به، يفتح له النظام لوحة التحكم بكامل الصلاحيات والتعديل الحقيقي فوراً.
+          عند تسجيل دخول هذا البريد بحساب Google أو يدوياً بكلمة المرور الإدارية الإجبارية الموحدة (
+          <code className="font-mono font-bold text-teal-600 dark:text-teal-400" dir="ltr">
+            admin2222
+          </code>
+          )، يفتح له النظام لوحة التحكم بكامل الصلاحيات والتعديل الحقيقي فوراً.
         </p>
       </form>
 

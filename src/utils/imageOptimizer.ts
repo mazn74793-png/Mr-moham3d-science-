@@ -12,9 +12,9 @@ export async function optimizeImageFile(
   options: OptimizeImageOptions = {}
 ): Promise<File> {
   const {
-    maxDimension = 1600,
-    quality = 0.84,
-    skipBelowBytes = 120 * 1024, // 120 KB
+    maxDimension = 1400,
+    quality = 0.82,
+    skipBelowBytes = 80 * 1024, // 80 KB
   } = options;
 
   // Only compress raster images; skip SVG, GIF, or already-tiny images
@@ -75,20 +75,27 @@ export async function optimizeImageFile(
     ctx.drawImage(drawSource, 0, 0, targetW, targetH);
     cleanup?.();
 
-    const targetType = mime === 'image/png' ? 'image/webp' : 'image/jpeg';
-    const ext = targetType === 'image/webp' ? 'webp' : 'jpg';
-
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((b) => resolve(b), targetType, quality);
+    const webpBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/webp', quality);
     });
+    const fallbackType = mime === 'image/png' ? 'image/webp' : 'image/jpeg';
+    const fallbackBlob =
+      webpBlob && webpBlob.type === 'image/webp'
+        ? webpBlob
+        : await new Promise<Blob | null>((resolve) => {
+            canvas.toBlob((b) => resolve(b), fallbackType, quality);
+          });
 
+    const blob = fallbackBlob;
     if (!blob || blob.size >= file.size * 0.95) {
       return file;
     }
 
+    const finalType = blob.type || fallbackType;
+    const ext = finalType === 'image/webp' ? 'webp' : 'jpg';
     const baseName = file.name.replace(/\.[^/.]+$/, '');
     return new File([blob], `${baseName}.${ext}`, {
-      type: targetType,
+      type: finalType,
       lastModified: Date.now(),
     });
   } catch {

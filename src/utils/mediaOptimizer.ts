@@ -78,6 +78,11 @@ export function optimizeVideoStreamUrl(url: string, quality: VideoQualityMode = 
   return url;
 }
 
+function isCloudinaryTransformSegment(segment: string): boolean {
+  if (!segment || /^v\d+$/.test(segment)) return false;
+  return /^(?:[a-z]{1,3}_[^,/]+)(?:,[a-z]{1,3}_[^,/]+)*$/i.test(segment);
+}
+
 export function optimizeImageUrl(url?: string, maxWidth = 900): string {
   if (!url) return '';
   if (!url.includes('res.cloudinary.com') || !url.includes(CLOUDINARY_IMAGE_UPLOAD_MARKER)) {
@@ -87,10 +92,24 @@ export function optimizeImageUrl(url?: string, maxWidth = 900): string {
   const prefix = url.slice(0, idx + CLOUDINARY_IMAGE_UPLOAD_MARKER.length);
   const rest = url.slice(idx + CLOUDINARY_IMAGE_UPLOAD_MARKER.length);
   const firstSegment = rest.split('/')[0] || '';
-  if (firstSegment && !/^v\d+$/.test(firstSegment) && firstSegment.includes('_')) {
+  if (isCloudinaryTransformSegment(firstSegment)) {
     return url;
   }
-  return `${prefix}f_auto,q_auto,w_${maxWidth},c_limit/${rest}`;
+  return `${prefix}f_auto,q_auto:good,w_${maxWidth},c_limit/${rest}`;
+}
+
+export function getImageLqipUrl(url?: string): string | undefined {
+  if (!url || !url.includes('res.cloudinary.com') || !url.includes(CLOUDINARY_IMAGE_UPLOAD_MARKER)) {
+    return undefined;
+  }
+  const idx = url.indexOf(CLOUDINARY_IMAGE_UPLOAD_MARKER);
+  const prefix = url.slice(0, idx + CLOUDINARY_IMAGE_UPLOAD_MARKER.length);
+  const rest = url.slice(idx + CLOUDINARY_IMAGE_UPLOAD_MARKER.length);
+  const firstSegment = rest.split('/')[0] || '';
+  if (isCloudinaryTransformSegment(firstSegment)) {
+    return undefined;
+  }
+  return `${prefix}f_auto,q_20,w_48,e_blur:600,c_limit/${rest}`;
 }
 
 /**

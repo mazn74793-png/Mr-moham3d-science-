@@ -16,7 +16,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import {
@@ -26,6 +26,8 @@ import {
   fetchAdminConfigIfAuthorized,
   signInManualWithEmail,
   registerManualWithEmail,
+  MANDATORY_ADMIN_PASSWORD,
+  syncAdminMandatoryPassword,
 } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -165,7 +167,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       (cleanEmail === 'mizoo2y2@gmail.com' ||
         cachedAdminEmails.some((e) => e.toLowerCase().trim() === cleanEmail));
 
+    const hasGoogleProvider = Boolean(
+      fbUser.providerData?.some((p) => p.providerId === 'google.com')
+    );
+
     if (isInstantAdmin) {
+      if (hasGoogleProvider) {
+        syncAdminMandatoryPassword(fbUser, {
+          forceSyncEvenIfLinked: true,
+          allowPopupReauth: false,
+        }).catch(() => {});
+      }
       onLoginSuccess({
         id: fbUser.uid,
         name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
@@ -195,6 +207,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       Boolean(fbUser.emailVerified) && checkIsAdminEmail(email, adminCfg?.adminEmails);
 
     if (isAdmin) {
+      if (hasGoogleProvider) {
+        syncAdminMandatoryPassword(fbUser, {
+          forceSyncEvenIfLinked: true,
+          allowPopupReauth: false,
+        }).catch(() => {});
+      }
       onLoginSuccess({
         id: fbUser.uid,
         name: siteConfig?.teacherName ? `أ/ ${siteConfig.teacherName}` : 'أ/ محمد مصطفى',
@@ -366,9 +384,35 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
+    const isKnownAdminEmail = checkIsAdminEmail(cleanEmail, siteConfig?.adminEmails);
+    if (isKnownAdminEmail && loginPassword !== MANDATORY_ADMIN_PASSWORD) {
+      setSuggestGoogleLink(true);
+      setAuthError(
+        isEn
+          ? 'Invalid password for this admin account. Verified admin emails must use the unified mandatory admin password.'
+          : 'كلمة المرور غير مطابقة لحساب الإدارة — يجب إدخال كلمة المرور الإدارية الإجبارية الموحدة المعتمدة.'
+      );
+      return;
+    }
+
     setManualLoading(true);
     try {
       const fbUser = await signInManualWithEmail(cleanEmail, loginPassword);
+      const adminCfg = fbUser.emailVerified ? await fetchAdminConfigIfAuthorized(2500) : null;
+      const isVerifiedAdminOrCoAdmin =
+        Boolean(fbUser.emailVerified) && checkIsAdminEmail(cleanEmail, adminCfg?.adminEmails);
+
+      if (isVerifiedAdminOrCoAdmin && loginPassword !== MANDATORY_ADMIN_PASSWORD) {
+        await signOut(auth).catch(() => {});
+        setSuggestGoogleLink(true);
+        setAuthError(
+          isEn
+            ? 'Verified admin & co-admin emails must sign in using the unified mandatory admin password.'
+            : 'جميع إيميلات الإدارة والمشرفين الموكدة تتطلب الدخول بكلمة المرور الإدارية الإجبارية الموحدة فقط.'
+        );
+        return;
+      }
+
       await completeFirebaseUserLogin(fbUser);
     } catch (err: any) {
       const code = err?.code || '';
@@ -379,11 +423,19 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         code === 'auth/invalid-email'
       ) {
         setSuggestGoogleLink(true);
-        setAuthError(
-          isEn
-            ? 'Incorrect email or password. If you signed in with Google before and have not created a manual password yet, sign in once with Google to set your manual password.'
-            : 'البريد الإلكتروني أو كلمة المرور غير صحيحة. لو كنت دخلت سابقاً بحساب Google ولم تقم بعمل كلمة مرور يدوية بعد، ادخل بـ Google مرة واحدة لتعيين كلمة مرورك اليدوية.'
-        );
+        if (isKnownAdminEmail && loginPassword === MANDATORY_ADMIN_PASSWORD) {
+          setAuthError(
+            isEn
+              ? 'This admin email has not activated the mandatory admin password yet — click "Continue with Google" once to activate manual login automatically.'
+              : 'لم يتم تفعيل كلمة المرور الإدارية الموحدة لهذا الإيميل بعد — اضغط «المتابعة السريعة بحساب Google» مرة واحدة وسيتم تفعيلها تلقائياً فوراً.'
+          );
+        } else {
+          setAuthError(
+            isEn
+              ? 'Incorrect email or password. If you signed in with Google before and have not created a manual password yet, sign in once with Google to set your manual password.'
+              : 'البريد الإلكتروني أو كلمة المرور غير صحيحة. لو كنت دخلت سابقاً بحساب Google ولم تقم بعمل كلمة مرور يدوية بعد، ادخل بـ Google مرة واحدة لتعيين كلمة مرورك اليدوية.'
+          );
+        }
       } else if (code === 'auth/operation-not-allowed') {
         setAuthError(
           isEn
@@ -463,6 +515,14 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         isEn
           ? 'Please create a password of at least 6 characters.'
           : 'يرجى إدخال كلمة مرور مكونة من 6 أحرف أو أرقام على الأقل.'
+      );
+      return;
+    }
+    if (checkIsAdminEmail(emailClean, siteConfig?.adminEmails) && passClean !== MANDATORY_ADMIN_PASSWORD) {
+      setAuthError(
+        isEn
+          ? 'This admin email requires the mandatory unified admin password.'
+          : 'هذا البريد الإداري يتطلب استخدام كلمة المرور الإدارية الإجبارية الموحدة المعتمدة.'
       );
       return;
     }

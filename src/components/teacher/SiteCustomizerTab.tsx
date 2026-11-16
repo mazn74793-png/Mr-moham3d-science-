@@ -93,6 +93,11 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
         cloudName: cloudinaryConfig.cloudName || 'chemistry-egypt',
         uploadPreset: cloudinaryConfig.uploadPreset || 'chemistry_uploads',
         resourceType: 'image',
+        imageOptions: {
+          maxDimension: 900,
+          quality: 0.82,
+          skipBelowBytes: 50 * 1024,
+        },
         onProgress: (percent, info) => {
           setTeacherPhotoProgress(percent);
           setTeacherPhotoMeta(info);

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
-import { optimizeImageUrl } from '../utils/mediaOptimizer';
+import { optimizeImageUrl, getImageLqipUrl } from '../utils/mediaOptimizer';
 
 interface HeroSectionProps {
   siteConfig: SiteConfig;
@@ -15,7 +15,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onJoinNow,
   onExploreLectures,
 }) => {
-  const { lang, isRtl, t } = useLanguage();
+  const { lang, isRtl } = useLanguage();
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const ActionArrow = isRtl ? ArrowLeft : ArrowRight;
 
@@ -31,14 +32,43 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   const [imgSrc, setImgSrc] = useState<string>(() => (isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : ''));
   const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+
+  const optimizedHeroSrc = imgSrc ? optimizeImageUrl(imgSrc, 640) : '';
+  const lqipHeroSrc = imgSrc ? getImageLqipUrl(imgSrc) : undefined;
 
   useEffect(() => {
     setImgError(false);
-    setImgSrc(isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : '');
+    const nextSrc = isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : '';
+    setImgSrc(nextSrc);
+    setImgLoaded(false);
   }, [siteConfig.profileImageUrl]);
+
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setImgLoaded(true);
+    }
+  }, [optimizedHeroSrc]);
+
+  useEffect(() => {
+    if (!optimizedHeroSrc || optimizedHeroSrc.startsWith('data:')) return;
+    let link = document.querySelector<HTMLLinkElement>('link[data-hero-preload="true"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.setAttribute('fetchpriority', 'high');
+      link.setAttribute('data-hero-preload', 'true');
+      document.head.appendChild(link);
+    }
+    if (link.href !== optimizedHeroSrc) {
+      link.href = optimizedHeroSrc;
+    }
+  }, [optimizedHeroSrc]);
 
   const handleImageError = () => {
     setImgError(true);
+    setImgLoaded(true);
   };
 
   return (
@@ -145,7 +175,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           </div>
 
           {/* Teacher Photo Column */}
-          <div className="lg:col-span-5 flex justify-center lg:justify-end animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+          <div className="lg:col-span-5 flex justify-center lg:justify-end">
             <div className="relative w-full max-w-sm sm:max-w-md flex flex-col items-center">
               
               {/* Soft atmospheric radial glow */}
@@ -158,15 +188,35 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
               {/* Image or Clean Educator Crest Placeholder */}
               <div className="relative w-full flex items-center justify-center group">
-                {imgSrc && !imgError ? (
-                  <img
-                    src={optimizeImageUrl(imgSrc, 900)}
-                    alt={siteConfig.teacherName}
-                    decoding="async"
-                    className="w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-transform duration-700 ease-out group-hover:scale-105 cursor-pointer rounded-3xl"
-                    referrerPolicy="no-referrer"
-                    onError={handleImageError}
-                  />
+                {optimizedHeroSrc && !imgError ? (
+                  <div className="relative w-full min-h-[340px] sm:min-h-[420px] flex items-end justify-center overflow-hidden rounded-3xl">
+                    {!imgLoaded && (
+                      <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-teal-900/15 via-slate-200/60 to-teal-800/15 dark:from-teal-950/60 dark:via-slate-800/70 dark:to-teal-900/50 animate-pulse overflow-hidden">
+                        {lqipHeroSrc && (
+                          <img
+                            src={lqipHeroSrc}
+                            alt=""
+                            aria-hidden="true"
+                            className="w-full h-full object-contain object-bottom scale-105 blur-xl opacity-80"
+                          />
+                        )}
+                      </div>
+                    )}
+                    <img
+                      ref={imgRef}
+                      src={optimizedHeroSrc}
+                      alt={siteConfig.teacherName}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="sync"
+                      onLoad={() => setImgLoaded(true)}
+                      onError={handleImageError}
+                      className={`relative z-10 w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-all duration-300 ease-out group-hover:scale-105 cursor-pointer rounded-3xl ${
+                        imgLoaded ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
                 ) : (
                   <div className="w-full aspect-[3/4] max-h-[460px] rounded-3xl bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 border-2 border-teal-500/30 shadow-2xl flex flex-col items-center justify-center p-8 text-center space-y-5 relative overflow-hidden">
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(20,184,166,0.22),transparent_65%)]" />

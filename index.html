@@ -30,6 +30,33 @@
     <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
     <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
     <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('mm_site_config');
+          if (!raw) return;
+          var cfg = JSON.parse(raw);
+          var url = cfg && typeof cfg.profileImageUrl === 'string' ? cfg.profileImageUrl.trim() : '';
+          if (!url || (!url.startsWith('https://') && !url.startsWith('/uploads/'))) return;
+          var marker = '/image/upload/';
+          var idx = url.indexOf(marker);
+          if (url.indexOf('res.cloudinary.com') !== -1 && idx !== -1) {
+            var prefix = url.slice(0, idx + marker.length);
+            var rest = url.slice(idx + marker.length);
+            var seg = (rest.split('/')[0] || '');
+            var isTransform = seg && !/^v\d+$/.test(seg) && /^(?:[a-z]{1,3}_[^,/]+)(?:,[a-z]{1,3}_[^,/]+)*$/i.test(seg);
+            if (!isTransform) url = prefix + 'f_auto,q_auto:good,w_640,c_limit/' + rest;
+          }
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.href = url;
+          link.setAttribute('fetchpriority', 'high');
+          link.setAttribute('data-hero-preload', 'true');
+          document.head.appendChild(link);
+        } catch (e) {}
+      })();
+    </script>
 
     <!-- Google Fonts: Cairo, Reem Kufi, Aref Ruqaa, Amiri, Tajawal, Almarai -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

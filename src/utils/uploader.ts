@@ -1,7 +1,7 @@
 // High-speed XHR & chunked media uploader with automatic client-side image optimization,
 // real-time byte-accurate progress tracking, and live weak-internet speed detection.
 
-import { optimizeImageFile } from './imageOptimizer';
+import { optimizeImageFile, OptimizeImageOptions } from './imageOptimizer';
 
 export interface UploadProgressInfo {
   percent: number;
@@ -15,6 +15,7 @@ export interface UploadOptions {
   uploadPreset?: string;
   resourceType?: 'image' | 'video' | 'raw' | 'auto';
   skipOptimize?: boolean;
+  imageOptions?: OptimizeImageOptions;
   onProgress?: (percent: number, info: UploadProgressInfo) => void;
 }
 
@@ -221,13 +222,20 @@ export async function uploadMediaFile(
     throw new Error('لا يوجد اتصال بالإنترنت حالياً. تأكد من اتصالك ثم أعد رفع الملف.');
   }
 
-  const { cloudName, uploadPreset, resourceType = 'auto', skipOptimize = false, onProgress } = options || {};
+  const {
+    cloudName,
+    uploadPreset,
+    resourceType = 'auto',
+    skipOptimize = false,
+    imageOptions,
+    onProgress,
+  } = options || {};
   const cleanCloud = (cloudName || '').trim();
   const cleanPreset = (uploadPreset || '').trim();
 
   const file =
     !skipOptimize && (resourceType === 'image' || rawFile.type.startsWith('image/'))
-      ? await optimizeImageFile(rawFile)
+      ? await optimizeImageFile(rawFile, imageOptions)
       : rawFile;
 
   onProgress?.(1, {
