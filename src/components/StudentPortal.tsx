@@ -25,6 +25,10 @@ import {
   User,
   X,
   ExternalLink,
+  PlayCircle,
+  Bell,
+  Mail,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Lecture,
@@ -34,6 +38,7 @@ import {
   UserProfile,
   PointReward,
   CloudinaryConfig,
+  PlatformNotification,
 } from '../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
@@ -43,6 +48,7 @@ import { QuizRunner } from './student/QuizRunner';
 import { HandoutsTab } from './student/HandoutsTab';
 import { StudyLabTab } from './student/StudyLabTab';
 import { PointsWalletTab } from './student/PointsWalletTab';
+import { StudentNotificationsTab } from './student/NotificationsTab';
 import {
   StudentProfileModal,
   StudentCustomProfile,
@@ -51,6 +57,7 @@ import {
   STUDENT_CARD_THEMES,
 } from './student/StudentProfileModal';
 import { prefetchVideoStream } from '../utils/mediaOptimizer';
+import { auth, resendVerificationEmail, reloadCurrentAuthUser } from '../firebase';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -58,6 +65,7 @@ interface StudentPortalProps {
   quizzes: Quiz[];
   attachments: AttachmentFile[];
   rewards?: PointReward[];
+  notifications?: PlatformNotification[];
   siteConfig?: SiteConfig;
   cloudinaryConfig?: CloudinaryConfig;
   onBackToHome: () => void;
@@ -67,6 +75,7 @@ interface StudentPortalProps {
   onUnlockLecture?: (lecture: Lecture) => Promise<void>;
   onUnlockAttachment?: (file: AttachmentFile) => Promise<void>;
   onClaimReward?: (reward: PointReward) => Promise<void>;
+  onAuthUserRefreshed?: () => void;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -75,6 +84,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   quizzes,
   attachments,
   rewards = [],
+  notifications = [],
   siteConfig,
   cloudinaryConfig,
   onBackToHome,
@@ -84,6 +94,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onUnlockLecture,
   onUnlockAttachment,
   onClaimReward,
+  onAuthUserRefreshed,
 }) => {
   const { lang, isRtl } = useLanguage();
   const resolvedGrades = getResolvedGrades(siteConfig);
@@ -107,9 +118,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [currentUser?.grade, isTeacher]);
 
   const [activeTab, setActiveTab] = useState<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'profile'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'notifications' | 'profile'
   >('lectures');
-  const lastTabBeforeProfileRef = React.useRef<'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub'>('lectures');
+  const lastTabBeforeProfileRef = React.useRef<
+    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'notifications'
+  >('lectures');
+
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [verifyFeedback, setVerifyFeedback] = useState<string | null>(null);
 
   const openProfilePage = () => {
     if (activeTab !== 'profile') {
@@ -171,6 +187,55 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   const filteredQuizzes = quizzes.filter((q) => q.grade === selectedGrade);
   const filteredAttachments = attachments.filter((a) => a.grade === selectedGrade);
+
+  const visibleNotifications = notifications
+    .filter((n) => n.active && (n.grade === 'all' || n.grade === selectedGrade))
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return (b.dateAdded || '').localeCompare(a.dateAdded || '');
+    });
+
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`mm_read_notifs_${studentStorageKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`mm_read_notifs_${studentStorageKey}`);
+      setReadNotificationIds(saved ? JSON.parse(saved) : []);
+    } catch {
+      setReadNotificationIds([]);
+    }
+  }, [studentStorageKey]);
+
+  const markNotificationRead = (notifId: string) => {
+    setReadNotificationIds((prev) => {
+      if (prev.includes(notifId)) return prev;
+      const next = [...prev, notifId];
+      try {
+        localStorage.setItem(`mm_read_notifs_${studentStorageKey}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const markAllNotificationsRead = () => {
+    const allIds = visibleNotifications.map((n) => n.id);
+    const merged = Array.from(new Set([...readNotificationIds, ...allIds]));
+    setReadNotificationIds(merged);
+    try {
+      localStorage.setItem(`mm_read_notifs_${studentStorageKey}`, JSON.stringify(merged));
+    } catch {}
+  };
+
+  const unreadNotifCount = visibleNotifications.filter(
+    (n) => !readNotificationIds.includes(n.id)
+  ).length;
 
   const [activeLecture, setActiveLecture] = useState<Lecture | null>(
     filteredLectures[0] || lectures[0] || null
@@ -480,6 +545,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
+                onClick={() => {
+                  setActiveTab('notifications');
+                  setActiveQuiz(null);
+                }}
+                aria-label={lang === 'en' ? 'Notifications' : 'الإشعارات والتنبيهات'}
+                className={`relative min-h-[40px] min-w-[40px] px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'notifications'
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                }`}
+              >
+                <Bell className={`w-4 h-4 ${activeTab === 'notifications' ? 'text-white' : 'text-teal-600 dark:text-teal-400'}`} />
+                {unreadNotifCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold tabular-nums leading-none">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
                 onClick={openProfilePage}
                 aria-label={lang === 'en' ? 'My Profile' : 'ملفي الشخصي'}
                 className={`min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
@@ -535,6 +621,85 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       {/* Main Content Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
+        {/* Inline Non-Blocking Email Verification Bar (for fresh manual signups) */}
+        {auth.currentUser && !auth.currentUser.emailVerified && auth.currentUser.email && (
+          <div className="rounded-2xl p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 text-xs sm:text-sm text-amber-900 dark:text-amber-200">
+              <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="font-bold">
+                  {lang === 'en'
+                    ? `Please verify your email (${auth.currentUser.email}) to sync progress and redeem codes in the cloud.`
+                    : `يرجى تأكيد بريدك الإلكتروني (${auth.currentUser.email}) لحفظ تقدمك وتفعيل محفظة النقاط سحابياً.`}
+                </div>
+                {verifyFeedback && (
+                  <div className="text-[11px] font-semibold text-teal-700 dark:text-teal-300">
+                    {verifyFeedback}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={verifyBusy}
+                onClick={async () => {
+                  setVerifyBusy(true);
+                  setVerifyFeedback(null);
+                  try {
+                    await resendVerificationEmail();
+                    setVerifyFeedback(
+                      lang === 'en'
+                        ? 'Verification link sent! Check your inbox or spam folder.'
+                        : 'تم إرسال رابط التفعيل إلى بريدك! راجع صندوق الوارد أو الرسائل غير المرغوب فيها.'
+                    );
+                  } catch {
+                    setVerifyFeedback(
+                      lang === 'en'
+                        ? 'Could not send email right now. Wait a minute and try again.'
+                        : 'تعذر إرسال الرابط حالياً، انتظر دقيقة وحاول مرة أخرى.'
+                    );
+                  } finally {
+                    setVerifyBusy(false);
+                  }
+                }}
+                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-xs font-bold text-amber-800 dark:text-amber-200 cursor-pointer disabled:opacity-60"
+              >
+                {lang === 'en' ? 'Resend Link' : 'إعادة إرسال الرابط'}
+              </button>
+              <button
+                type="button"
+                disabled={verifyBusy}
+                onClick={async () => {
+                  setVerifyBusy(true);
+                  try {
+                    const refreshed = await reloadCurrentAuthUser();
+                    if (refreshed?.emailVerified) {
+                      onAuthUserRefreshed?.();
+                      setVerifyFeedback(
+                        lang === 'en' ? 'Verified! Syncing...' : 'تم التحقق! جاري المزامنة...'
+                      );
+                    } else {
+                      setVerifyFeedback(
+                        lang === 'en'
+                          ? 'Not verified yet — click the link inside your email first.'
+                          : 'لم يتم التأكيد بعد — افتح الرسالة في بريدك واضغط على رابط التفعيل أولاً.'
+                      );
+                    }
+                  } finally {
+                    setVerifyBusy(false);
+                  }
+                }}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${verifyBusy ? 'animate-spin' : ''}`} />
+                <span>{lang === 'en' ? 'I Verified — Refresh' : 'تم التأكيد — تحديث'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Desktop Segmented Navigation & Teacher Grade Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Desktop Module Tabs */}
@@ -627,6 +792,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <FlaskConical className="w-4 h-4" />
               <span>{lang === 'en' ? 'Study & Equations' : 'المعادلات والمذاكرة'}</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('notifications');
+                setActiveQuiz(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                activeTab === 'notifications'
+                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+              <span>{lang === 'en' ? 'Notifications' : 'الإشعارات'}</span>
+              {unreadNotifCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono tabular-nums leading-none">
+                  {unreadNotifCount}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* Mobile / Tablet Quick Scrollable Strip */}
@@ -637,6 +823,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               { id: 'files' as const, label: lang === 'en' ? 'Handouts' : `الملازم (${filteredAttachments.length})`, icon: FileText },
               { id: 'points' as const, label: lang === 'en' ? 'Points' : 'النقاط والأكواد', icon: Ticket },
               { id: 'study-hub' as const, label: lang === 'en' ? 'Equations' : 'المعادلات والمذاكرة', icon: FlaskConical },
+              { id: 'notifications' as const, label: lang === 'en' ? `Notices (${visibleNotifications.length})` : `الإشعارات (${visibleNotifications.length})`, icon: Bell },
             ].map((item) => {
               const IconComp = item.icon;
               const isSelected =
@@ -716,7 +903,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     setActiveTab('quizzes');
                   }
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Quizzes Passed' : 'الاختبارات المجتازة'}</span>
@@ -730,7 +917,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('files')}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'PDF Handouts' : 'المذكرات المتاحة'}</span>
@@ -747,7 +934,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   setActiveTab('points');
                   setActiveQuiz(null);
                 }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-right transition-colors flex flex-col justify-between gap-2 cursor-pointer"
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-start transition-colors flex flex-col justify-between gap-2 cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>{lang === 'en' ? 'Points Wallet' : 'رصيد النقاط والأكواد'}</span>
@@ -1340,6 +1527,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             </button>
                           ))}
                         </div>
+
+                        {nextTargetLecture && nextTargetLecture.id !== activeLecture?.id && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveLecture(nextTargetLecture)}
+                            className="w-full px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200/80 dark:border-teal-800/70 hover:border-teal-500 text-start transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-bold text-teal-700 dark:text-teal-300">
+                                {lang === 'en' ? 'Next Recommended Session' : 'الحصة التالية المقترحة'}
+                              </div>
+                              <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                {nextTargetLecture.title}
+                              </div>
+                            </div>
+                            <PlayCircle className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1551,7 +1756,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <StudyLabTab studentId={currentUser?.id} />
             )}
 
-            {/* 6. DEDICATED FULL-PAGE STUDENT PROFILE */}
+            {/* 6. NOTIFICATIONS & ANNOUNCEMENTS TAB */}
+            {activeTab === 'notifications' && !activeQuiz && (
+              <StudentNotificationsTab
+                notifications={visibleNotifications}
+                readNotificationIds={readNotificationIds}
+                gradeTitle={getGradeTitle(selectedGrade)}
+                onMarkAllRead={markAllNotificationsRead}
+                onMarkOneRead={markNotificationRead}
+                onNavigateTab={(tab) => {
+                  setActiveTab(tab);
+                  setActiveQuiz(null);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            )}
+
+            {/* 7. DEDICATED FULL-PAGE STUDENT PROFILE */}
             {activeTab === 'profile' && !activeQuiz && currentUser && (
               <StudentProfileModal
                 isOpen={true}

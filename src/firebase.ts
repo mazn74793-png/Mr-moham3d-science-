@@ -7,6 +7,16 @@ import {
   browserPopupRedirectResolver,
   setPersistence,
   GoogleAuthProvider,
+  EmailAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  linkWithCredential,
+  updatePassword,
+  updateProfile,
+  sendEmailVerification,
+  reauthenticateWithPopup,
+  reload,
+  User as FirebaseUser,
   Auth,
 } from 'firebase/auth';
 import {
@@ -31,6 +41,7 @@ import {
   RedeemCode,
   PointReward,
   PointsHistoryEntry,
+  PlatformNotification,
 } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 
@@ -90,6 +101,101 @@ function createSessionIsolatedAuth(): Auth {
 export const auth = createSessionIsolatedAuth();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export function hasPasswordLinked(fbUser?: FirebaseUser | null): boolean {
+  if (!fbUser) return false;
+  return Boolean(fbUser.providerData?.some((p) => p.providerId === 'password'));
+}
+
+export function isGoogleUserWithoutPassword(fbUser?: FirebaseUser | null): boolean {
+  if (!fbUser || !fbUser.email) return false;
+  const hasGoogle = Boolean(fbUser.providerData?.some((p) => p.providerId === 'google.com'));
+  return hasGoogle && !hasPasswordLinked(fbUser);
+}
+
+export async function signInManualWithEmail(
+  email: string,
+  password: string
+): Promise<FirebaseUser> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+  return cred.user;
+}
+
+export async function registerManualWithEmail(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<FirebaseUser> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+  if (displayName && displayName.trim()) {
+    try {
+      await updateProfile(cred.user, { displayName: displayName.trim().slice(0, 120) });
+    } catch {}
+  }
+  try {
+    await sendEmailVerification(cred.user);
+  } catch {}
+  return cred.user;
+}
+
+export async function linkPasswordToCurrentUser(newPassword: string): Promise<FirebaseUser> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error('NO_ACTIVE_AUTH_USER');
+  }
+  const cleanPass = newPassword.trim();
+  const alreadyLinked = hasPasswordLinked(user);
+
+  const performOperation = async (targetUser: FirebaseUser) => {
+    if (alreadyLinked) {
+      await updatePassword(targetUser, cleanPass);
+    } else {
+      const credential = EmailAuthProvider.credential(targetUser.email!, cleanPass);
+      await linkWithCredential(targetUser, credential);
+    }
+  };
+
+  try {
+    await performOperation(user);
+  } catch (err: any) {
+    if (err?.code === 'auth/requires-recent-login') {
+      const hasGoogle = Boolean(user.providerData?.some((p) => p.providerId === 'google.com'));
+      if (hasGoogle) {
+        const reauthRes = await reauthenticateWithPopup(user, googleProvider);
+        await performOperation(reauthRes.user);
+      } else {
+        throw err;
+      }
+    } else if (err?.code === 'auth/provider-already-linked') {
+      await updatePassword(user, cleanPass);
+    } else {
+      throw err;
+    }
+  }
+
+  try {
+    if (auth.currentUser) {
+      await reload(auth.currentUser);
+    }
+  } catch {}
+
+  return auth.currentUser || user;
+}
+
+export async function resendVerificationEmail(): Promise<void> {
+  if (!auth.currentUser) {
+    throw new Error('NO_ACTIVE_AUTH_USER');
+  }
+  await sendEmailVerification(auth.currentUser);
+}
+
+export async function reloadCurrentAuthUser(): Promise<FirebaseUser | null> {
+  if (!auth.currentUser) return null;
+  await reload(auth.currentUser);
+  return auth.currentUser;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -765,7 +871,7 @@ export async function deletePointRewardFromCloud(rewardId: string): Promise<void
 async function ensureStudentCloudDocExists(student: UserProfile): Promise<string> {
   const fbUser = auth.currentUser;
   if (!fbUser || !fbUser.emailVerified) {
-    throw new Error('يرجى تسجيل الدخول بحساب Google لتفعيل الأكواد واستخدام محفظة النقاط بأمان.');
+    throw new Error('يرجى تأكيد بريدك الإلكتروني أو تسجيل الدخول بحساب Google لتفعيل الأكواد واستخدام محفظة النقاط بأمان.');
   }
   const uid = fbUser.uid;
   const studentRef = doc(db, 'students', uid);
@@ -1059,3 +1165,65 @@ export async function claimRewardWithPoints(
     };
   });
 }
+
+// ==========================================
+// ADMIN ANNOUNCEMENTS & NOTIFICATIONS CRUD
+// ==========================================
+
+export async function saveNotificationToCloud(notif: PlatformNotification): Promise<void> {
+  const safeId = (notif.id || `notif_${Date.now()}`).replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const path = `notifications/${safeId}`;
+  try {
+    const ref = doc(db, 'notifications', safeId);
+    const validCategories = ['announcement', 'exam', 'lecture', 'urgent', 'congrats'];
+    const validTabs = ['lectures', 'quizzes', 'files', 'points', 'study-hub'];
+
+    const cleanGrade = (notif.grade || 'all').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'all';
+    const cleanCtaLabel = notif.ctaLabel?.trim() ? notif.ctaLabel.trim().slice(0, 80) : undefined;
+    const cleanCtaTab =
+      notif.ctaTab && validTabs.includes(notif.ctaTab) ? notif.ctaTab : undefined;
+
+    const clean = stripUndefinedDeep({
+      id: safeId,
+      title: (notif.title || 'إعلان جديد').trim().slice(0, 200),
+      message: (notif.message || '').trim().slice(0, 3000),
+      category: validCategories.includes(notif.category) ? notif.category : 'announcement',
+      grade: cleanGrade,
+      pinned: Boolean(notif.pinned),
+      active: Boolean(notif.active),
+      authorName: (notif.authorName || 'أ/ محمد مصطفى').trim().slice(0, 150),
+      dateAdded: (notif.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
+      ctaLabel: cleanCtaLabel,
+      ctaTab: cleanCtaTab,
+    });
+
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        ...clean,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        ...clean,
+        ctaLabel: cleanCtaLabel ? cleanCtaLabel : deleteField(),
+        ctaTab: cleanCtaTab ? cleanCtaTab : deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteNotificationFromCloud(id: string): Promise<void> {
+  const safeId = id.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const path = `notifications/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'notifications', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+

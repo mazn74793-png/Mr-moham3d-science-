@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   LogIn,
   UserPlus,
+  Mail,
   Phone,
   Lock,
   User,
@@ -12,11 +13,20 @@ import {
   ArrowRight,
   ShieldCheck,
   Atom,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
-import { auth, googleProvider, getStudentFromCloud, fetchAdminConfigIfAuthorized } from '../firebase';
+import {
+  auth,
+  googleProvider,
+  getStudentFromCloud,
+  fetchAdminConfigIfAuthorized,
+  signInManualWithEmail,
+  registerManualWithEmail,
+} from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
 interface AuthModalsProps {
@@ -48,6 +58,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   siteConfig,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const isEn = lang === 'en';
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
 
   useEffect(() => {
@@ -58,14 +69,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
   }, [loginOpen, registerOpen]);
 
-  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPass, setShowLoginPass] = useState(false);
 
   const resolvedGrades = getResolvedGrades(siteConfig);
 
   const [regName, setRegName] = useState('');
-  const [regIdentifier, setRegIdentifier] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [showRegPass, setShowRegPass] = useState(false);
   const [regGrade, setRegGrade] = useState<GradeLevel>(() => {
     const popular = resolvedGrades.find((g) => g.isPopular);
     return popular?.id || resolvedGrades[0]?.id || 'third';
@@ -73,11 +87,15 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [regParentPhone, setRegParentPhone] = useState('');
 
   const [authError, setAuthError] = useState<string | null>(null);
+  const [suggestGoogleLink, setSuggestGoogleLink] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [manualLoading, setManualLoading] = useState(false);
 
   const BackIcon = isRtl ? ArrowRight : ArrowLeft;
   const inputIconPos = isRtl ? 'right-3.5' : 'left-3.5';
   const inputPad = isRtl ? 'pl-4 pr-10' : 'pr-4 pl-10';
+  const inputPadBoth = isRtl ? 'pl-11 pr-10' : 'pr-11 pl-10';
+  const eyeBtnPos = isRtl ? 'left-3' : 'right-3';
 
   const checkIsAdminEmail = (emailStr?: string, cloudAllowedEmails?: string[]) => {
     if (!emailStr) return false;
@@ -132,8 +150,11 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     } catch {}
   };
 
-  const completeFirebaseUserLogin = async (fbUser: NonNullable<typeof auth.currentUser>) => {
-    const email = fbUser.email || '';
+  const completeFirebaseUserLogin = async (
+    fbUser: NonNullable<typeof auth.currentUser>,
+    overrideFields?: Partial<UserProfile>
+  ) => {
+    const email = fbUser.email || overrideFields?.email || '';
     const cleanEmail = email.toLowerCase().trim();
     const defaultGrade =
       resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
@@ -196,21 +217,27 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     const existingRecord = cloudRecord || getExistingStudentRecord(fbUser.uid, email);
     const isCompleted =
-      Boolean(existingRecord?.profileCompleted) || isProfileMarkedCompleted(fbUser.uid, email);
+      Boolean(overrideFields?.profileCompleted) ||
+      Boolean(existingRecord?.profileCompleted) ||
+      isProfileMarkedCompleted(fbUser.uid, email);
 
     onLoginSuccess({
       id: fbUser.uid,
       name:
+        overrideFields?.name ||
         existingRecord?.name ||
         fbUser.displayName ||
         email.split('@')[0] ||
-        (lang === 'en' ? 'Platform Student' : 'طالب منصة'),
+        (isEn ? 'Platform Student' : 'طالب منصة'),
       email,
       role: 'student',
-      grade: existingRecord?.grade || defaultGrade,
-      phone: existingRecord?.phone || '',
-      parentPhone: existingRecord?.parentPhone || '',
-      governorate: existingRecord?.governorate || (lang === 'en' ? 'Cairo' : 'القاهرة'),
+      grade: overrideFields?.grade || existingRecord?.grade || defaultGrade,
+      phone: overrideFields?.phone || existingRecord?.phone || '',
+      parentPhone: overrideFields?.parentPhone || existingRecord?.parentPhone || '',
+      governorate:
+        overrideFields?.governorate ||
+        existingRecord?.governorate ||
+        (isEn ? 'Cairo' : 'القاهرة'),
       avatarUrl: fbUser.photoURL || existingRecord?.avatarUrl || '',
       score: existingRecord?.score || 0,
       points: existingRecord?.points || 0,
@@ -228,12 +255,13 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   };
 
   const handleGoogleLogin = async () => {
-    if (googleLoading) return;
+    if (googleLoading || manualLoading) return;
     setAuthError(null);
+    setSuggestGoogleLink(false);
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setAuthError(
-        lang === 'en'
+        isEn
           ? 'No internet connection right now — please check your network and try again.'
           : 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.'
       );
@@ -269,32 +297,32 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         } catch {
           clearRedirectFlags();
           setAuthError(
-            lang === 'en'
+            isEn
               ? 'Browser blocked the sign-in window. Please allow popups and try again.'
               : 'حجب المتصفح نافذة تسجيل الدخول، يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.'
           );
         }
       } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         setAuthError(
-          lang === 'en'
+          isEn
             ? 'Google sign-in was closed before completion. Please try again.'
             : 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية، يرجى المحاولة مرة أخرى.'
         );
       } else if (code === 'auth/unauthorized-domain') {
         setAuthError(
-          lang === 'en'
+          isEn
             ? `Domain (${window.location.hostname}) is not authorized in Firebase Authentication settings.`
             : `النطاق (${window.location.hostname}) غير مضاف بعد في قائمة النطاقات المصرح بها لتسجيل الدخول.`
         );
       } else if (code === 'auth/network-request-failed') {
         setAuthError(
-          lang === 'en'
+          isEn
             ? 'Network error connecting to sign-in service. Check your connection and retry.'
             : 'تعذر الاتصال بخدمة تسجيل الدخول، تحقق من الشبكة ثم أعد المحاولة.'
         );
       } else {
         setAuthError(
-          lang === 'en'
+          isEn
             ? 'Could not complete Google Sign-In. Please try again.'
             : 'تعذر تسجيل الدخول بحساب Google، يرجى المحاولة مرة أخرى.'
         );
@@ -304,171 +332,203 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
   };
 
-  const handleRegularLogin = (e: React.FormEvent) => {
+  const handleManualLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (manualLoading || googleLoading) return;
     setAuthError(null);
+    setSuggestGoogleLink(false);
 
-    const cleanId = loginIdentifier.trim();
-    if (!cleanId) {
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
       setAuthError(
-        lang === 'en'
-          ? 'Please enter your phone number or email address.'
-          : 'يرجى كتابة رقم الهاتف أو البريد الإلكتروني.'
+        isEn
+          ? 'Please enter the valid email address linked to your account.'
+          : 'يرجى إدخال البريد الإلكتروني الصحيح المرتبط بحسابك للدخول اليدوي.'
       );
       return;
     }
 
-    if (checkIsAdminEmail(cleanId)) {
-      handleGoogleLogin();
+    if (!loginPassword || loginPassword.length < 6) {
+      setAuthError(
+        isEn
+          ? 'Please enter your password (at least 6 characters).'
+          : 'يرجى كتابة كلمة المرور (6 أحرف أو أرقام على الأقل).'
+      );
       return;
     }
 
-    if (!loginPassword.trim()) {
-      setAuthError(lang === 'en' ? 'Please enter your password.' : 'يرجى كتابة كلمة المرور.');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setAuthError(
+        isEn
+          ? 'No internet connection right now — please check your network and try again.'
+          : 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.'
+      );
       return;
     }
 
-    let existingList: UserProfile[] = [];
+    setManualLoading(true);
     try {
-      const savedStudentsRaw = sessionStorage.getItem('mm_registered_students');
-      if (savedStudentsRaw) {
-        existingList = JSON.parse(savedStudentsRaw);
-      }
-    } catch {
-      existingList = [];
-    }
-
-    const matched = existingList.find(
-      (s) =>
-        s.role !== 'teacher' &&
-        (s.email?.toLowerCase() === cleanId.toLowerCase() || s.phone === cleanId)
-    );
-
-    if (matched) {
-      const savedSecret = sessionStorage.getItem(`mm_local_pass_${matched.id}`);
-      if (!savedSecret || savedSecret !== loginPassword.trim()) {
+      const fbUser = await signInManualWithEmail(cleanEmail, loginPassword);
+      await completeFirebaseUserLogin(fbUser);
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (
+        code === 'auth/invalid-credential' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/user-not-found' ||
+        code === 'auth/invalid-email'
+      ) {
+        setSuggestGoogleLink(true);
         setAuthError(
-          lang === 'en'
-            ? 'Incorrect password. Please double check and try again.'
-            : 'كلمة المرور غير صحيحة، يرجى التحقق والمحاولة مرة أخرى.'
+          isEn
+            ? 'Incorrect email or password. If you signed in with Google before and have not created a manual password yet, sign in once with Google to set your manual password.'
+            : 'البريد الإلكتروني أو كلمة المرور غير صحيحة. لو كنت دخلت سابقاً بحساب Google ولم تقم بعمل كلمة مرور يدوية بعد، ادخل بـ Google مرة واحدة لتعيين كلمة مرورك اليدوية.'
         );
-        return;
+      } else if (code === 'auth/operation-not-allowed') {
+        setAuthError(
+          isEn
+            ? 'Email/Password sign-in is not yet enabled in Firebase Console (Authentication → Sign-in method → Email/Password).'
+            : 'تسجيل الدخول بالبريد وكلمة المرور غير مفعّل بعد في لوحة تحكم Firebase (Authentication → Sign-in method → Email/Password).'
+        );
+      } else if (code === 'auth/too-many-requests') {
+        setAuthError(
+          isEn
+            ? 'Too many failed attempts. Please wait a moment and try again.'
+            : 'تم حظر المحاولات مؤقتاً لكثرة الأخطاء. انتظر قليلاً ثم أعد المحاولة.'
+        );
+      } else if (code === 'auth/network-request-failed') {
+        setAuthError(
+          isEn
+            ? 'Network error while signing in. Check your connection and try again.'
+            : 'تعذر الاتصال بخدمة تسجيل الدخول، تحقق من الإنترنت وأعد المحاولة.'
+        );
+      } else {
+        setAuthError(
+          isEn
+            ? 'Could not sign in with these credentials. Please try again.'
+            : 'تعذر تسجيل الدخول بهذه البيانات، يرجى التحقق والمحاولة مرة أخرى.'
+        );
       }
-      onLoginSuccess(matched);
-      onClose();
-      return;
+    } finally {
+      setManualLoading(false);
     }
-
-    const defaultGrade =
-      resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third';
-
-    const newStudentUser: UserProfile = {
-      id: `usr_${Date.now()}`,
-      name: cleanId.includes('@')
-        ? cleanId.split('@')[0]
-        : lang === 'en'
-        ? `Student (${cleanId.slice(-4)})`
-        : `طالب منصة (${cleanId.slice(-4)})`,
-      email: cleanId.includes('@') ? cleanId : '',
-      phone: !cleanId.includes('@') ? cleanId : '',
-      parentPhone: '',
-      role: 'student',
-      grade: defaultGrade,
-      score: 0,
-      profileCompleted: false,
-      watchedLectureIds: [],
-      passedQuizIds: [],
-      quizScores: {},
-      joinedAt: new Date().toISOString().split('T')[0],
-    };
-
-    onLoginSuccess(newStudentUser);
-    onClose();
   };
 
-  const handleRegularRegister = (e: React.FormEvent) => {
+  const handleManualRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (manualLoading || googleLoading) return;
     setAuthError(null);
+    setSuggestGoogleLink(false);
 
     const nameClean = regName.trim();
-    const idClean = regIdentifier.trim();
+    const emailClean = regEmail.trim().toLowerCase();
+    const phoneClean = regPhone.trim();
     const parentPhoneClean = regParentPhone.trim();
     const passClean = regPassword.trim();
 
     if (!nameClean || nameClean.length < 3) {
       setAuthError(
-        lang === 'en'
+        isEn
           ? 'Please enter the student full name (at least 3 characters).'
           : 'يرجى كتابة الاسم الثلاثي للطالب بشكل صحيح.'
       );
       return;
     }
-    if (!idClean) {
+    if (!emailClean || !emailClean.includes('@') || !emailClean.includes('.')) {
       setAuthError(
-        lang === 'en'
-          ? 'Please enter student phone number or email.'
-          : 'يرجى كتابة رقم هاتف الطالب أو البريد الإلكتروني.'
+        isEn
+          ? 'Please enter a valid email address.'
+          : 'يرجى إدخال بريد إلكتروني صحيح.'
       );
       return;
     }
-    if (!parentPhoneClean) {
+    if (!phoneClean || phoneClean.length < 8) {
       setAuthError(
-        lang === 'en'
+        isEn
+          ? 'Please enter a valid student phone number.'
+          : 'يرجى إدخال رقم هاتف الطالب بشكل صحيح.'
+      );
+      return;
+    }
+    if (!parentPhoneClean || parentPhoneClean.length < 8) {
+      setAuthError(
+        isEn
           ? 'Please enter parent WhatsApp phone number for progress updates.'
           : 'يرجى كتابة رقم هاتف ولي الأمر للتواصل ومتابعة التقارير.'
       );
       return;
     }
-    if (!passClean || passClean.length < 4) {
+    if (!passClean || passClean.length < 6) {
       setAuthError(
-        lang === 'en'
-          ? 'Please create a password of at least 4 characters.'
-          : 'يرجى إدخال كلمة مرور مكونة من 4 أحرف أو أرقام على الأقل.'
+        isEn
+          ? 'Please create a password of at least 6 characters.'
+          : 'يرجى إدخال كلمة مرور مكونة من 6 أحرف أو أرقام على الأقل.'
       );
       return;
     }
 
-    if (checkIsAdminEmail(idClean)) {
-      handleGoogleLogin();
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setAuthError(
+        isEn
+          ? 'No internet connection right now — please check your network and try again.'
+          : 'لا يوجد اتصال بالإنترنت حالياً — تأكد من الشبكة ثم أعد المحاولة.'
+      );
       return;
     }
 
-    const createdUser: UserProfile = {
-      id: `usr_${Date.now()}`,
-      name: nameClean,
-      email: idClean.includes('@') ? idClean : '',
-      phone: !idClean.includes('@') ? idClean : '',
-      parentPhone: parentPhoneClean,
-      role: 'student',
-      grade: regGrade,
-      score: 0,
-      profileCompleted: true,
-      watchedLectureIds: [],
-      passedQuizIds: [],
-      quizScores: {},
-      joinedAt: new Date().toISOString().split('T')[0],
-    };
-
+    setManualLoading(true);
     try {
-      if (createdUser.email) {
-        localStorage.setItem(`mm_profile_done_${createdUser.email.toLowerCase().trim()}`, 'true');
-      }
-      if (createdUser.phone) {
-        localStorage.setItem(`mm_profile_done_${createdUser.phone.trim()}`, 'true');
-      }
-      localStorage.setItem(`mm_profile_done_${createdUser.id}`, 'true');
-      sessionStorage.setItem(`mm_local_pass_${createdUser.id}`, passClean);
+      const fbUser = await registerManualWithEmail(emailClean, passClean, nameClean);
 
-      const savedRaw = sessionStorage.getItem('mm_registered_students');
-      const list: UserProfile[] = savedRaw ? JSON.parse(savedRaw) : [];
-      const updated = [createdUser, ...list.filter((u) => u.id !== createdUser.id)];
-      sessionStorage.setItem('mm_registered_students', JSON.stringify(updated));
-    } catch (err) {
-      console.warn('Failed to save to session list:', err);
+      try {
+        localStorage.setItem(`mm_profile_done_${emailClean}`, 'true');
+        localStorage.setItem(`mm_profile_done_${fbUser.uid}`, 'true');
+        if (phoneClean) localStorage.setItem(`mm_profile_done_${phoneClean}`, 'true');
+      } catch {}
+
+      await completeFirebaseUserLogin(fbUser, {
+        name: nameClean,
+        email: emailClean,
+        phone: phoneClean,
+        parentPhone: parentPhoneClean,
+        grade: regGrade,
+        profileCompleted: true,
+      });
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/email-already-in-use') {
+        setSuggestGoogleLink(true);
+        setAuthError(
+          isEn
+            ? 'This email already has an account. Sign in with your password — or if you previously used Google without a manual password, continue with Google first to set a password.'
+            : 'هذا البريد مسجل بالفعل! يمكنك تسجيل الدخول بكلمة مرورك، أو إذا كنت دخلت به عبر Google من قبل فاضغط «المتابعة بحساب Google» لتعيين كلمة مرور يدوية له.'
+        );
+      } else if (code === 'auth/weak-password') {
+        setAuthError(
+          isEn
+            ? 'Password is too weak — please choose at least 6 characters or numbers.'
+            : 'كلمة المرور ضعيفة — اختر 6 أحرف أو أرقام على الأقل.'
+        );
+      } else if (code === 'auth/invalid-email') {
+        setAuthError(
+          isEn ? 'Please enter a valid email address.' : 'صيغة البريد الإلكتروني غير صحيحة.'
+        );
+      } else if (code === 'auth/operation-not-allowed') {
+        setAuthError(
+          isEn
+            ? 'Email/Password sign-up is not yet enabled in Firebase Console (Authentication → Sign-in method → Email/Password).'
+            : 'التسجيل بالبريد وكلمة المرور غير مفعّل بعد في لوحة تحكم Firebase (Authentication → Sign-in method → Email/Password).'
+        );
+      } else {
+        setAuthError(
+          isEn
+            ? 'Could not create account right now. Please try again.'
+            : 'تعذر إنشاء الحساب الآن، يرجى المحاولة مرة أخرى.'
+        );
+      }
+    } finally {
+      setManualLoading(false);
     }
-
-    onLoginSuccess(createdUser);
-    onClose();
   };
 
   if (!loginOpen && !registerOpen) return null;
@@ -487,7 +547,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
             className="inline-flex items-center gap-2 min-h-[42px] px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-500 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
           >
             <BackIcon className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span>{lang === 'en' ? 'Back to Home' : 'العودة للصفحة الرئيسية'}</span>
+            <span>{isEn ? 'Back to Home' : 'العودة للصفحة الرئيسية'}</span>
           </button>
         </div>
 
@@ -502,10 +562,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 </div>
                 <div>
                   <div className="text-sm font-extrabold">
-                    {lang === 'en' ? 'Mr. Mohamed Mostafa' : 'أ/ محمد مصطفى'}
+                    {isEn ? 'Mr. Mohamed Mostafa' : 'أ/ محمد مصطفى'}
                   </div>
                   <div className="text-[11px] text-teal-300/90 font-mono">
-                    {lang === 'en' ? 'Chemistry & Science · 2026' : 'خبير الكيمياء والعلوم · 2026'}
+                    {isEn ? 'Chemistry & Science · 2026' : 'خبير الكيمياء والعلوم · 2026'}
                   </div>
                 </div>
               </div>
@@ -513,28 +573,35 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <div className="space-y-2.5">
                 <h1 className="text-2xl sm:text-3xl font-extrabold leading-snug">
                   {activeTab === 'login'
-                    ? lang === 'en'
+                    ? isEn
                       ? 'Welcome back to your Chemistry workspace'
                       : 'أهلاً بعودتك لمنصتك التعليمية'
-                    : lang === 'en'
+                    : isEn
                     ? 'Create your student learning account'
                     : 'أنشئ حسابك الدراسي الآن'}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                  {lang === 'en'
-                    ? 'Access video lectures, interactive quizzes, PDF handouts, and your study equations bank in one organized place.'
-                    : 'تابع جميع محاضراتك، الامتحانات الإلكترونية، المذكرات وبنك المعادلات في مكان واحد منظم.'}
+                  {isEn
+                    ? 'Sign in with Google or manually with your email and password on any device — students and educators keep full cloud access.'
+                    : 'سجّل الدخول بحساب Google أو يدوياً بالبريد وكلمة المرور من أي جهاز — بنفس المزايا السحابية الكاملة للطلاب وللإدارة.'}
                 </p>
               </div>
             </div>
 
-            <div className="pt-6 border-t border-white/10 flex items-center gap-2.5 text-xs text-slate-300">
-              <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-              <span>
-                {lang === 'en'
-                  ? 'Isolated, verified session per device & instant cloud sync.'
-                  : 'جلسة دخول آمنة ومعزولة لكل جهاز مع مزامنة سحابية فورية.'}
-              </span>
+            <div className="pt-6 border-t border-white/10 space-y-2.5 text-xs text-slate-300">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+                <span>
+                  {isEn
+                    ? 'Isolated, verified session per browser tab & instant cloud sync.'
+                    : 'جلسة دخول حقيقية ومعزولة لكل متصفح مع مزامنة سحابية فورية.'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {isEn
+                  ? 'Google users can link a password to sign in manually anytime without Google.'
+                  : 'مستخدمو Google يمكنهم إضافة كلمة مرور للدخول يدوياً لاحقاً من أي جهاز دون جوجل.'}
+              </p>
             </div>
           </div>
 
@@ -546,6 +613,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 onClick={() => {
                   setActiveTab('login');
                   setAuthError(null);
+                  setSuggestGoogleLink(false);
                 }}
                 className={`flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeTab === 'login'
@@ -554,7 +622,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 }`}
               >
                 <LogIn className="w-4 h-4" />
-                <span>{lang === 'en' ? 'Sign In' : 'تسجيل الدخول'}</span>
+                <span>{isEn ? 'Sign In' : 'تسجيل الدخول'}</span>
               </button>
 
               <button
@@ -562,6 +630,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 onClick={() => {
                   setActiveTab('register');
                   setAuthError(null);
+                  setSuggestGoogleLink(false);
                 }}
                 className={`flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeTab === 'register'
@@ -570,21 +639,37 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 }`}
               >
                 <UserPlus className="w-4 h-4" />
-                <span>{lang === 'en' ? 'Create Account' : 'إنشاء حساب جديد'}</span>
+                <span>{isEn ? 'Create Account' : 'إنشاء حساب جديد'}</span>
               </button>
             </div>
 
             {authError && (
-              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2 leading-relaxed font-semibold">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{authError}</span>
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs space-y-2.5 leading-relaxed font-semibold">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{authError}</span>
+                </div>
+                {suggestGoogleLink && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      disabled={googleLoading}
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 text-slate-900 dark:text-white text-[11px] font-bold hover:border-teal-500 cursor-pointer"
+                    >
+                      {isEn
+                        ? 'Sign in with Google to set password'
+                        : 'الدخول بحساب Google وتعيين كلمة مرور'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
             <div>
               <button
                 type="button"
-                disabled={googleLoading}
+                disabled={googleLoading || manualLoading}
                 onClick={handleGoogleLogin}
                 className="w-full py-3.5 px-4 rounded-2xl border-2 border-teal-500/30 hover:border-teal-500 bg-white dark:bg-slate-800/90 hover:bg-teal-50/50 dark:hover:bg-slate-700/60 shadow-xs transition-all flex items-center justify-center gap-3 cursor-pointer group active:scale-[0.99] min-h-[48px] disabled:opacity-60"
               >
@@ -600,10 +685,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 )}
                 <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
                   {googleLoading
-                    ? lang === 'en'
+                    ? isEn
                       ? 'Signing in with Google...'
                       : 'جاري تسجيل الدخول بحساب Google...'
-                    : lang === 'en'
+                    : isEn
                     ? 'Continue with Google Account'
                     : 'المتابعة السريعة بحساب Google'}
                 </span>
@@ -613,70 +698,93 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
             <div className="relative flex py-1 items-center">
               <div className="grow border-t border-slate-200 dark:border-slate-800" />
               <span className="shrink mx-3 text-xs text-slate-400">
-                {lang === 'en' ? 'Or with phone & password' : 'أو بالحساب العادي'}
+                {isEn ? 'Or manually with Email & Password' : 'أو الدخول اليدوي بالبريد وكلمة المرور'}
               </span>
               <div className="grow border-t border-slate-200 dark:border-slate-800" />
             </div>
 
             {activeTab === 'login' && (
-              <form onSubmit={handleRegularLogin} className="space-y-4">
+              <form onSubmit={handleManualLogin} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {lang === 'en' ? 'Phone Number or Email' : 'رقم الهاتف أو البريد الإلكتروني'}
+                    {isEn ? 'Email Address' : 'البريد الإلكتروني'}
                   </label>
                   <div className="relative">
                     <input
-                      type="text"
-                      value={loginIdentifier}
-                      onChange={(e) => setLoginIdentifier(e.target.value)}
-                      placeholder={lang === 'en' ? '010XXXXXXXX or email@example.com' : '010XXXXXXXX أو البريد الإلكتروني'}
-                      className={`w-full py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                      type="email"
+                      dir="ltr"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className={`w-full py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-left focus:outline-hidden focus:border-teal-500 ${inputPad}`}
                       required
                     />
-                    <Phone className={`w-4 h-4 text-slate-400 absolute top-3.5 ${inputIconPos}`} />
+                    <Mail className={`w-4 h-4 text-slate-400 absolute top-3.5 ${inputIconPos}`} />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {lang === 'en' ? 'Password' : 'كلمة المرور'}
+                    {isEn ? 'Password' : 'كلمة المرور'}
                   </label>
                   <div className="relative">
                     <input
-                      type="password"
+                      type={showLoginPass ? 'text' : 'password'}
+                      dir="ltr"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="••••••••"
-                      className={`w-full py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                      className={`w-full py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-left focus:outline-hidden focus:border-teal-500 ${inputPadBoth}`}
                       required
                     />
                     <Lock className={`w-4 h-4 text-slate-400 absolute top-3.5 ${inputIconPos}`} />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPass((v) => !v)}
+                      aria-label={isEn ? 'Toggle password visibility' : 'إظهار/إخفاء كلمة المرور'}
+                      className={`absolute top-3 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer ${eyeBtnPos}`}
+                    >
+                      {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 shadow-md shadow-teal-900/15 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] min-h-[48px]"
+                  disabled={manualLoading || googleLoading}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 shadow-md shadow-teal-900/15 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] min-h-[48px] disabled:opacity-60"
                 >
-                  <span>{lang === 'en' ? 'Sign In' : 'تسجيل الدخول'}</span>
-                  <LogIn className="w-4 h-4" />
+                  {manualLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <LogIn className="w-4 h-4" />
+                  )}
+                  <span>
+                    {manualLoading
+                      ? isEn
+                        ? 'Signing In...'
+                        : 'جاري تسجيل الدخول...'
+                      : isEn
+                      ? 'Sign In Manually'
+                      : 'تسجيل الدخول اليدوي'}
+                  </span>
                 </button>
               </form>
             )}
 
             {activeTab === 'register' && (
-              <form onSubmit={handleRegularRegister} className="space-y-4">
+              <form onSubmit={handleManualRegister} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      {lang === 'en' ? 'Full Student Name' : 'الاسم ثلاثي للطالب'}
+                      {isEn ? 'Full Student Name' : 'الاسم ثلاثي للطالب'}
                     </label>
                     <div className="relative">
                       <input
                         type="text"
                         value={regName}
                         onChange={(e) => setRegName(e.target.value)}
-                        placeholder={lang === 'en' ? 'e.g. Ahmed Mohamed Ali' : 'مثال: أحمد محمد علي'}
+                        placeholder={isEn ? 'e.g. Ahmed Mohamed Ali' : 'مثال: أحمد محمد علي'}
                         className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
                         required
                       />
@@ -686,25 +794,26 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      {lang === 'en' ? 'Student Phone or Email' : 'رقم هاتف الطالب أو البريد'}
+                      {isEn ? 'Email Address' : 'البريد الإلكتروني'}
                     </label>
                     <div className="relative">
                       <input
-                        type="text"
-                        value={regIdentifier}
-                        onChange={(e) => setRegIdentifier(e.target.value)}
-                        placeholder="010XXXXXXXX"
-                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                        type="email"
+                        dir="ltr"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="student@example.com"
+                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-left focus:outline-hidden focus:border-teal-500 ${inputPad}`}
                         required
                       />
-                      <Phone className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
+                      <Mail className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {lang === 'en' ? 'Academic Grade' : 'الصف الدراسي'}
+                    {isEn ? 'Academic Grade' : 'الصف الدراسي'}
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {resolvedGrades.map((g) => (
@@ -720,7 +829,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                             : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                         }`}
                       >
-                        {lang === 'en' ? g.badgeEn || g.badgeAr : g.badgeAr}
+                        {isEn ? g.badgeEn || g.badgeAr : g.badgeAr}
                       </button>
                     ))}
                   </div>
@@ -729,49 +838,86 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      {lang === 'en' ? 'Parent Phone (WhatsApp)' : 'رقم هاتف ولي الأمر (واتساب)'}
+                      {isEn ? 'Student Phone' : 'رقم هاتف الطالب'}
                     </label>
                     <div className="relative">
                       <input
-                        type="text"
-                        value={regParentPhone}
-                        onChange={(e) => setRegParentPhone(e.target.value)}
-                        placeholder="01XXXXXXXXX"
-                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                        type="tel"
+                        dir="ltr"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        placeholder="010XXXXXXXX"
+                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-mono text-left focus:outline-hidden focus:border-teal-500 ${inputPad}`}
                         required
                       />
-                      <Phone className={`w-4 h-4 text-emerald-500 absolute top-3 ${inputIconPos}`} />
+                      <Phone className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
                     </div>
                   </div>
 
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      {lang === 'en' ? 'Password' : 'كلمة المرور'}
+                      {isEn ? 'Parent Phone (WhatsApp)' : 'رقم هاتف ولي الأمر (واتساب)'}
                     </label>
                     <div className="relative">
                       <input
-                        type="password"
-                        value={regPassword}
-                        onChange={(e) => setRegPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                        type="tel"
+                        dir="ltr"
+                        value={regParentPhone}
+                        onChange={(e) => setRegParentPhone(e.target.value)}
+                        placeholder="011XXXXXXXX"
+                        className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-mono text-left focus:outline-hidden focus:border-teal-500 ${inputPad}`}
                         required
                       />
-                      <Lock className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
+                      <Phone className={`w-4 h-4 text-emerald-500 absolute top-3 ${inputIconPos}`} />
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {isEn ? 'Password (min 6 characters)' : 'كلمة المرور (6 أحرف أو أرقام على الأقل)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showRegPass ? 'text' : 'password'}
+                      dir="ltr"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className={`w-full py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-left focus:outline-hidden focus:border-teal-500 ${inputPadBoth}`}
+                      required
+                    />
+                    <Lock className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPass((v) => !v)}
+                      aria-label={isEn ? 'Toggle password visibility' : 'إظهار/إخفاء كلمة المرور'}
+                      className={`absolute top-2.5 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer ${eyeBtnPos}`}
+                    >
+                      {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 shadow-md shadow-teal-900/15 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] min-h-[48px]"
+                  disabled={manualLoading || googleLoading}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 shadow-md shadow-teal-900/15 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] min-h-[48px] disabled:opacity-60"
                 >
+                  {manualLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                  )}
                   <span>
-                    {lang === 'en'
+                    {manualLoading
+                      ? isEn
+                        ? 'Creating Cloud Account...'
+                        : 'جاري إنشاء الحساب السحابي...'
+                      : isEn
                       ? 'Create Account & Start Learning'
                       : 'إنشاء الحساب وبدء التعلم'}
                   </span>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
                 </button>
               </form>
             )}

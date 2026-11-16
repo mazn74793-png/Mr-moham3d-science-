@@ -242,6 +242,22 @@ service cloud.firestore {
         data.dateAdded is string && data.dateAdded.size() <= 50;
     }
 
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'title', 'message', 'category', 'grade', 'pinned', 'active', 'authorName', 'dateAdded', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'title', 'message', 'category', 'grade', 'pinned', 'active', 'authorName', 'dateAdded', 'ctaLabel', 'ctaTab', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        data.message is string && data.message.size() > 0 && data.message.size() <= 3000 &&
+        data.category in ['announcement', 'exam', 'lecture', 'urgent', 'congrats'] &&
+        isValidGradeId(data.grade) &&
+        data.pinned is bool &&
+        data.active is bool &&
+        data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 150 &&
+        data.dateAdded is string && data.dateAdded.size() <= 50 &&
+        (!('ctaLabel' in data) || (data.ctaLabel is string && data.ctaLabel.size() <= 80)) &&
+        (!('ctaTab' in data) || data.ctaTab in ['lectures', 'quizzes', 'files', 'points', 'study-hub']);
+    }
+
     // ==========================================
     // COLLECTION MATCH BLOCKS
     // ==========================================
@@ -298,6 +314,15 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == rewardId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(rewardId);
+    }
+
+    // Platform Announcements & Notifications (readable by grade/all; created/edited/deleted only by verified admins)
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId);
+      allow list: if resource.data.grade != '';
+      allow create: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming()) && incoming().id == notificationId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(notificationId);
     }
 
     // Redeem Codes: Single code lookup allowed for signed-in students; full listing reserved for admins

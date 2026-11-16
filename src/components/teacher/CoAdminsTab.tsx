@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ShieldCheck, CheckCircle, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { SiteConfig } from '../../types/siteConfig';
+import { auth } from '../../firebase';
+import { LinkPasswordSetup } from '../LinkPasswordSetup';
 
 interface CoAdminsTabProps {
   siteForm: SiteConfig;
@@ -152,9 +154,11 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
           </button>
         </div>
         <p className="text-[11px] text-slate-500">
-          عند تسجيل دخول هذا البريد بحساب Google، يفتح له النظام لوحة التحكم بكامل الصلاحيات فوراً في خطوة واحدة بدون أي طلب تسجيل دخول إضافي.
+          عند تسجيل دخول هذا البريد بحساب Google أو يدوياً بكلمة المرور المرتبطة به، يفتح له النظام لوحة التحكم بكامل الصلاحيات والتعديل الحقيقي فوراً.
         </p>
       </form>
+
+      <LinkPasswordSetup firebaseUser={auth.currentUser} isAdminAccount variant="inline" />
 
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white font-kufi">

@@ -212,6 +212,27 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "title", "description", "pointsCost", "category", "grade", "active", "dateAdded", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Admin-published announcement or alert displayed elegantly inside student portals with optional target grade and destination tab.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 3000 },
+        "category": { "type": "string", "enum": ["announcement", "exam", "lecture", "urgent", "congrats"] },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "pinned": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "authorName": { "type": "string", "maxLength": 150 },
+        "dateAdded": { "type": "string", "maxLength": 50 },
+        "ctaLabel": { "type": "string", "maxLength": 80 },
+        "ctaTab": { "type": "string", "enum": ["lectures", "quizzes", "files", "points", "study-hub"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "message", "category", "grade", "pinned", "active", "authorName", "dateAdded", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -250,6 +271,10 @@
     "/rewards/{rewardId}": {
       "schema": { "$ref": "#/entities/PointReward" },
       "description": "Admin-defined rewards & perks store redeemable with student points."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Platform announcements and notifications managed by verified admins."
     }
   }
 }

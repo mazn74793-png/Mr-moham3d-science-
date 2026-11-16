@@ -20,6 +20,8 @@ import { GradeLevel, UserProfile, CloudinaryConfig } from '../../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../../types/siteConfig';
 import { uploadMediaFile } from '../../utils/uploader';
 import { useLanguage } from '../../context/LanguageContext';
+import { auth } from '../../firebase';
+import { LinkPasswordSetup } from '../LinkPasswordSetup';
 
 export type StudentCardThemeId = 'teal' | 'amber' | 'indigo' | 'emerald';
 export type StudentAvatarIconId = 'atom' | 'flask' | 'crown' | 'award' | 'sparkles' | 'flame';
@@ -453,11 +455,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
           </div>
         </div>
 
-        {/* RIGHT: Airy Minimal Edit Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs space-y-6"
-        >
+        {/* RIGHT: Airy Minimal Edit Form + Manual Password Security Card */}
+        <div className="lg:col-span-7 space-y-6">
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs space-y-6"
+          >
           {errorMsg && (
             <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-xs font-bold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -680,7 +683,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
               <span>{lang === 'en' ? 'Save Changes' : 'حفظ التعديلات'}</span>
             </button>
           </div>
-        </form>
+          </form>
+
+          {auth.currentUser && (
+            <LinkPasswordSetup
+              firebaseUser={auth.currentUser}
+              variant="inline"
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -391,6 +391,233 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
           </div>
         </div>
 
+        {/* INLINE EDIT STUDENT PANEL */}
+        {editingStudent && (
+          <div className="w-full bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border-2 border-teal-500/40 space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-base font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-teal-600" />
+                <span>تعديل بيانات الطالب</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingStudent(null)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedStudent} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    اسم الطالب
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudent.name}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, name: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الصف الدراسي
+                  </label>
+                  <select
+                    value={editingStudent.grade}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, grade: e.target.value as GradeLevel })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
+                  >
+                    {resolvedGrades.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.badgeAr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    هاتف الطالب
+                  </label>
+                  <input
+                    type="text"
+                    value={editingStudent.phone || ''}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, phone: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    هاتف ولي الأمر (واتساب)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingStudent.parentPhone || ''}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, parentPhone: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
+                      رصيد نقاط الطالب (Points)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {[25, 50, 100].map((bonus) => (
+                        <button
+                          key={bonus}
+                          type="button"
+                          onClick={() =>
+                            setEditingStudent({
+                              ...editingStudent,
+                              points: Math.max(0, (Number(editingStudent.points) || 0) + bonus),
+                            })
+                          }
+                          className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-mono font-bold cursor-pointer"
+                        >
+                          +{bonus}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000000}
+                    value={editingStudent.points ?? 0}
+                    onChange={(e) =>
+                      setEditingStudent({
+                        ...editingStudent,
+                        points: Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                    className="w-full p-2.5 rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setEditingStudent(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-xs cursor-pointer"
+                >
+                  حفظ التعديلات
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* INLINE ADD STUDENT PANEL */}
+        {showAddStudentModal && (
+          <div className="w-full bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border-2 border-teal-500/40 space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-base font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-teal-600" />
+                <span>إضافة طالب جديد يدوياً</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddStudentModal(false)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStudent} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    اسم الطالب ثلاثي *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: يوسف أحمد محمود"
+                    value={newStdName}
+                    onChange={(e) => setNewStdName(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الصف الدراسي
+                  </label>
+                  <select
+                    value={newStdGrade}
+                    onChange={(e) => setNewStdGrade(e.target.value as GradeLevel)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
+                  >
+                    {resolvedGrades.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.badgeAr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    هاتف الطالب
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="010XXXXXXXX"
+                    value={newStdPhone}
+                    onChange={(e) => setNewStdPhone(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    هاتف ولي الأمر (واتساب)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="01XXXXXXXXX"
+                    value={newStdParentPhone}
+                    onChange={(e) => setNewStdParentPhone(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStudentModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-xs cursor-pointer"
+                >
+                  إضافة الطالب
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
@@ -602,228 +829,6 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
         </div>
 
       </div>
-
-      {/* EDIT STUDENT MODAL */}
-      {editingStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in">
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold font-kufi text-slate-900 dark:text-white">
-                تعديل بيانات الطالب
-              </h3>
-              <button onClick={() => setEditingStudent(null)} className="p-1 text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditedStudent} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  اسم الطالب
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingStudent.name}
-                  onChange={(e) => setEditingStudent({ ...editingStudent, name: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  الصف الدراسي
-                </label>
-                <select
-                  value={editingStudent.grade}
-                  onChange={(e) => setEditingStudent({ ...editingStudent, grade: e.target.value as GradeLevel })}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
-                >
-                  {resolvedGrades.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.badgeAr}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  هاتف الطالب
-                </label>
-                <input
-                  type="text"
-                  value={editingStudent.phone || ''}
-                  onChange={(e) => setEditingStudent({ ...editingStudent, phone: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  هاتف ولي الأمر (واتساب)
-                </label>
-                <input
-                  type="text"
-                  value={editingStudent.parentPhone || ''}
-                  onChange={(e) => setEditingStudent({ ...editingStudent, parentPhone: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
-                    رصيد نقاط الطالب (Points)
-                  </label>
-                  <div className="flex items-center gap-1">
-                    {[25, 50, 100].map((bonus) => (
-                      <button
-                        key={bonus}
-                        type="button"
-                        onClick={() =>
-                          setEditingStudent({
-                            ...editingStudent,
-                            points: Math.max(0, (Number(editingStudent.points) || 0) + bonus),
-                          })
-                        }
-                        className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-mono font-bold cursor-pointer"
-                      >
-                        +{bonus}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  max={10000000}
-                  value={editingStudent.points ?? 0}
-                  onChange={(e) =>
-                    setEditingStudent({
-                      ...editingStudent,
-                      points: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  className="w-full p-2.5 rounded-xl border border-amber-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono font-bold"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingStudent(null)}
-                  className="px-4 py-2 rounded-xl text-xs text-slate-600 hover:bg-slate-100"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-xs"
-                >
-                  حفظ التعديلات
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-      )}
-
-      {/* ADD STUDENT MODAL */}
-      {showAddStudentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in">
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold font-kufi text-slate-900 dark:text-white flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-teal-600" />
-                <span>إضافة طالب جديد يدوياً</span>
-              </h3>
-              <button onClick={() => setShowAddStudentModal(false)} className="p-1 text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateStudent} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  اسم الطالب ثلاثي *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: يوسف أحمد محمود"
-                  value={newStdName}
-                  onChange={(e) => setNewStdName(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  الصف الدراسي
-                </label>
-                <select
-                  value={newStdGrade}
-                  onChange={(e) => setNewStdGrade(e.target.value as GradeLevel)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden"
-                >
-                  {resolvedGrades.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.badgeAr}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  هاتف الطالب
-                </label>
-                <input
-                  type="text"
-                  placeholder="010XXXXXXXX"
-                  value={newStdPhone}
-                  onChange={(e) => setNewStdPhone(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  هاتف ولي الأمر (واتساب)
-                </label>
-                <input
-                  type="text"
-                  placeholder="01XXXXXXXXX"
-                  value={newStdParentPhone}
-                  onChange={(e) => setNewStdParentPhone(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs focus:outline-hidden font-mono"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddStudentModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs text-slate-600 hover:bg-slate-100"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-xs"
-                >
-                  إضافة الطالب
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

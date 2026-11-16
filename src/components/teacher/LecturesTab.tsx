@@ -730,6 +730,332 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         </div>
       )}
 
+      {previewModal && (
+        <MediaPreviewModal
+          isOpen={Boolean(previewModal)}
+          onClose={() => setPreviewModal(null)}
+          url={previewModal.url || ''}
+          title={previewModal.title}
+          kind={previewModal.kind}
+        />
+      )}
+
+      {/* Inline Edit Lecture Panel */}
+      {editingLecture && (
+        <div className="w-full bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 sm:p-6 border-2 border-teal-500/40 space-y-5 animate-fade-in">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
+                <Edit3 className="w-4 h-4" />
+              </div>
+              <h3 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white">
+                تعديل تفاصيل المحاضرة
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditingLecture(null)}
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveEditedLecture} className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                عنوان المحاضرة *
+              </label>
+              <input
+                type="text"
+                required
+                value={editingLecture.title}
+                onChange={(e) => setEditingLecture({ ...editingLecture, title: e.target.value })}
+                className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  السنة الدراسية
+                </label>
+                <select
+                  value={editingLecture.grade}
+                  onChange={(e) => {
+                    const g = e.target.value as GradeLevel;
+                    setEditingLecture({
+                      ...editingLecture,
+                      grade: g,
+                      gradeLabel: getGradeDisplayName(g, siteForm, 'ar'),
+                    });
+                  }}
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                >
+                  {resolvedGrades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.badgeAr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  اسم الباب أو الفصل
+                </label>
+                <input
+                  type="text"
+                  value={editingLecture.chapter}
+                  onChange={(e) =>
+                    setEditingLecture({ ...editingLecture, chapter: e.target.value })
+                  }
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  مدة المحاضرة
+                </label>
+                <input
+                  type="text"
+                  value={editingLecture.duration}
+                  onChange={(e) =>
+                    setEditingLecture({ ...editingLecture, duration: e.target.value })
+                  }
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  ترتيب الحصة في المنصة
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={editingLecture.sessionOrder || 1}
+                  onChange={(e) =>
+                    setEditingLecture({
+                      ...editingLecture,
+                      sessionOrder: Number(e.target.value),
+                    })
+                  }
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  رابط الفيديو * أو رفع فيديو بديل
+                </label>
+                <label className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer">
+                  {uploadingEditVideo ? `جاري رفع الفيديو ${editVideoProgress}%` : 'رفع فيديو بديل من جهازك'}
+                  <input
+                    type="file"
+                    accept="video/*"
+                    disabled={uploadingEditVideo}
+                    onChange={handleEditVideoUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <input
+                type="text"
+                required
+                value={editingLecture.videoUrl}
+                onChange={(e) =>
+                  setEditingLecture({ ...editingLecture, videoUrl: e.target.value })
+                }
+                className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono dir-ltr"
+              />
+            </div>
+
+            {editingLecture.videoUrl && (
+              <InlineMediaPreview
+                url={editingLecture.videoUrl}
+                title={editingLecture.title}
+                kind="video"
+                compact
+              />
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    صورة غلاف المحاضرة
+                  </span>
+                  <label className="px-3 py-1 rounded-lg bg-teal-600 text-white text-[11px] font-bold cursor-pointer">
+                    {uploadingEditThumb ? `جاري الرفع ${editThumbProgress}%` : 'تغيير الغلاف'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadingEditThumb}
+                      onChange={handleEditThumbUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <InlineMediaPreview
+                  url={editingLecture.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'}
+                  title="صورة الغلاف"
+                  kind="image"
+                  compact
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الكويز الإجباري المرتبط
+                  </label>
+                  <select
+                    value={editingLecture.quizId || ''}
+                    onChange={(e) =>
+                      setEditingLecture({
+                        ...editingLecture,
+                        quizId: e.target.value || undefined,
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                  >
+                    <option value="">بدون كويز إجباري</option>
+                    {quizzes.map((q) => (
+                      <option key={q.id} value={q.id}>
+                        {q.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
+                    تكلفة الفتح بالنقاط (0 = بدون نقاط)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    value={editingLecture.pointsCost ?? 0}
+                    onChange={(e) =>
+                      setEditingLecture({
+                        ...editingLecture,
+                        pointsCost: Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="editIsFree"
+                    checked={editingLecture.isFreePreview || false}
+                    onChange={(e) =>
+                      setEditingLecture({ ...editingLecture, isFreePreview: e.target.checked })
+                    }
+                    className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                  />
+                  <label
+                    htmlFor="editIsFree"
+                    className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    محاضرة تجريبية مجانية لجميع الزوار
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  مذكرة PDF المرفقة بالمحاضرة (اختياري)
+                </span>
+                <label className="px-3 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 text-white text-[11px] font-bold cursor-pointer">
+                  {uploadingEditPdf ? `جاري الرفع ${editPdfProgress}%` : 'رفع PDF بديل'}
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,image/*"
+                    disabled={uploadingEditPdf}
+                    onChange={handleEditPdfUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500">عنوان المذكرة المرفقة</label>
+                  <input
+                    type="text"
+                    value={editingLecture.pdfTitle || ''}
+                    onChange={(e) =>
+                      setEditingLecture({
+                        ...editingLecture,
+                        pdfTitle: e.target.value || undefined,
+                      })
+                    }
+                    placeholder="مثال: ملزمة الحصة الأولى.pdf"
+                    className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500">رابط ملف PDF</label>
+                  <input
+                    type="text"
+                    value={editingLecture.pdfUrl || ''}
+                    onChange={(e) =>
+                      setEditingLecture({
+                        ...editingLecture,
+                        pdfUrl: e.target.value || undefined,
+                      })
+                    }
+                    dir="ltr"
+                    placeholder="https://..."
+                    className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 mt-1 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                وصف المحاضرة
+              </label>
+              <textarea
+                rows={2}
+                value={editingLecture.description}
+                onChange={(e) =>
+                  setEditingLecture({ ...editingLecture, description: e.target.value })
+                }
+                className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setEditingLecture(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit || uploadingEditThumb || uploadingEditVideo || uploadingEditPdf}
+                className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {savingEdit ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
         {lectures.map((lec) => (
           <div
@@ -863,327 +1189,6 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         )}
       </div>
 
-      {/* Edit Lecture Modal */}
-      {editingLecture && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
-                  <Edit3 className="w-4 h-4" />
-                </div>
-                <h3 className="text-lg font-bold font-kufi text-slate-900 dark:text-white">
-                  تعديل تفاصيل المحاضرة
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingLecture(null)}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditedLecture} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  عنوان المحاضرة *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingLecture.title}
-                  onChange={(e) => setEditingLecture({ ...editingLecture, title: e.target.value })}
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    السنة الدراسية
-                  </label>
-                  <select
-                    value={editingLecture.grade}
-                    onChange={(e) => {
-                      const g = e.target.value as GradeLevel;
-                      setEditingLecture({
-                        ...editingLecture,
-                        grade: g,
-                        gradeLabel: getGradeDisplayName(g, siteForm, 'ar'),
-                      });
-                    }}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  >
-                    {resolvedGrades.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.badgeAr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    اسم الباب أو الفصل
-                  </label>
-                  <input
-                    type="text"
-                    value={editingLecture.chapter}
-                    onChange={(e) =>
-                      setEditingLecture({ ...editingLecture, chapter: e.target.value })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    مدة المحاضرة
-                  </label>
-                  <input
-                    type="text"
-                    value={editingLecture.duration}
-                    onChange={(e) =>
-                      setEditingLecture({ ...editingLecture, duration: e.target.value })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    ترتيب الحصة في المنصة
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={editingLecture.sessionOrder || 1}
-                    onChange={(e) =>
-                      setEditingLecture({
-                        ...editingLecture,
-                        sessionOrder: Number(e.target.value),
-                      })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    رابط الفيديو * أو رفع فيديو بديل
-                  </label>
-                  <label className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer">
-                    {uploadingEditVideo ? `جاري رفع الفيديو ${editVideoProgress}%` : 'رفع فيديو بديل من جهازك'}
-                    <input
-                      type="file"
-                      accept="video/*"
-                      disabled={uploadingEditVideo}
-                      onChange={handleEditVideoUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={editingLecture.videoUrl}
-                  onChange={(e) =>
-                    setEditingLecture({ ...editingLecture, videoUrl: e.target.value })
-                  }
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono dir-ltr"
-                />
-              </div>
-
-              {editingLecture.videoUrl && (
-                <InlineMediaPreview
-                  url={editingLecture.videoUrl}
-                  title={editingLecture.title}
-                  kind="video"
-                  compact
-                />
-              )}
-
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    صورة غلاف المحاضرة
-                  </span>
-                  <label className="px-3 py-1 rounded-lg bg-teal-600 text-white text-[11px] font-bold cursor-pointer">
-                    {uploadingEditThumb ? `جاري الرفع ${editThumbProgress}%` : 'تغيير الغلاف'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      disabled={uploadingEditThumb}
-                      onChange={handleEditThumbUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-                <InlineMediaPreview
-                  url={editingLecture.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'}
-                  title="صورة الغلاف"
-                  kind="image"
-                  compact
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  الكويز الإجباري المرتبط
-                </label>
-                <select
-                  value={editingLecture.quizId || ''}
-                  onChange={(e) =>
-                    setEditingLecture({
-                      ...editingLecture,
-                      quizId: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                >
-                  <option value="">بدون كويز إجباري</option>
-                  {quizzes.map((q) => (
-                    <option key={q.id} value={q.id}>
-                      {q.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
-                  تكلفة الفتح بالنقاط (0 = بدون نقاط)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100000}
-                  value={editingLecture.pointsCost ?? 0}
-                  onChange={(e) =>
-                    setEditingLecture({
-                      ...editingLecture,
-                      pointsCost: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="editIsFree"
-                  checked={editingLecture.isFreePreview || false}
-                  onChange={(e) =>
-                    setEditingLecture({ ...editingLecture, isFreePreview: e.target.checked })
-                  }
-                  className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
-                />
-                <label
-                  htmlFor="editIsFree"
-                  className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
-                >
-                  محاضرة تجريبية مجانية لجميع الزوار
-                </label>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    مذكرة PDF المرفقة بالمحاضرة (اختياري)
-                  </span>
-                  <label className="px-3 py-1 rounded-lg bg-slate-800 dark:bg-slate-700 text-white text-[11px] font-bold cursor-pointer">
-                    {uploadingEditPdf ? `جاري الرفع ${editPdfProgress}%` : 'رفع PDF بديل'}
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,image/*"
-                      disabled={uploadingEditPdf}
-                      onChange={handleEditPdfUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-500">عنوان المذكرة المرفقة</label>
-                    <input
-                      type="text"
-                      value={editingLecture.pdfTitle || ''}
-                      onChange={(e) =>
-                        setEditingLecture({
-                          ...editingLecture,
-                          pdfTitle: e.target.value || undefined,
-                        })
-                      }
-                      placeholder="مثال: ملزمة الحصة الأولى.pdf"
-                      className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-500">رابط ملف PDF</label>
-                    <input
-                      type="text"
-                      value={editingLecture.pdfUrl || ''}
-                      onChange={(e) =>
-                        setEditingLecture({
-                          ...editingLecture,
-                          pdfUrl: e.target.value || undefined,
-                        })
-                      }
-                      dir="ltr"
-                      placeholder="https://..."
-                      className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  وصف المحاضرة
-                </label>
-                <textarea
-                  rows={3}
-                  value={editingLecture.description}
-                  onChange={(e) =>
-                    setEditingLecture({ ...editingLecture, description: e.target.value })
-                  }
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingLecture(null)}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit || uploadingEditThumb || uploadingEditVideo || uploadingEditPdf}
-                  className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  {savingEdit ? 'جاري الحفظ...' : 'حفظ التعديلات'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <MediaPreviewModal
-        isOpen={Boolean(previewModal)}
-        onClose={() => setPreviewModal(null)}
-        url={previewModal?.url || ''}
-        title={previewModal?.title}
-        kind={previewModal?.kind}
-      />
     </div>
   );
 };

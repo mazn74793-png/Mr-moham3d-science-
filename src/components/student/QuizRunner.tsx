@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Award,
   Clock,
@@ -54,19 +54,70 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   // Track which question IDs the student has opened/visited in the current attempt
   const [visitedIds, setVisitedIds] = useState<Record<string, boolean>>({});
   const [mobilePaletteOpen, setMobilePaletteOpen] = useState(true);
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'mistakes'>('all');
+  const [secondsLeft, setSecondsLeft] = useState<number>(0);
+  const autoSubmittedQuizIdRef = useRef<string | null>(null);
 
   const PrevChevron = isEn ? ChevronLeft : ChevronRight;
   const NextChevron = isEn ? ChevronRight : ChevronLeft;
 
-  // Reset visited tracking when starting a new quiz or restarting
+  // Reset visited tracking & countdown timer when starting a new quiz
   useEffect(() => {
     if (!activeQuiz) {
       setVisitedIds({});
+      setReviewFilter('all');
+      setSecondsLeft(0);
+      autoSubmittedQuizIdRef.current = null;
       return;
     }
     const firstQ = activeQuiz.questions[0];
     setVisitedIds(firstQ ? { [firstQ.id]: true } : {});
+    setReviewFilter('all');
+    const mins = Math.max(1, Number(activeQuiz.durationMinutes) || 15);
+    setSecondsLeft(mins * 60);
+    autoSubmittedQuizIdRef.current = null;
   }, [activeQuiz?.id]);
+
+  // Live countdown timer during active unsubmitted attempt
+  useEffect(() => {
+    if (!activeQuiz || quizSubmitted) return;
+    const id = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          if (autoSubmittedQuizIdRef.current !== activeQuiz.id) {
+            autoSubmittedQuizIdRef.current = activeQuiz.id;
+            window.setTimeout(() => onSubmitQuiz(), 0);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [activeQuiz, quizSubmitted, onSubmitQuiz]);
+
+  // Arrow-key question navigation for faster exam flow
+  useEffect(() => {
+    if (!activeQuiz) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'ArrowRight') {
+        const delta = isEn ? 1 : -1;
+        onQuestionIndexChange(
+          Math.max(0, Math.min(activeQuiz.questions.length - 1, currentQuestionIndex + delta))
+        );
+      } else if (e.key === 'ArrowLeft') {
+        const delta = isEn ? -1 : 1;
+        onQuestionIndexChange(
+          Math.max(0, Math.min(activeQuiz.questions.length - 1, currentQuestionIndex + delta))
+        );
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeQuiz, currentQuestionIndex, isEn, onQuestionIndexChange]);
 
   // Mark currently viewed question as opened/visited
   useEffect(() => {
@@ -200,6 +251,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   });
 
   const remainingUnanswered = activeQuiz.questions.length - answeredCount;
+  const mistakesCount = quizSubmitted
+    ? activeQuiz.questions.filter((q) => selectedAnswers[q.id] !== q.correctAnswer).length
+    : 0;
+  const timerMinutes = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+  const timerSeconds = String(secondsLeft % 60).padStart(2, '0');
+  const isTimerLow = !quizSubmitted && secondsLeft > 0 && secondsLeft <= 120;
 
   const jumpToQuestion = (idx: number) => {
     setEnlargedQuizImage(null);
@@ -230,16 +287,32 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setEnlargedQuizImage(null);
-              onExitQuiz();
-            }}
-            className="min-h-[40px] px-3.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0"
-          >
-            {isEn ? 'Exit' : 'خروج'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!quizSubmitted && (
+              <div
+                dir="ltr"
+                className={`min-h-[40px] px-3 rounded-xl border text-xs font-mono font-extrabold tabular-nums flex items-center gap-1.5 ${
+                  isTimerLow
+                    ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                <Clock className={`w-3.5 h-3.5 ${isTimerLow ? 'text-rose-500' : 'text-teal-600 dark:text-teal-400'}`} />
+                <span>{timerMinutes}:{timerSeconds}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setEnlargedQuizImage(null);
+                onExitQuiz();
+              }}
+              className="min-h-[40px] px-3.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0"
+            >
+              {isEn ? 'Exit' : 'خروج'}
+            </button>
+          </div>
         </div>
 
         <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -303,6 +376,40 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </div>
           </div>
 
+          {/* Post-Submission Mistakes Filter */}
+          {quizSubmitted && mistakesCount > 0 && (
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => setReviewFilter('all')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  reviewFilter === 'all'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {isEn ? `All (${activeQuiz.questions.length})` : `الكل (${activeQuiz.questions.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewFilter('mistakes');
+                  const firstWrongIdx = activeQuiz.questions.findIndex(
+                    (q) => selectedAnswers[q.id] !== q.correctAnswer
+                  );
+                  if (firstWrongIdx >= 0) jumpToQuestion(firstWrongIdx);
+                }}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  reviewFilter === 'mistakes'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {isEn ? `Mistakes (${mistakesCount})` : `الأخطاء (${mistakesCount})`}
+              </button>
+            </div>
+          )}
+
           {/* Small Numbered Question Squares */}
           <div
             className={`${
@@ -311,6 +418,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           >
             <div className="flex flex-wrap gap-1.5">
               {activeQuiz.questions.map((q, idx) => {
+                if (
+                  quizSubmitted &&
+                  reviewFilter === 'mistakes' &&
+                  selectedAnswers[q.id] === q.correctAnswer
+                ) {
+                  return null;
+                }
                 const isCurrent = idx === currentQuestionIndex;
                 const isAnswered = selectedAnswers[q.id] !== undefined;
                 const isOpened = Boolean(visitedIds[q.id] || isCurrent);

@@ -17,11 +17,14 @@ import {
   GradeLevel,
   RedeemCode,
   PointReward,
+  PlatformNotification,
 } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
+import { LinkPasswordSetup } from './components/LinkPasswordSetup';
 import {
   auth,
   db,
+  isGoogleUserWithoutPassword,
   savePublicSiteConfigToCloud,
   saveAdminConfigToCloud,
   saveLectureToCloud,
@@ -40,6 +43,8 @@ import {
   deleteRedeemCodeFromCloud,
   savePointRewardToCloud,
   deletePointRewardFromCloud,
+  saveNotificationToCloud,
+  deleteNotificationFromCloud,
   redeemCodeForStudent,
   unlockLectureWithPoints,
   unlockAttachmentWithPoints,
@@ -58,11 +63,6 @@ const AuthModals = lazy(() =>
 );
 const StudentOnboardingModal = lazy(() =>
   import('./components/StudentOnboardingModal').then((m) => ({ default: m.StudentOnboardingModal }))
-);
-const SecretAdminCustomizerModal = lazy(() =>
-  import('./components/SecretAdminCustomizerModal').then((m) => ({
-    default: m.SecretAdminCustomizerModal,
-  }))
 );
 
 function sanitizeProfileImageUrl(url?: string): string {
@@ -156,7 +156,7 @@ export default function App() {
 
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register'>('login');
-  const [secretAdminOpen, setSecretAdminOpen] = useState(false);
+  const [teacherInitialTab, setTeacherInitialTab] = useState<'overview' | 'site-customizer'>('overview');
 
   const [lectures, setLectures] = useState<Lecture[]>(() => {
     const saved = localStorage.getItem('mm_lectures');
@@ -196,6 +196,24 @@ export default function App() {
   const [rewards, setRewards] = useState<PointReward[]>(() => {
     const saved = localStorage.getItem('mm_rewards');
     try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [notifications, setNotifications] = useState<PlatformNotification[]>(() => {
+    const saved = localStorage.getItem('mm_notifications');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [passwordPromptDismissedUids, setPasswordPromptDismissedUids] = useState<string[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('mm_skip_pw_uids');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -672,12 +690,29 @@ export default function App() {
       }
     );
 
+    const notificationsQuery = query(collection(db, 'notifications'), where('grade', '!=', ''));
+    const unsubNotifications = onSnapshot(
+      notificationsQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as PlatformNotification);
+        list.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return (b.dateAdded || '').localeCompare(a.dateAdded || '');
+        });
+        setNotifications(list);
+      },
+      (error) => {
+        console.warn('Notifications listener error:', error.message);
+      }
+    );
+
     return () => {
       unsubSite();
       unsubLectures();
       unsubAttachments();
       unsubQuizzes();
       unsubRewards();
+      unsubNotifications();
     };
   }, []);
 
@@ -809,6 +844,10 @@ export default function App() {
   }, [rewards]);
 
   useEffect(() => {
+    localStorage.setItem('mm_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  useEffect(() => {
     if (currentUser) {
       sessionStorage.setItem('mm_user', JSON.stringify(currentUser));
     } else if (authReady) {
@@ -853,8 +892,8 @@ export default function App() {
       showNotice(
         'error',
         lang === 'en'
-          ? 'Admin session expired. Please sign in with Google to continue.'
-          : 'انتهت جلسة المشرف، يرجى تسجيل الدخول بحساب Google مرة واحدة للمتابعة.'
+          ? 'Admin session expired. Please sign in to continue.'
+          : 'انتهت جلسة المشرف، يرجى تسجيل الدخول للمتابعة.'
       );
       return false;
     }
@@ -878,7 +917,9 @@ export default function App() {
     if (!authorized) {
       showNotice(
         'error',
-        'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين.'
+        lang === 'en'
+          ? 'This account is not enabled as an admin in the cloud database.'
+          : 'هذا الحساب غير مفعل كمشرف في قاعدة البيانات السحابية. تأكد من إضافته في قائمة المشرفين.'
       );
       return false;
     }
@@ -893,7 +934,9 @@ export default function App() {
       console.error('Cloud write error:', err);
       showNotice(
         'error',
-        'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
+        lang === 'en'
+          ? 'Failed to save changes to the cloud database. Please verify your connection.'
+          : 'حدث خطأ أثناء الحفظ في قاعدة البيانات، يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
       );
       return false;
     }
@@ -1093,7 +1136,7 @@ export default function App() {
   const handleAddLecture = async (newLec: Lecture): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveLectureToCloud(newLec),
-      'تم نشر المحاضرة وحفظها في السحابة!'
+      lang === 'en' ? 'Lecture published and saved to cloud!' : 'تم نشر المحاضرة وحفظها في السحابة!'
     );
     if (ok) {
       setLectures((prev) => [newLec, ...prev.filter((l) => l.id !== newLec.id)]);
@@ -1112,7 +1155,7 @@ export default function App() {
   const handleUpdateLecture = async (updated: Lecture): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveLectureToCloud(updated),
-      'تم تحديث المحاضرة وحفظها في السحابة!'
+      lang === 'en' ? 'Lecture updated and synced!' : 'تم تحديث المحاضرة وحفظها في السحابة!'
     );
     if (ok) {
       setLectures((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
@@ -1123,7 +1166,7 @@ export default function App() {
   const handleAddAttachment = async (newFile: AttachmentFile): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveAttachmentToCloud(newFile),
-      'تم نشر المذكرة وحفظها في السحابة!'
+      lang === 'en' ? 'Handout published and saved to cloud!' : 'تم نشر المذكرة وحفظها في السحابة!'
     );
     if (ok) {
       setAttachments((prev) => [newFile, ...prev.filter((a) => a.id !== newFile.id)]);
@@ -1142,7 +1185,7 @@ export default function App() {
   const handleUpdateAttachment = async (updated: AttachmentFile): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveAttachmentToCloud(updated),
-      'تم تحديث بيانات المذكرة وحفظ التعديلات في السحابة!'
+      lang === 'en' ? 'Handout updated and synced!' : 'تم تحديث بيانات المذكرة وحفظ التعديلات في السحابة!'
     );
     if (ok) {
       setAttachments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
@@ -1153,7 +1196,7 @@ export default function App() {
   const handleAddQuiz = async (newQuiz: Quiz): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveQuizToCloud(newQuiz),
-      'تم حفظ ونشر الامتحان في السحابة!'
+      lang === 'en' ? 'Quiz saved and published!' : 'تم حفظ ونشر الامتحان في السحابة!'
     );
     if (ok) {
       setQuizzes((prev) => [newQuiz, ...prev.filter((q) => q.id !== newQuiz.id)]);
@@ -1164,7 +1207,9 @@ export default function App() {
   const handleUpdateQuiz = async (updatedQuiz: Quiz): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveQuizToCloud(updatedQuiz),
-      'تم تحديث الامتحان والأسئلة وحفظ التعديلات في السحابة!'
+      lang === 'en'
+        ? 'Quiz and questions updated in cloud!'
+        : 'تم تحديث الامتحان والأسئلة وحفظ التعديلات في السحابة!'
     );
     if (ok) {
       setQuizzes((prev) => prev.map((q) => (q.id === updatedQuiz.id ? updatedQuiz : q)));
@@ -1216,7 +1261,9 @@ export default function App() {
   const handleCreateRedeemCode = async (codeItem: RedeemCode): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveRedeemCodeToCloud(codeItem),
-      `تم حفظ كود (${codeItem.code}) في قاعدة البيانات!`
+      lang === 'en'
+        ? `Code (${codeItem.code}) saved to cloud database!`
+        : `تم حفظ كود (${codeItem.code}) في قاعدة البيانات!`
     );
     if (ok) {
       setRedeemCodes((prev) => [codeItem, ...prev.filter((c) => c.id !== codeItem.id)]);
@@ -1227,7 +1274,9 @@ export default function App() {
   const handleCreateRedeemCodesBatch = async (items: RedeemCode[]): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveRedeemCodesBatchToCloud(items),
-      `تم توليد وحفظ ${items.length} أكواد جديدة في السحابة!`
+      lang === 'en'
+        ? `Generated and saved ${items.length} new codes!`
+        : `تم توليد وحفظ ${items.length} أكواد جديدة في السحابة!`
     );
     if (ok) {
       setRedeemCodes((prev) => {
@@ -1257,7 +1306,9 @@ export default function App() {
   const handleSaveReward = async (reward: PointReward): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => savePointRewardToCloud(reward),
-      'تم حفظ المكافأة ونشرها في متجر الطلاب!'
+      lang === 'en'
+        ? 'Reward saved and published to the student store!'
+        : 'تم حفظ المكافأة ونشرها في متجر الطلاب!'
     );
     if (ok) {
       setRewards((prev) => [reward, ...prev.filter((r) => r.id !== reward.id)]);
@@ -1269,6 +1320,38 @@ export default function App() {
     const ok = await executeAdminCloudWrite(() => deletePointRewardFromCloud(rewardId));
     if (ok) {
       setRewards((prev) => prev.filter((r) => r.id !== rewardId));
+    }
+    return ok;
+  };
+
+  const handleSaveNotification = async (notif: PlatformNotification): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => saveNotificationToCloud(notif),
+      lang === 'en'
+        ? 'Notification saved and synced for students!'
+        : 'تم حفظ الإشعار ونشره للطلاب في السحابة!'
+    );
+    if (ok) {
+      setNotifications((prev) => {
+        const filtered = prev.filter((n) => n.id !== notif.id);
+        const next = [notif, ...filtered];
+        next.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return (b.dateAdded || '').localeCompare(a.dateAdded || '');
+        });
+        return next;
+      });
+    }
+    return ok;
+  };
+
+  const handleDeleteNotification = async (id: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => deleteNotificationFromCloud(id),
+      lang === 'en' ? 'Notification deleted.' : 'تم حذف الإشعار بنجاح.'
+    );
+    if (ok) {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
     }
     return ok;
   };
@@ -1289,11 +1372,16 @@ export default function App() {
 
   const handleStudentRedeemCode = async (rawCode: string) => {
     if (!currentUser) {
-      throw new Error('يرجى تسجيل الدخول أولاً.');
+      throw new Error(lang === 'en' ? 'Please sign in first.' : 'يرجى تسجيل الدخول أولاً.');
     }
     const result = await redeemCodeForStudent(rawCode, currentUser);
     syncUpdatedStudentLocally(result.updatedStudent);
-    showNotice('success', `تمت إضافة +${result.pointsAdded} نقطة إلى رصيدك!`);
+    showNotice(
+      'success',
+      lang === 'en'
+        ? `Added +${result.pointsAdded} points to your wallet!`
+        : `تمت إضافة +${result.pointsAdded} نقطة إلى رصيدك!`
+    );
     return {
       pointsAdded: result.pointsAdded,
       newBalance: result.newBalance,
@@ -1302,24 +1390,45 @@ export default function App() {
   };
 
   const handleStudentUnlockLecture = async (lecture: Lecture) => {
-    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    if (!currentUser) {
+      throw new Error(lang === 'en' ? 'Please sign in first.' : 'يرجى تسجيل الدخول أولاً.');
+    }
     const updated = await unlockLectureWithPoints(lecture, currentUser);
     syncUpdatedStudentLocally(updated);
-    showNotice('success', `تم فتح محاضرة "${lecture.title}" بنجاح!`);
+    showNotice(
+      'success',
+      lang === 'en'
+        ? `Unlocked "${lecture.title}" successfully!`
+        : `تم فتح محاضرة "${lecture.title}" بنجاح!`
+    );
   };
 
   const handleStudentUnlockAttachment = async (file: AttachmentFile) => {
-    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    if (!currentUser) {
+      throw new Error(lang === 'en' ? 'Please sign in first.' : 'يرجى تسجيل الدخول أولاً.');
+    }
     const updated = await unlockAttachmentWithPoints(file, currentUser);
     syncUpdatedStudentLocally(updated);
-    showNotice('success', `تم فتح مذكرة "${file.title}" بنجاح!`);
+    showNotice(
+      'success',
+      lang === 'en'
+        ? `Unlocked "${file.title}" successfully!`
+        : `تم فتح مذكرة "${file.title}" بنجاح!`
+    );
   };
 
   const handleStudentClaimReward = async (reward: PointReward) => {
-    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً.');
+    if (!currentUser) {
+      throw new Error(lang === 'en' ? 'Please sign in first.' : 'يرجى تسجيل الدخول أولاً.');
+    }
     const updated = await claimRewardWithPoints(reward, currentUser);
     syncUpdatedStudentLocally(updated);
-    showNotice('success', `مبروك! حصلت على مكافأة "${reward.title}"!`);
+    showNotice(
+      'success',
+      lang === 'en'
+        ? `Congrats! You claimed "${reward.title}"!`
+        : `مبروك! حصلت على مكافأة "${reward.title}"!`
+    );
   };
 
   const handleResetAllData = async (): Promise<boolean> => {
@@ -1328,14 +1437,19 @@ export default function App() {
     const quizIds = quizzes.map((q) => q.id);
     const stuIds = students.map((s) => s.id);
 
-    const ok = await executeAdminCloudWrite(async () => {
-      await Promise.all([
-        ...lecIds.map((id) => deleteLectureFromCloud(id)),
-        ...attIds.map((id) => deleteAttachmentFromCloud(id)),
-        ...quizIds.map((id) => deleteQuizFromCloud(id)),
-        ...stuIds.map((id) => deleteStudentFromCloud(id)),
-      ]);
-    }, 'تم تصفير كافة الدروس والملفات والامتحانات في السحابة بنجاح.');
+    const ok = await executeAdminCloudWrite(
+      async () => {
+        await Promise.all([
+          ...lecIds.map((id) => deleteLectureFromCloud(id)),
+          ...attIds.map((id) => deleteAttachmentFromCloud(id)),
+          ...quizIds.map((id) => deleteQuizFromCloud(id)),
+          ...stuIds.map((id) => deleteStudentFromCloud(id)),
+        ]);
+      },
+      lang === 'en'
+        ? 'All lectures, quizzes, handouts, and student records cleared.'
+        : 'تم تصفير كافة الدروس والملفات والامتحانات في السحابة بنجاح.'
+    );
 
     if (ok) {
       setLectures([]);
@@ -1395,7 +1509,9 @@ export default function App() {
   const handleSaveCloudinaryConfig = async (config: CloudinaryConfig): Promise<boolean> => {
     const ok = await executeAdminCloudWrite(
       () => saveAdminConfigToCloud(siteConfig.adminEmails || ['mizoo2y2@gmail.com'], config),
-      'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
+      lang === 'en'
+        ? 'Cloudinary settings saved and synced.'
+        : 'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
     );
     if (ok) {
       setCloudinaryConfig(config);
@@ -1417,10 +1533,15 @@ export default function App() {
       profileImageUrl: sanitizeProfileImageUrl(newConfig.profileImageUrl),
     };
 
-    const ok = await executeAdminCloudWrite(async () => {
-      await savePublicSiteConfigToCloud(sanitized);
-      await saveAdminConfigToCloud(cleanEmails, cloudinaryConfig);
-    }, 'تم حفظ ونشر التعديلات مباشرة للجميع.');
+    const ok = await executeAdminCloudWrite(
+      async () => {
+        await savePublicSiteConfigToCloud(sanitized);
+        await saveAdminConfigToCloud(cleanEmails, cloudinaryConfig);
+      },
+      lang === 'en'
+        ? 'Site updates published live for everyone.'
+        : 'تم حفظ ونشر التعديلات مباشرة للجميع.'
+    );
 
     if (ok) {
       adminEmailsRef.current = cleanEmails;
@@ -1464,6 +1585,24 @@ export default function App() {
   const shouldShowOnboarding = Boolean(
     currentUser && currentUser.role !== 'teacher' && !currentUser.profileCompleted
   );
+
+  const shouldPromptPasswordLink = Boolean(
+    (currentView === 'student' || currentView === 'teacher' || currentView === 'onboarding') &&
+      firebaseUser &&
+      isGoogleUserWithoutPassword(firebaseUser) &&
+      !passwordPromptDismissedUids.includes(firebaseUser.uid)
+  );
+
+  const dismissPasswordLinkPrompt = (uid: string) => {
+    setPasswordPromptDismissedUids((prev) => {
+      if (prev.includes(uid)) return prev;
+      const next = [...prev, uid];
+      try {
+        sessionStorage.setItem('mm_skip_pw_uids', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const getBodyFontClass = () => {
     if (siteConfig.bodyFont === 'Tajawal') return 'font-sans';
@@ -1566,7 +1705,27 @@ export default function App() {
           </Suspense>
         )}
 
-        {(currentView === 'onboarding' || (currentView === 'student' && shouldShowOnboarding)) &&
+        {shouldPromptPasswordLink && firebaseUser && (
+          <LinkPasswordSetup
+            firebaseUser={firebaseUser}
+            isAdminAccount={isEmailAdmin(firebaseUser.email)}
+            variant="page"
+            onLinkedSuccess={(updatedFbUser) => {
+              setFirebaseUser(updatedFbUser);
+              dismissPasswordLinkPrompt(updatedFbUser.uid);
+              showNotice(
+                'success',
+                lang === 'en'
+                  ? 'Password saved! You can now sign in manually with Email & Password anytime.'
+                  : 'تم حفظ كلمة المرور! يمكنك الآن الدخول يدوياً بالبريد وكلمة المرور من أي جهاز.'
+              );
+            }}
+            onSkip={() => dismissPasswordLinkPrompt(firebaseUser.uid)}
+          />
+        )}
+
+        {!shouldPromptPasswordLink &&
+          (currentView === 'onboarding' || (currentView === 'student' && shouldShowOnboarding)) &&
           currentUser &&
           shouldShowOnboarding && (
             <Suspense fallback={<ViewLoadingFallback />}>
@@ -1580,30 +1739,43 @@ export default function App() {
             </Suspense>
           )}
 
-        {currentView === 'student' && currentUser && !shouldShowOnboarding && (
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <StudentPortal
-              currentUser={currentUser}
-              siteConfig={siteConfig}
-              cloudinaryConfig={cloudinaryConfig}
-              lectures={lectures}
-              quizzes={quizzes}
-              attachments={attachments}
-              rewards={rewards}
-              onBackToHome={() => handleNavigate('landing')}
-              onOpenTeacherDashboard={() => handleNavigate('teacher')}
-              onUpdateStudentProfile={handleUpdateStudentProfile}
-              onRedeemCode={handleStudentRedeemCode}
-              onUnlockLecture={handleStudentUnlockLecture}
-              onUnlockAttachment={handleStudentUnlockAttachment}
-              onClaimReward={handleStudentClaimReward}
-            />
-          </Suspense>
-        )}
+        {!shouldPromptPasswordLink &&
+          currentView === 'student' &&
+          currentUser &&
+          !shouldShowOnboarding && (
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <StudentPortal
+                currentUser={currentUser}
+                siteConfig={siteConfig}
+                cloudinaryConfig={cloudinaryConfig}
+                lectures={lectures}
+                quizzes={quizzes}
+                attachments={attachments}
+                rewards={rewards}
+                notifications={notifications}
+                onBackToHome={() => handleNavigate('landing')}
+                onOpenTeacherDashboard={() => handleNavigate('teacher')}
+                onUpdateStudentProfile={handleUpdateStudentProfile}
+                onRedeemCode={handleStudentRedeemCode}
+                onUnlockLecture={handleStudentUnlockLecture}
+                onUnlockAttachment={handleStudentUnlockAttachment}
+                onClaimReward={handleStudentClaimReward}
+                onAuthUserRefreshed={async () => {
+                  if (auth.currentUser) {
+                    await hydrateFirebaseUser(auth.currentUser);
+                    if (auth.currentUser.emailVerified && currentUser) {
+                      saveStudentToCloud(currentUser, auth.currentUser.uid).catch(() => {});
+                    }
+                  }
+                }}
+              />
+            </Suspense>
+          )}
 
-        {currentView === 'teacher' && isUserAdmin(currentUser) && (
+        {!shouldPromptPasswordLink && currentView === 'teacher' && isUserAdmin(currentUser) && (
           <Suspense fallback={<ViewLoadingFallback />}>
             <TeacherDashboard
+              initialTab={teacherInitialTab}
               lectures={lectures}
               onAddLecture={handleAddLecture}
               onDeleteLecture={handleDeleteLecture}
@@ -1624,8 +1796,14 @@ export default function App() {
               onSaveCloudinaryConfig={handleSaveCloudinaryConfig}
               siteConfig={siteConfig}
               onSaveSiteConfig={handleSaveSiteConfig}
-              onBackToHome={() => handleNavigate('landing')}
-              onOpenStudentPortal={() => handleNavigate('student')}
+              onBackToHome={() => {
+                setTeacherInitialTab('overview');
+                handleNavigate('landing');
+              }}
+              onOpenStudentPortal={() => {
+                setTeacherInitialTab('overview');
+                handleNavigate('student');
+              }}
               onResetAllData={handleResetAllData}
               redeemCodes={redeemCodes}
               rewards={rewards}
@@ -1635,6 +1813,9 @@ export default function App() {
               onDeleteRedeemCode={handleDeleteRedeemCode}
               onSaveReward={handleSaveReward}
               onDeleteReward={handleDeleteReward}
+              notifications={notifications}
+              onSaveNotification={handleSaveNotification}
+              onDeleteNotification={handleDeleteNotification}
             />
           </Suspense>
         )}
@@ -1749,25 +1930,14 @@ export default function App() {
           onOpenLogin={() => openAuthPage('login')}
           onOpenSecretAdmin={() => {
             if (isUserAdmin(currentUser)) {
-              setSecretAdminOpen(true);
+              setTeacherInitialTab('site-customizer');
+              handleNavigate('teacher');
             } else {
               openAuthPage('login');
             }
           }}
         />
       </div>
-
-      {secretAdminOpen && isUserAdmin(currentUser) && (
-        <Suspense fallback={null}>
-          <SecretAdminCustomizerModal
-            isOpen={secretAdminOpen}
-            onClose={() => setSecretAdminOpen(false)}
-            siteConfig={siteConfig}
-            onSaveSiteConfig={handleSaveSiteConfig}
-            cloudinaryConfig={cloudinaryConfig}
-          />
-        </Suspense>
-      )}
     </div>
   );
 }

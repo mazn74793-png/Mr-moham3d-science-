@@ -43,6 +43,10 @@ if (!fs.existsSync(CHUNKS_ROOT)) {
 // API ROUTES
 // ==========================================
 
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, status: 'ready' });
+});
+
 // 1. Fast Parallel Chunk Upload (Avoids single huge request RAM/proxy stalls)
 app.post(
   '/api/upload-chunk',

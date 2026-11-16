@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom, Camera } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
 import { SiteConfig } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 import { optimizeImageUrl } from '../utils/mediaOptimizer';
@@ -182,8 +182,12 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                       </div>
                     </div>
                     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-teal-100 text-xs font-semibold relative z-10">
-                      <Camera className="w-4 h-4 text-amber-400" />
-                      <span>{lang === 'en' ? 'Upload Educator Photo via Cloudinary' : 'في انتظار رفع صورة الأستاذ من Cloudinary'}</span>
+                      <Atom className="w-4 h-4 text-amber-400" />
+                      <span>
+                        {lang === 'en'
+                          ? 'Languages & Experimental Track · 2026'
+                          : 'منهج اللغات والتجريبي المتكامل · 2026'}
+                      </span>
                     </div>
                   </div>
                 )}

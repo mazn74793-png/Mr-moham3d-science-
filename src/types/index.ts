@@ -113,3 +113,21 @@ export interface UserProfile {
   claimedRewardIds?: string[];
   pointsHistory?: PointsHistoryEntry[];
 }
+
+export type NotificationCategory = 'announcement' | 'exam' | 'lecture' | 'urgent' | 'congrats';
+export type NotificationCtaTab = 'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub';
+
+export interface PlatformNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: NotificationCategory;
+  grade: string; // 'all' or specific gradeId
+  pinned: boolean;
+  active: boolean;
+  authorName: string;
+  dateAdded: string;
+  ctaLabel?: string;
+  ctaTab?: NotificationCtaTab;
+}
+

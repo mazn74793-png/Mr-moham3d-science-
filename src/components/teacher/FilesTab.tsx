@@ -514,6 +514,220 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           <span className="text-xs text-slate-500 font-mono">اضغط معاينة لعرض الملف مباشرة</span>
         </div>
 
+        {previewFile && (
+          <MediaPreviewModal
+            isOpen={Boolean(previewFile)}
+            onClose={() => setPreviewFile(null)}
+            url={previewFile.url || ''}
+            title={previewFile.title}
+            kind={previewFile.kind}
+          />
+        )}
+
+        {/* Inline Edit Handout Panel */}
+        {editingAttachment && (
+          <div className="w-full bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 sm:p-6 border-2 border-teal-500/40 space-y-5 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <h3 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white">
+                  تعديل المذكرة أو استبدال الملف
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAttachment(null)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedAttachment} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  عنوان المذكرة *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingAttachment.title}
+                  onChange={(e) =>
+                    setEditingAttachment({ ...editingAttachment, title: e.target.value })
+                  }
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الصف الدراسي
+                  </label>
+                  <select
+                    value={editingAttachment.grade}
+                    onChange={(e) =>
+                      setEditingAttachment({
+                        ...editingAttachment,
+                        grade: e.target.value as GradeLevel,
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                  >
+                    {resolvedGrades.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.badgeAr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الباب أو الوحدة
+                  </label>
+                  <input
+                    type="text"
+                    value={editingAttachment.chapter}
+                    onChange={(e) =>
+                      setEditingAttachment({ ...editingAttachment, chapter: e.target.value })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
+                    تكلفة الفتح بالنقاط (0 = مجانية)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    value={editingAttachment.pointsCost ?? 0}
+                    onChange={(e) =>
+                      setEditingAttachment({
+                        ...editingAttachment,
+                        pointsCost: Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    عدد الصفحات
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={editingAttachment.pageCount ?? 24}
+                    onChange={(e) =>
+                      setEditingAttachment({
+                        ...editingAttachment,
+                        pageCount: Math.max(1, Number(e.target.value)),
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    نوع الملف
+                  </label>
+                  <select
+                    value={editingAttachment.fileType}
+                    onChange={(e) =>
+                      setEditingAttachment({
+                        ...editingAttachment,
+                        fileType: e.target.value as 'pdf' | 'doc' | 'image',
+                      })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                  >
+                    <option value="pdf">PDF</option>
+                    <option value="image">صورة / ملخص</option>
+                    <option value="doc">Word / ملف نصي</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                    الحجم المسجل
+                  </label>
+                  <input
+                    type="text"
+                    value={editingAttachment.fileSize}
+                    onChange={(e) =>
+                      setEditingAttachment({ ...editingAttachment, fileSize: e.target.value })
+                    }
+                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    رابط الملف السحابي أو استبداله من جهازك
+                  </span>
+                  <label className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer">
+                    {uploadingEditFile
+                      ? `جاري الرفع ${editFileProgress}%`
+                      : 'رفع ملف بديل من الجهاز'}
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
+                      disabled={uploadingEditFile}
+                      onChange={handleReplaceEditFile}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  value={editingAttachment.downloadUrl}
+                  onChange={(e) =>
+                    setEditingAttachment({ ...editingAttachment, downloadUrl: e.target.value })
+                  }
+                  dir="ltr"
+                  className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono"
+                />
+                {editingAttachment.downloadUrl && editingAttachment.downloadUrl !== '#' && (
+                  <InlineMediaPreview
+                    url={editingAttachment.downloadUrl}
+                    title={editingAttachment.title}
+                    kind={editingAttachment.fileType}
+                    compact
+                  />
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setEditingAttachment(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditAttachment || uploadingEditFile}
+                  className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {savingEditAttachment ? 'جاري الحفظ...' : 'حفظ تعديلات المذكرة'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {attachments.map((file) => (
             <div
@@ -620,219 +834,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         </div>
       </div>
 
-      {/* Edit Handout Modal */}
-      {editingAttachment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center">
-                  <Edit3 className="w-4 h-4" />
-                </div>
-                <h3 className="text-lg font-bold font-kufi text-slate-900 dark:text-white">
-                  تعديل المذكرة أو استبدال الملف
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingAttachment(null)}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditedAttachment} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  عنوان المذكرة *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingAttachment.title}
-                  onChange={(e) =>
-                    setEditingAttachment({ ...editingAttachment, title: e.target.value })
-                  }
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    الصف الدراسي
-                  </label>
-                  <select
-                    value={editingAttachment.grade}
-                    onChange={(e) =>
-                      setEditingAttachment({
-                        ...editingAttachment,
-                        grade: e.target.value as GradeLevel,
-                      })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  >
-                    {resolvedGrades.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.badgeAr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    الباب أو الوحدة
-                  </label>
-                  <input
-                    type="text"
-                    value={editingAttachment.chapter}
-                    onChange={(e) =>
-                      setEditingAttachment({ ...editingAttachment, chapter: e.target.value })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-amber-700 dark:text-amber-300 font-kufi">
-                    تكلفة الفتح بالنقاط (0 = مجانية)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100000}
-                    value={editingAttachment.pointsCost ?? 0}
-                    onChange={(e) =>
-                      setEditingAttachment({
-                        ...editingAttachment,
-                        pointsCost: Math.max(0, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    عدد الصفحات
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={editingAttachment.pageCount ?? 24}
-                    onChange={(e) =>
-                      setEditingAttachment({
-                        ...editingAttachment,
-                        pageCount: Math.max(1, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    نوع الملف
-                  </label>
-                  <select
-                    value={editingAttachment.fileType}
-                    onChange={(e) =>
-                      setEditingAttachment({
-                        ...editingAttachment,
-                        fileType: e.target.value as 'pdf' | 'doc' | 'image',
-                      })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1"
-                  >
-                    <option value="pdf">PDF</option>
-                    <option value="image">صورة / ملخص</option>
-                    <option value="doc">Word / ملف نصي</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                    الحجم المسجل
-                  </label>
-                  <input
-                    type="text"
-                    value={editingAttachment.fileSize}
-                    onChange={(e) =>
-                      setEditingAttachment({ ...editingAttachment, fileSize: e.target.value })
-                    }
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-1 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    رابط الملف السحابي أو استبداله من جهازك
-                  </span>
-                  <label className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer">
-                    {uploadingEditFile
-                      ? `جاري الرفع ${editFileProgress}%`
-                      : 'رفع ملف بديل من الجهاز'}
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
-                      disabled={uploadingEditFile}
-                      onChange={handleReplaceEditFile}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  value={editingAttachment.downloadUrl}
-                  onChange={(e) =>
-                    setEditingAttachment({ ...editingAttachment, downloadUrl: e.target.value })
-                  }
-                  dir="ltr"
-                  className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
-                />
-                {editingAttachment.downloadUrl && editingAttachment.downloadUrl !== '#' && (
-                  <InlineMediaPreview
-                    url={editingAttachment.downloadUrl}
-                    title={editingAttachment.title}
-                    kind={editingAttachment.fileType}
-                    compact
-                  />
-                )}
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingAttachment(null)}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEditAttachment || uploadingEditFile}
-                  className="px-6 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  {savingEditAttachment ? 'جاري الحفظ...' : 'حفظ تعديلات المذكرة'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <MediaPreviewModal
-        isOpen={Boolean(previewFile)}
-        onClose={() => setPreviewFile(null)}
-        url={previewFile?.url || ''}
-        title={previewFile?.title}
-        kind={previewFile?.kind}
-      />
     </div>
   );
 };

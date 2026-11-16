@@ -85,4 +85,12 @@ export const DIRTY_DOZEN_SECURITY_TESTS = [
     payload: { updatedAt: '2020-01-01T00:00:00Z' },
     expected: 'PERMISSION_DENIED',
   },
+  {
+    name: '13. Non-Admin Notification Creation',
+    operation: 'create',
+    path: '/notifications/notif_1',
+    auth: { uid: 'student_1', token: { email: 'student@gmail.com', email_verified: true } },
+    expected: 'PERMISSION_DENIED',
+  },
 ];
+

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
-  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket
+  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell
 } from 'lucide-react';
-import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward } from '../types';
+import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward, PlatformNotification } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
+import { auth, hasPasswordLinked } from '../firebase';
+import { useLanguage } from '../context/LanguageContext';
 import { TeacherQuizManager } from './TeacherQuizManager';
 import { TeacherReportsManager } from './TeacherReportsManager';
 import { OverviewTab } from './teacher/OverviewTab';
@@ -15,8 +17,11 @@ import { CoAdminsTab } from './teacher/CoAdminsTab';
 import { CloudinaryTab } from './teacher/CloudinaryTab';
 import { SiteCustomizerTab } from './teacher/SiteCustomizerTab';
 import { PointsCodesTab } from './teacher/PointsCodesTab';
+import { NotificationsTab } from './teacher/NotificationsTab';
+import { LinkPasswordSetup } from './LinkPasswordSetup';
 
 interface TeacherDashboardProps {
+  initialTab?: TeacherDashboardTab;
   lectures: Lecture[];
   onAddLecture: (newLecture: Lecture) => Promise<boolean> | boolean | void;
   onDeleteLecture: (id: string) => Promise<boolean> | boolean | void;
@@ -48,12 +53,16 @@ interface TeacherDashboardProps {
   onDeleteRedeemCode?: (codeId: string) => Promise<boolean>;
   onSaveReward?: (reward: PointReward) => Promise<boolean>;
   onDeleteReward?: (rewardId: string) => Promise<boolean>;
+  notifications?: PlatformNotification[];
+  onSaveNotification?: (notif: PlatformNotification) => Promise<boolean>;
+  onDeleteNotification?: (id: string) => Promise<boolean>;
 }
 
 export type TeacherDashboardTab =
   | 'overview'
   | 'all-students'
   | 'points-codes'
+  | 'notifications'
   | 'upload-lecture'
   | 'lectures-list'
   | 'quizzes-bank'
@@ -66,6 +75,7 @@ export type TeacherDashboardTab =
 const CLOUDINARY_TOTAL_QUOTA_GB = 25.0;
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
+  initialTab,
   lectures,
   onAddLecture,
   onDeleteLecture,
@@ -97,11 +107,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onDeleteRedeemCode,
   onSaveReward,
   onDeleteReward,
+  notifications = [],
+  onSaveNotification,
+  onDeleteNotification,
 }) => {
-  const [activeTab, setActiveTab] = useState<TeacherDashboardTab>('overview');
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
+  const [activeTab, setActiveTab] = useState<TeacherDashboardTab>(initialTab || 'overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   const [siteForm, setSiteForm] = useState<SiteConfig>(siteConfig);
   useEffect(() => {
@@ -147,7 +166,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 type="button"
                 onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
                 className="lg:hidden p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                aria-label="القائمة الجانبية"
+                aria-label={isEn ? 'Sidebar Menu' : 'القائمة الجانبية'}
               >
                 {isMobileSidebarOpen ? (
                   <X className="w-5 h-5 text-amber-300" />
@@ -160,20 +179,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 type="button"
                 onClick={onBackToHome}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
-                title="العودة للرئيسية"
+                title={isEn ? 'Back to Home' : 'العودة للرئيسية'}
               >
-                <ChevronRight className="w-4 h-4" />
-                <span className="hidden sm:inline">الرئيسية</span>
+                <ChevronRight className={`w-4 h-4 ${isEn ? 'rotate-180' : ''}`} />
+                <span className="hidden sm:inline">{isEn ? 'Home' : 'الرئيسية'}</span>
               </button>
 
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-sm sm:text-base lg:text-lg font-bold font-kufi">
-                    لوحة تحكم الأستاذ {siteConfig.teacherName} ⚗️
+                    {isEn
+                      ? `Educator Admin · Mr. Mohamed Mostafa`
+                      : `لوحة تحكم الأستاذ ${siteConfig.teacherName}`}
                   </h1>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold font-mono flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                    <span>مسؤول معتمد</span>
+                    <span>{isEn ? 'Verified Admin' : 'مسؤول معتمد'}</span>
                   </span>
                 </div>
               </div>
@@ -190,7 +211,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 }`}
               >
                 <Palette className="w-3.5 h-3.5" />
-                <span>هوية الموقع 🎨</span>
+                <span>{isEn ? 'Branding' : 'هوية الموقع'}</span>
               </button>
 
               <button
@@ -198,7 +219,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 onClick={onOpenStudentPortal}
                 className="px-3 py-1.5 text-xs font-bold rounded-xl bg-teal-500 hover:bg-teal-600 text-white shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <span>معاينة الطلاب</span>
+                <span>{isEn ? 'Student View' : 'معاينة الطلاب'}</span>
                 <ExternalLink className="w-3 h-3" />
               </button>
             </div>
@@ -238,7 +259,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                الرئيسية والمتابعة
+                {isEn ? 'Overview & Students' : 'الرئيسية والمتابعة'}
               </div>
 
               <button
@@ -255,9 +276,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <LayoutDashboard className="w-4 h-4" />
-                  <span>نظرة عامة وسريعة</span>
+                  <span>{isEn ? 'Dashboard Overview' : 'نظرة عامة وسريعة'}</span>
                 </div>
-                <span className="text-[10px] opacity-75">لوحة التحكم</span>
+                <span className="text-[10px] opacity-75">{isEn ? 'Home' : 'لوحة التحكم'}</span>
               </button>
 
               <button
@@ -274,9 +295,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Users className="w-4 h-4 text-amber-500" />
-                  <span>سجل وقائمة الطلاب</span>
+                  <span>{isEn ? 'Students Directory' : 'سجل وقائمة الطلاب'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono tabular-nums">
                   {students.filter((s) => s.role !== 'teacher').length}
                 </span>
               </button>
@@ -295,17 +316,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Ticket className="w-4 h-4 text-amber-500" />
-                  <span>أكواد النقاط والمكافآت</span>
+                  <span>{isEn ? 'Points & Redeem Codes' : 'أكواد النقاط والمكافآت'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
                   {redeemCodes.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('notifications');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'notifications'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Bell className="w-4 h-4 text-teal-500" />
+                  <span>{isEn ? 'Notifications & Alerts' : 'الإشعارات والتنبيهات'}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
+                  {notifications.length}
                 </span>
               </button>
             </div>
 
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                المحتوى التعليمي
+                {isEn ? 'Academic Content' : 'المحتوى التعليمي'}
               </div>
 
               <button
@@ -322,9 +364,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Plus className="w-4 h-4 text-emerald-500" />
-                  <span>رفع محاضرة جديدة</span>
+                  <span>{isEn ? 'Upload New Lecture' : 'رفع محاضرة جديدة'}</span>
                 </div>
-                <span className="text-[10px] text-teal-400">فيديو + كويز</span>
+                <span className="text-[10px] text-teal-400">{isEn ? 'Video' : 'فيديو + كويز'}</span>
               </button>
 
               <button
@@ -341,9 +383,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Video className="w-4 h-4 text-sky-500" />
-                  <span>المحاضرات المنشورة</span>
+                  <span>{isEn ? 'Published Lectures' : 'المحاضرات المنشورة'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
                   {lectures.length}
                 </span>
               </button>
@@ -362,9 +404,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Award className="w-4 h-4 text-amber-500" />
-                  <span>بنك الأسئلة والاختبارات</span>
+                  <span>{isEn ? 'Quizzes & Question Bank' : 'بنك الأسئلة والاختبارات'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
                   {quizzes.length}
                 </span>
               </button>
@@ -383,9 +425,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <FileText className="w-4 h-4 text-rose-500" />
-                  <span>الملازم ومساحة التخزين</span>
+                  <span>{isEn ? 'Handouts & PDFs' : 'الملازم ومساحة التخزين'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
                   {attachments.length}
                 </span>
               </button>
@@ -393,7 +435,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             <div className="space-y-1">
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                إدارة المنصة وهوية الموقع
+                {isEn ? 'Platform & Brand' : 'إدارة المنصة وهوية الموقع'}
               </div>
 
               <button
@@ -410,9 +452,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <GraduationCap className="w-4 h-4 text-indigo-500" />
-                  <span>تخصيص أسماء السنوات</span>
+                  <span>{isEn ? 'Academic Grades' : 'تخصيص أسماء السنوات'}</span>
                 </div>
-                <span className="text-[10px] text-teal-400">الرئيسية</span>
+                <span className="text-[10px] text-teal-400">{isEn ? 'Grades' : 'الرئيسية'}</span>
               </button>
 
               <button
@@ -429,9 +471,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Shield className="w-4 h-4 text-teal-500" />
-                  <span>المشرفين والمدراء المساعدين</span>
+                  <span>{isEn ? 'Co-Admins & Staff' : 'المشرفين والمدراء المساعدين'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-[10px] font-mono font-bold">
+                <span className="px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-[10px] font-mono font-bold tabular-nums">
                   {(siteForm.adminEmails || ['mizoo2y2@gmail.com']).length}
                 </span>
               </button>
@@ -450,9 +492,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Palette className="w-4 h-4 text-purple-500" />
-                  <span>هوية الموقع والفوتر</span>
+                  <span>{isEn ? 'Branding & Footer' : 'هوية الموقع والفوتر'}</span>
                 </div>
-                <span className="text-[10px] text-amber-500 font-bold">تعديل</span>
+                <span className="text-[10px] text-amber-500 font-bold">{isEn ? 'Edit' : 'تعديل'}</span>
               </button>
 
               <button
@@ -469,7 +511,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <Cloud className="w-4 h-4 text-sky-400" />
-                  <span>إعدادات Cloudinary</span>
+                  <span>{isEn ? 'Cloudinary Settings' : 'إعدادات Cloudinary'}</span>
                 </div>
                 <span className="text-[10px] text-slate-400 font-mono">25 GB</span>
               </button>
@@ -480,10 +522,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Cloud className="w-3.5 h-3.5 text-teal-600" />
-                <span>سعة كلاودنري السحابية</span>
+                <span>{isEn ? 'Cloud Media Quota' : 'سعة كلاودنري السحابية'}</span>
               </span>
-              <span className="font-mono text-teal-600 dark:text-teal-400 font-bold text-[11px]">
-                {remainingGB} GB متبقية
+              <span className="font-mono text-teal-600 dark:text-teal-400 font-bold text-[11px] tabular-nums">
+                {remainingGB} GB {isEn ? 'left' : 'متبقية'}
               </span>
             </div>
 
@@ -500,30 +542,101 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               />
             </div>
 
-            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-              <span>{totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`} مستخدمة</span>
-              <span>من {CLOUDINARY_TOTAL_QUOTA_GB} GB</span>
+            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono tabular-nums">
+              <span>
+                {totalUsedGB >= 1 ? `${totalUsedGB} GB` : `${totalUsedMB.toFixed(1)} MB`}{' '}
+                {isEn ? 'used' : 'مستخدمة'}
+              </span>
+              <span>
+                {isEn ? `of ${CLOUDINARY_TOTAL_QUOTA_GB} GB` : `من ${CLOUDINARY_TOTAL_QUOTA_GB} GB`}
+              </span>
             </div>
           </div>
         </aside>
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
+          {/* Inline Reset Confirmation Bar (Zero Popup) */}
+          {resetConfirmOpen && (
+            <div className="w-full bg-rose-50 dark:bg-rose-950/40 rounded-3xl p-5 sm:p-6 border border-rose-200 dark:border-rose-900 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold font-kufi text-base text-slate-900 dark:text-white">
+                    {isEn ? 'Confirm Clearing All Platform Data' : 'تأكيد تصفير وإفراغ جميع البيانات'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {isEn
+                      ? 'This will remove all lectures, quizzes, handouts, and students to start clean.'
+                      : 'سيتم حذف وتصفير قوائم المحاضرات والامتحانات والملفات لتبدأ المنصة نظيفة تماماً.'}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3.5 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 font-mono tabular-nums">
+                <div>{isEn ? `Lectures: ${lectures.length}` : `• المحاضرات: ${lectures.length}`}</div>
+                <div>{isEn ? `Quizzes: ${quizzes.length}` : `• الامتحانات: ${quizzes.length}`}</div>
+                <div>{isEn ? `Handouts: ${attachments.length}` : `• المذكرات: ${attachments.length}`}</div>
+                <div>{isEn ? `Students: ${students.length}` : `• الطلاب: ${students.length}`}</div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={resetting}
+                  onClick={async () => {
+                    setResetting(true);
+                    try {
+                      await onResetAllData?.();
+                      setResetConfirmOpen(false);
+                    } finally {
+                      setResetting(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {resetting
+                    ? isEn
+                      ? 'Clearing...'
+                      : 'جاري التصفير...'
+                    : isEn
+                    ? 'Confirm Clear All Data'
+                    : 'نعم، صفر كل البيانات الآن'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResetConfirmOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  {isEn ? 'Cancel' : 'إلغاء'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'overview' && (
-            <OverviewTab
-              siteConfig={siteConfig}
-              siteForm={siteForm}
-              lectures={lectures}
-              attachments={attachments}
-              students={students}
-              totalUsedMB={totalUsedMB}
-              totalUsedGB={totalUsedGB}
-              remainingGB={remainingGB}
-              usedPercentage={usedPercentage}
-              totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
-              onNavigateTab={setActiveTab}
-              onOpenResetModal={() => setResetConfirmOpen(true)}
-            />
+            <div className="space-y-6">
+              {auth.currentUser && !hasPasswordLinked(auth.currentUser) && (
+                <LinkPasswordSetup firebaseUser={auth.currentUser} isAdminAccount variant="inline" />
+              )}
+              <OverviewTab
+                siteConfig={siteConfig}
+                siteForm={siteForm}
+                lectures={lectures}
+                attachments={attachments}
+                students={students}
+                totalUsedMB={totalUsedMB}
+                totalUsedGB={totalUsedGB}
+                remainingGB={remainingGB}
+                usedPercentage={usedPercentage}
+                totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
+                onNavigateTab={setActiveTab}
+                onOpenResetModal={() => {
+                  setResetConfirmOpen(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            </div>
           )}
 
           {activeTab === 'academic-years' && (
@@ -549,11 +662,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <div className="flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-amber-500" />
                   <span className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 font-kufi">
-                    سجل وقائمة الطلاب الشاملة لجميع السنوات الدراسية المفعلة
+                    {isEn
+                      ? 'Student Directory across all active academic grades'
+                      : 'سجل وقائمة الطلاب الشاملة لجميع السنوات الدراسية المفعلة'}
                   </span>
                 </div>
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">
-                  {students.filter((s) => s.role !== 'teacher').length} طالب مسجل
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono tabular-nums">
+                  {students.filter((s) => s.role !== 'teacher').length}{' '}
+                  {isEn ? 'students' : 'طالب مسجل'}
                 </span>
               </div>
 
@@ -643,6 +759,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             />
           )}
 
+          {activeTab === 'notifications' && (
+            <NotificationsTab
+              notifications={notifications}
+              resolvedGrades={resolvedGrades}
+              authorName={siteForm.teacherName ? `أ/ ${siteForm.teacherName}` : 'أ/ محمد مصطفى'}
+              onSaveNotification={async (n) => (onSaveNotification ? await onSaveNotification(n) : false)}
+              onDeleteNotification={async (id) => (onDeleteNotification ? await onDeleteNotification(id) : false)}
+            />
+          )}
+
           {activeTab === 'site-customizer' && (
             <SiteCustomizerTab
               siteConfig={siteConfig}
@@ -654,58 +780,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           )}
         </main>
       </div>
-
-      {/* Reset Confirmation Modal */}
-      {resetConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in-up">
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-rose-200 dark:border-rose-900 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 flex items-center justify-center shrink-0">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold font-kufi text-base text-slate-900 dark:text-white">
-                  تأكيد تصفير وإفراغ جميع البيانات
-                </h3>
-                <p className="text-xs text-slate-500">
-                  سيتم حذف وتصفير قوائم المحاضرات والامتحانات والملفات لتبدأ المنصة نظيفة تماماً.
-                </p>
-              </div>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 space-y-1 font-mono">
-              <div>• عدد المحاضرات: {lectures.length}</div>
-              <div>• عدد الامتحانات: {quizzes.length}</div>
-              <div>• عدد المذكرات: {attachments.length}</div>
-              <div>• عدد الطلاب: {students.length}</div>
-            </div>
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                disabled={resetting}
-                onClick={async () => {
-                  setResetting(true);
-                  try {
-                    await onResetAllData?.();
-                    setResetConfirmOpen(false);
-                  } finally {
-                    setResetting(false);
-                  }
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {resetting ? 'جاري التصفير...' : 'نعم، صفر كل البيانات الآن'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setResetConfirmOpen(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
