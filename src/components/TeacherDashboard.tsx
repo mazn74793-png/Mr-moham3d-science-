@@ -726,6 +726,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
+          {unresolvedExamAlertsCount > 0 && activeTab !== 'exam-alerts' && (() => {
+            const latestAlert = examAlerts.find((a) => !a.resolved) || examAlerts[0];
+            if (!latestAlert) return null;
+            const latestReason =
+              latestAlert.reasons?.[latestAlert.reasons.length - 1] ||
+              'محاولة غش أو مغادرة صفحة الاختبار';
+            return (
+              <div className="w-full rounded-2xl border-2 border-rose-400 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs sm:text-sm font-extrabold font-kufi text-rose-900 dark:text-rose-100">
+                        {isEn
+                          ? `Live Exam Security Alert (${unresolvedExamAlertsCount} unresolved)`
+                          : `تنبيه غش / مغادرة فوري (${unresolvedExamAlertsCount} تنبيه غير مراجع)`}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold tabular-nums">
+                        {latestAlert.violationCount}/{latestAlert.maxViolations}
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-800 dark:text-rose-200 leading-relaxed">
+                      <strong>{latestAlert.studentName}</strong> — {latestAlert.quizTitle}:{' '}
+                      <span>{latestReason}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('exam-alerts')}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shrink-0 cursor-pointer shadow-xs"
+                >
+                  {isEn ? 'Open Anti-Cheat Center' : 'فتح مركز المراقبة فوراً'}
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Inline Reset Confirmation Bar (Zero Popup) */}
           {resetConfirmOpen && (
             <div className="w-full bg-rose-50 dark:bg-rose-950/40 rounded-3xl p-5 sm:p-6 border border-rose-200 dark:border-rose-900 space-y-4">

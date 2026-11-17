@@ -243,6 +243,8 @@ export default function App() {
   const hasManualNavigatedRef = useRef(false);
   const lastLoginHydratedRef = useRef<{ uid: string; ts: number } | null>(null);
   const justSignedInAuthRef = useRef<number>(0);
+  const examAlertsHydratedRef = useRef(false);
+  const knownExamAlertIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     adminEmailsRef.current = siteConfig.adminEmails || ['mizoo2y2@gmail.com'];
@@ -959,6 +961,47 @@ export default function App() {
                   (b.id || '').localeCompare(a.id || '')
               );
               setExamAlerts(list);
+
+              if (!examAlertsHydratedRef.current) {
+                examAlertsHydratedRef.current = true;
+                list.forEach((a) => knownExamAlertIdsRef.current.add(a.id));
+                return;
+              }
+
+              const freshUnresolved = list.filter(
+                (a) => !a.resolved && !knownExamAlertIdsRef.current.has(a.id)
+              );
+              list.forEach((a) => knownExamAlertIdsRef.current.add(a.id));
+
+              if (freshUnresolved.length > 0) {
+                const newest = freshUnresolved[0];
+                const lastReason =
+                  newest.reasons?.[newest.reasons.length - 1] ||
+                  (lang === 'en' ? 'Exam security breach' : 'محاولة غش أو مغادرة صفحة الاختبار');
+                showNotice(
+                  'error',
+                  lang === 'en'
+                    ? `PROCTORING ALERT: ${newest.studentName} (${newest.violationCount}/${newest.maxViolations}) in "${newest.quizTitle}" — ${lastReason}`
+                    : `🚨 تنبيه لجنة فوري: الطالب «${newest.studentName}» (${newest.violationCount}/${newest.maxViolations}) في «${newest.quizTitle}» — ${lastReason}`
+                );
+                try {
+                  const AudioCtx =
+                    window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                  if (AudioCtx) {
+                    const ctx = new AudioCtx();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.25);
+                  }
+                } catch {}
+              }
             },
             (error) => {
               console.warn('ExamAlerts admin listener error:', error.message);

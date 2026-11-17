@@ -89,11 +89,15 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   } | null>(null);
   const [isFullscreenActive, setIsFullscreenActive] = useState<boolean>(false);
 
-  // Real-time Anti-Cheat & Proctoring State
+  // Real-time Anti-Cheat, Anti-Capture & Focus Mode State
   const [violationCount, setViolationCount] = useState<number>(0);
   const [violationReasons, setViolationReasons] = useState<string[]>([]);
   const [privacyCurtainReason, setPrivacyCurtainReason] = useState<string | null>(null);
   const [cancelledByCheat, setCancelledByCheat] = useState<boolean>(false);
+  const [isWindowFocused, setIsWindowFocused] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? !document.hidden && document.hasFocus() : true
+  );
+  const [captureShieldActive, setCaptureShieldActive] = useState<boolean>(false);
   const [watermarkPos, setWatermarkPos] = useState<{ top: number; left: number }>({
     top: 22,
     left: 16,
@@ -104,6 +108,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const lastViolationAtRef = useRef<number>(0);
   const wasFullscreenRef = useRef<boolean>(false);
   const cancelledRef = useRef<boolean>(false);
+  const viewportBaselineRef = useRef<{
+    w: number;
+    h: number;
+    chromeW: number;
+    chromeH: number;
+  } | null>(null);
+  const focusHistoryLockedRef = useRef<boolean>(false);
 
   const PrevChevron = isEn ? ChevronLeft : ChevronRight;
   const NextChevron = isEn ? ChevronRight : ChevronLeft;
@@ -117,6 +128,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const warningThresholdSeconds = Math.max(0, Number(activeQuiz?.warningMinutes ?? 5)) * 60;
   const examActivelyRunning = Boolean(
     activeQuiz && examConfirmed && !quizSubmitted && !isQuizCancelled
+  );
+  const isContentObscured = Boolean(
+    examActivelyRunning &&
+      isProctoringActive &&
+      (privacyCurtainReason || !isWindowFocused || captureShieldActive)
   );
 
   // Reset per-attempt tracking whenever activeQuiz changes
@@ -134,11 +150,15 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       setViolationReasons([]);
       setPrivacyCurtainReason(null);
       setCancelledByCheat(false);
+      setIsWindowFocused(true);
+      setCaptureShieldActive(false);
       violationCountRef.current = 0;
       violationReasonsRef.current = [];
       lastViolationAtRef.current = 0;
       wasFullscreenRef.current = false;
       cancelledRef.current = false;
+      viewportBaselineRef.current = null;
+      focusHistoryLockedRef.current = false;
       autoSubmittedQuizIdRef.current = null;
       return;
     }
@@ -156,12 +176,20 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     setViolationReasons([]);
     setPrivacyCurtainReason(null);
     setCancelledByCheat(false);
+    setIsWindowFocused(!document.hidden && document.hasFocus());
+    setCaptureShieldActive(false);
     violationCountRef.current = 0;
     violationReasonsRef.current = [];
     lastViolationAtRef.current = 0;
     wasFullscreenRef.current = Boolean(document.fullscreenElement);
     setIsFullscreenActive(Boolean(document.fullscreenElement));
     cancelledRef.current = false;
+    viewportBaselineRef.current = {
+      w: window.innerWidth,
+      h: window.innerHeight,
+      chromeW: Math.max(0, window.outerWidth - window.innerWidth),
+      chromeH: Math.max(0, window.outerHeight - window.innerHeight),
+    };
     autoSubmittedQuizIdRef.current = null;
   }, [activeQuiz?.id]);
 
@@ -296,29 +324,58 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     ]
   );
 
-  // Active Anti-Cheat & Screenshot/Recording Deterrence Listeners
+  // Active Anti-Cheat, Anti-Screenshot/Recording & Focus Mode Listeners
   useEffect(() => {
     if (!examActivelyRunning || !isProctoringActive) return;
 
+    viewportBaselineRef.current = {
+      w: window.innerWidth,
+      h: window.innerHeight,
+      chromeW: Math.max(0, window.outerWidth - window.innerWidth),
+      chromeH: Math.max(0, window.outerHeight - window.innerHeight),
+    };
+
+    // Push Focus Mode history trap so browser/Android Back button cannot exit the exam silently
+    if (!focusHistoryLockedRef.current) {
+      try {
+        window.history.pushState({ examFocusLock: true, quizId: activeQuiz?.id }, '');
+        focusHistoryLockedRef.current = true;
+      } catch {}
+    }
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        setIsWindowFocused(false);
+        setCaptureShieldActive(true);
         registerViolation(
           'تم الخروج من صفحة الامتحان أو فتح تطبيق/تبويب آخر',
           'Left exam page or switched tabs/apps',
           true
         );
+      } else if (document.hasFocus()) {
+        setIsWindowFocused(true);
       }
     };
 
     const handleWindowBlur = () => {
+      setIsWindowFocused(false);
+      setCaptureShieldActive(true);
       registerViolation(
-        'فقدان التركيز عن شاشة الامتحان أو محاولة فتح نافذة أخرى',
-        'Exam window lost focus or another overlay/app opened',
+        'فقدان التركيز عن شاشة الامتحان أو محاولة فتح نافذة/تصوير الشاشة',
+        'Exam window lost focus or screenshot/overlay tool opened',
         true
       );
     };
 
+    const handleWindowFocus = () => {
+      if (!document.hidden) {
+        setIsWindowFocused(true);
+      }
+    };
+
     const handlePageHide = () => {
+      setIsWindowFocused(false);
+      setCaptureShieldActive(true);
       registerViolation(
         'محاولة مغادرة أو إخفاء صفحة الامتحان',
         'Attempted to leave or hide exam window',
@@ -326,14 +383,74 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       );
     };
 
+    const handleFreeze = () => {
+      setIsWindowFocused(false);
+      setCaptureShieldActive(true);
+      registerViolation(
+        'تم تجميد صفحة الامتحان أو التحويل لتطبيق آخر على الهاتف',
+        'Exam page suspended or switched to another mobile app',
+        true
+      );
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+      registerViolation(
+        'محاولة إغلاق أو إعادة تحميل صفحة الامتحان أثناء تفعيل وضع التركيز',
+        'Attempted to close or reload exam page during Focus Mode',
+        true
+      );
+      return '';
+    };
+
+    const handlePopState = () => {
+      if (cancelledRef.current) return;
+      try {
+        window.history.pushState({ examFocusLock: true, quizId: activeQuiz?.id }, '');
+      } catch {}
+      setConfirmExitOpen(true);
+      registerViolation(
+        'محاولة الضغط على زر الرجوع للخروج من وضع التركيز بالامتحان',
+        'Attempted browser Back navigation out of Exam Focus Mode',
+        true
+      );
+    };
+
+    const handleResize = () => {
+      const base = viewportBaselineRef.current;
+      if (!base) return;
+      const wRatio = base.w > 0 ? window.innerWidth / base.w : 1;
+      const hRatio = base.h > 0 ? window.innerHeight / base.h : 1;
+      const chromeW = Math.max(0, window.outerWidth - window.innerWidth);
+      const chromeH = Math.max(0, window.outerHeight - window.innerHeight);
+      const devToolsDockedDelta =
+        chromeW - base.chromeW > 175 || chromeH - base.chromeH > 175;
+      const splitScreenShrunk = wRatio < 0.72 || hRatio < 0.68;
+
+      if (devToolsDockedDelta || splitScreenShrunk) {
+        setCaptureShieldActive(true);
+        registerViolation(
+          devToolsDockedDelta
+            ? 'تم رصد فتح أدوات المطور أو تغيير مساحة نافذة المتصفح أثناء الامتحان'
+            : 'تم رصد فتح وضع تقسيم الشاشة أو تصغير نافذة الاختبار',
+          devToolsDockedDelta
+            ? 'Developer tools or browser dock detected during exam'
+            : 'Split-screen or resized exam window detected',
+          true
+        );
+      }
+    };
+
     const handleFullscreenChange = () => {
       if (document.fullscreenElement) {
         wasFullscreenRef.current = true;
       } else if (wasFullscreenRef.current) {
         wasFullscreenRef.current = false;
+        setCaptureShieldActive(true);
         registerViolation(
-          'الخروج من وضع ملء الشاشة أثناء الامتحان',
-          'Exited fullscreen mode during exam',
+          'الخروج من وضع ملء الشاشة (Focus Mode) أثناء الامتحان',
+          'Exited fullscreen Focus Mode during exam',
           true
         );
       }
@@ -343,11 +460,15 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       e.preventDefault();
     };
 
-    const handleCopyOrCut = (e: ClipboardEvent) => {
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const handleClipboard = (e: ClipboardEvent) => {
       e.preventDefault();
       registerViolation(
-        'محاولة نسخ محتوى أسئلة الامتحان',
-        'Attempted to copy/cut exam questions',
+        'محاولة نسخ أو قص أو لصق محتوى داخل صفحة الامتحان',
+        'Attempted clipboard copy/cut/paste inside exam',
         false
       );
     };
@@ -356,30 +477,56 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       e.preventDefault();
     };
 
+    const handleEnterPiP = (e: Event) => {
+      e.preventDefault?.();
+      setCaptureShieldActive(true);
+      registerViolation(
+        'تم منع محاولة تشغيل نافذة عائمة (Picture-in-Picture) أثناء الامتحان',
+        'Picture-in-Picture attempt blocked during exam',
+        true
+      );
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = (e.key || '').toLowerCase();
-      const isPrintScreen = key === 'printscreen' || e.code === 'PrintScreen';
+      const code = (e.code || '').toLowerCase();
+
+      // Immediate synchronous screen blackout on Meta/OS screenshot modifier keys
+      if (key === 'meta' || key === 'os' || code.includes('meta')) {
+        setCaptureShieldActive(true);
+      }
+
+      const isPrintScreen =
+        key === 'printscreen' || code === 'printscreen' || e.keyCode === 44;
       const isDevTools =
         key === 'f12' ||
-        ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c'].includes(key));
-      const isSavePrintView =
-        (e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(key);
-      const isSystemScreenshot =
-        ((e.metaKey || e.ctrlKey) && e.shiftKey && ['s', '3', '4', '5'].includes(key));
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c', 'k'].includes(key)) ||
+        (e.metaKey && e.altKey && ['i', 'j', 'c', 'u'].includes(key));
+      const isSavePrintSelectCopy =
+        (e.ctrlKey || e.metaKey) && ['p', 's', 'u', 'c', 'x', 'a'].includes(key);
+      const isSystemScreenshotOrRec =
+        ((e.metaKey || e.ctrlKey) && e.shiftKey && ['s', '3', '4', '5', '6', 'r'].includes(key)) ||
+        (e.metaKey && ['g', 'r'].includes(key)) ||
+        (e.altKey && isPrintScreen);
 
-      if (isPrintScreen || isDevTools || isSavePrintView || isSystemScreenshot) {
+      if (isPrintScreen || isDevTools || isSavePrintSelectCopy || isSystemScreenshotOrRec) {
         e.preventDefault();
         e.stopPropagation();
-        if (isPrintScreen && navigator.clipboard?.writeText) {
+        setCaptureShieldActive(true);
+        if ((isPrintScreen || isSystemScreenshotOrRec) && navigator.clipboard?.writeText) {
           navigator.clipboard.writeText('').catch(() => {});
         }
         registerViolation(
-          isPrintScreen || isSystemScreenshot
-            ? 'محاولة التقاط لقطة شاشة أو طباعة أثناء الامتحان'
-            : 'محاولة فتح أدوات المطور أو حفظ صفحة الامتحان',
-          isPrintScreen || isSystemScreenshot
-            ? 'Attempted screenshot or print shortcut during exam'
-            : 'Attempted to open developer tools or save page',
+          isPrintScreen || isSystemScreenshotOrRec
+            ? 'محاولة التقاط لقطة شاشة أو تشغيل تسجيل الشاشة أثناء الامتحان'
+            : isDevTools
+            ? 'محاولة فتح أدوات المطور (Inspect / DevTools) أثناء الامتحان'
+            : 'محاولة طباعة أو حفظ أو نسخ محتوى أسئلة الامتحان',
+          isPrintScreen || isSystemScreenshotOrRec
+            ? 'Attempted screenshot or screen recording shortcut during exam'
+            : isDevTools
+            ? 'Attempted to open browser DevTools during exam'
+            : 'Attempted to print, save, or copy exam questions',
           true
         );
       }
@@ -387,7 +534,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = (e.key || '').toLowerCase();
-      if (key === 'printscreen' || e.code === 'PrintScreen') {
+      const code = (e.code || '').toLowerCase();
+      if (key === 'printscreen' || code === 'printscreen' || e.keyCode === 44) {
+        setCaptureShieldActive(true);
         if (navigator.clipboard?.writeText) {
           navigator.clipboard.writeText('').catch(() => {});
         }
@@ -399,58 +548,125 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       }
     };
 
-    // Intercept navigator.mediaDevices.getDisplayMedia to deter in-browser screen recording
+    // Intercept window.print()
+    const originalPrint = window.print;
+    try {
+      window.print = () => {
+        setCaptureShieldActive(true);
+        registerViolation(
+          'تم حظر محاولة طباعة صفحة الامتحان',
+          'Blocked attempt to print exam page',
+          true
+        );
+      };
+    } catch {}
+
+    // Intercept navigator.mediaDevices.getDisplayMedia & screen-source getUserMedia
     let originalGetDisplayMedia: any = null;
+    let originalGetUserMedia: any = null;
     const mediaDevicesObj = navigator.mediaDevices as any;
-    if (mediaDevicesObj && typeof mediaDevicesObj.getDisplayMedia === 'function') {
-      try {
-        originalGetDisplayMedia = mediaDevicesObj.getDisplayMedia;
-        mediaDevicesObj.getDisplayMedia = () => {
-          registerViolation(
-            'محاولة تشغيل تسجيل الشاشة أو مشاركتها أثناء الامتحان',
-            'Attempted screen recording or screen share during exam',
-            true
-          );
-          return Promise.reject(
-            new Error(
-              isEn
-                ? 'Screen recording is blocked during active exams.'
-                : 'تسجيل ومشاركة الشاشة محظور أثناء الامتحان.'
-            )
-          );
-        };
-      } catch {}
+    if (mediaDevicesObj) {
+      if (typeof mediaDevicesObj.getDisplayMedia === 'function') {
+        try {
+          originalGetDisplayMedia = mediaDevicesObj.getDisplayMedia;
+          mediaDevicesObj.getDisplayMedia = () => {
+            setCaptureShieldActive(true);
+            registerViolation(
+              'محاولة تشغيل تسجيل الشاشة أو مشاركتها (Screen Record/Share) أثناء الامتحان',
+              'Attempted screen recording or screen share during exam',
+              true
+            );
+            return Promise.reject(
+              new Error(
+                isEn
+                  ? 'Screen recording is strictly blocked during active exams.'
+                  : 'تسجيل ومشاركة الشاشة محظور تماماً أثناء الامتحان.'
+              )
+            );
+          };
+        } catch {}
+      }
+
+      if (typeof mediaDevicesObj.getUserMedia === 'function') {
+        try {
+          originalGetUserMedia = mediaDevicesObj.getUserMedia.bind(mediaDevicesObj);
+          mediaDevicesObj.getUserMedia = (constraints: any) => {
+            const videoConstraints = constraints?.video;
+            const isScreenCaptureAttempt =
+              videoConstraints &&
+              typeof videoConstraints === 'object' &&
+              (videoConstraints.chromeMediaSource ||
+                videoConstraints.mediaSource === 'screen' ||
+                videoConstraints.mediaSource === 'window' ||
+                videoConstraints.displaySurface);
+            if (isScreenCaptureAttempt) {
+              setCaptureShieldActive(true);
+              registerViolation(
+                'محاولة التقاط أو بث شاشة الاختبار عبر وسائط المتصفح',
+                'Screen capture media constraint blocked during exam',
+                true
+              );
+              return Promise.reject(new Error('Screen capture blocked during exam.'));
+            }
+            return originalGetUserMedia(constraints);
+          };
+        } catch {}
+      }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
     window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('freeze', handleFreeze);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('resize', handleResize);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('contextmenu', handleContextMenu);
-    document.addEventListener('copy', handleCopyOrCut);
-    document.addEventListener('cut', handleCopyOrCut);
+    document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('copy', handleClipboard);
+    document.addEventListener('cut', handleClipboard);
+    document.addEventListener('paste', handleClipboard);
     document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('enterpictureinpicture', handleEnterPiP, true);
     window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('keyup', handleKeyUp, true);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('freeze', handleFreeze);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('resize', handleResize);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('contextmenu', handleContextMenu);
-      document.removeEventListener('copy', handleCopyOrCut);
-      document.removeEventListener('cut', handleCopyOrCut);
+      document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('copy', handleClipboard);
+      document.removeEventListener('cut', handleClipboard);
+      document.removeEventListener('paste', handleClipboard);
       document.removeEventListener('dragstart', handleDragStart);
+      document.removeEventListener('enterpictureinpicture', handleEnterPiP, true);
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('keyup', handleKeyUp, true);
+      try {
+        window.print = originalPrint;
+      } catch {}
       if (mediaDevicesObj && originalGetDisplayMedia) {
         try {
           mediaDevicesObj.getDisplayMedia = originalGetDisplayMedia;
         } catch {}
       }
+      if (mediaDevicesObj && originalGetUserMedia) {
+        try {
+          mediaDevicesObj.getUserMedia = originalGetUserMedia;
+        } catch {}
+      }
     };
-  }, [examActivelyRunning, isProctoringActive, registerViolation, isEn]);
+  }, [examActivelyRunning, isProctoringActive, registerViolation, isEn, activeQuiz?.id]);
 
   // Live countdown timer starts ONLY after the student confirms exam start
   useEffect(() => {
@@ -505,15 +721,26 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     if (!activeQuiz) return;
     const mins = Math.max(1, Number(activeQuiz.durationMinutes) || 15);
     setSecondsLeft(mins * 60);
+    setCaptureShieldActive(false);
+    setPrivacyCurtainReason(null);
+    setIsWindowFocused(true);
+    viewportBaselineRef.current = {
+      w: window.innerWidth,
+      h: window.innerHeight,
+      chromeW: Math.max(0, window.outerWidth - window.innerWidth),
+      chromeH: Math.max(0, window.outerHeight - window.innerHeight),
+    };
     setExamConfirmed(true);
-    if (activeQuiz.proctoringEnabled !== false && document.documentElement.requestFullscreen) {
+    if (
+      activeQuiz.proctoringEnabled !== false &&
+      typeof document.documentElement?.requestFullscreen === 'function'
+    ) {
       document.documentElement
         .requestFullscreen()
         .then(() => {
           wasFullscreenRef.current = true;
         })
         .catch(() => {
-          // Safe fallback on iPhone/Safari browsers that don't support document fullscreen
           wasFullscreenRef.current = false;
         });
     }
@@ -808,6 +1035,45 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           </div>
         </div>
 
+        {/* Strict Focus Mode & Anti-Capture Highlights */}
+        {isProctoringActive && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-start">
+            <div className="p-3 rounded-2xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/70 space-y-1">
+              <div className="text-xs font-extrabold text-rose-800 dark:text-rose-200 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                <span>{isEn ? 'Strict Focus Mode' : 'وضع التركيز ومنع الخروج'}</span>
+              </div>
+              <p className="text-[11px] text-rose-700/90 dark:text-rose-300 leading-relaxed">
+                {isEn
+                  ? 'Browser Back, tab switching, split-screen, and exiting fullscreen are blocked.'
+                  : 'يُمنع الرجوع أو تبديل التبويب أو تقسيم الشاشة أو الخروج من وضع ملء الشاشة.'}
+              </p>
+            </div>
+            <div className="p-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 space-y-1">
+              <div className="text-xs font-extrabold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                <span>{isEn ? 'Anti-Capture Shield' : 'حظر التصوير والتسجيل'}</span>
+              </div>
+              <p className="text-[11px] text-amber-800/90 dark:text-amber-300 leading-relaxed">
+                {isEn
+                  ? 'Auto-blackout on PrintScreen, screen recording, DevTools, or clipboard copy.'
+                  : 'تعتيم فوري للشاشة مع علامة مائية عند محاولة التصوير أو تسجيل الشاشة أو النسخ.'}
+              </p>
+            </div>
+            <div className="p-3 rounded-2xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/70 space-y-1">
+              <div className="text-xs font-extrabold text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <span>{isEn ? 'Auto Admin Alerts' : 'تنبيه تلقائي للأدمن'}</span>
+              </div>
+              <p className="text-[11px] text-teal-800/90 dark:text-teal-300 leading-relaxed">
+                {isEn
+                  ? 'Every violation instantly alerts the admin and cancels the quiz at the strike limit.'
+                  : 'يُرسل تنبيه فوري للمعلم مع كل مخالفة، ويُلغى الاختبار تلقائياً عند بلوغ الحد الأقصى.'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Teacher Instructions */}
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2.5">
           <div className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
@@ -915,9 +1181,56 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     }
   };
 
+  const handleResumeFocusMode = () => {
+    setPrivacyCurtainReason(null);
+    setCaptureShieldActive(false);
+    setIsWindowFocused(true);
+    if (
+      examActivelyRunning &&
+      isProctoringActive &&
+      !document.fullscreenElement &&
+      typeof document.documentElement?.requestFullscreen === 'function'
+    ) {
+      document.documentElement
+        .requestFullscreen()
+        .then(() => {
+          wasFullscreenRef.current = true;
+        })
+        .catch(() => {});
+    }
+  };
+
   const handleConfirmExitNow = () => {
+    if (examActivelyRunning && isProctoringActive && activeQuiz && onReportExamAlert) {
+      const nextCount = Math.max(1, violationCountRef.current + 1);
+      const exitReason = isEn
+        ? 'Exited active Focus Mode exam page before submission'
+        : 'مغادرة صفحة الاختبار قبل التسليم أثناء تفعيل وضع التركيز (Focus Mode)';
+      const exitAlert: ExamSecurityAlert = {
+        id: `alert_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        studentUid: currentUser.id,
+        studentName: currentUser.name,
+        studentEmail: currentUser.email,
+        studentPhone: currentUser.phone,
+        grade: activeQuiz.grade,
+        quizId: activeQuiz.id,
+        quizTitle: activeQuiz.title,
+        violationCount: nextCount,
+        maxViolations: maxAllowedViolations,
+        reasons: [...violationReasonsRef.current, exitReason],
+        actionTaken: 'warning',
+        resolved: false,
+        createdAtDate: new Date().toISOString().split('T')[0],
+      };
+      try {
+        Promise.resolve(onReportExamAlert(exitAlert)).catch(() => {});
+      } catch {}
+    }
+
     setConfirmExitOpen(false);
     setEnlargedQuizImage(null);
+    setPrivacyCurtainReason(null);
+    setCaptureShieldActive(false);
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     }
@@ -935,7 +1248,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const handleToggleFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen?.().catch(() => {});
-    } else if (document.documentElement.requestFullscreen) {
+    } else if (typeof document.documentElement?.requestFullscreen === 'function') {
       document.documentElement.requestFullscreen().catch(() => {});
     }
   };
@@ -1001,74 +1314,94 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
         examActivelyRunning && isProctoringActive ? 'exam-secure-surface rounded-3xl' : ''
       }`}
     >
-      {/* Dynamic Anti-Piracy Moving Watermark Overlay */}
-      {examActivelyRunning && isProctoringActive && (
+      {/* Dynamic Multi-Row Anti-Photography Watermark Overlay */}
+      {examActivelyRunning && isProctoringActive && !isContentObscured && (
         <div
           aria-hidden="true"
           className="pointer-events-none select-none fixed inset-0 z-30 overflow-hidden"
         >
-          <div
-            className="absolute transition-all duration-1000 ease-in-out -rotate-12 text-slate-900/[0.06] dark:text-white/[0.06] font-mono font-extrabold text-xs sm:text-sm whitespace-nowrap"
-            style={{ top: `${watermarkPos.top}%`, left: `${watermarkPos.left}%` }}
-          >
-            {currentUser.name} · {currentUser.phone || currentUser.id} ·{' '}
-            {siteConfig?.teacherName || 'منصة الكيمياء'}
-          </div>
-          <div
-            className="absolute transition-all duration-1000 ease-in-out -rotate-12 text-slate-900/[0.05] dark:text-white/[0.05] font-mono font-extrabold text-[11px] sm:text-xs whitespace-nowrap"
-            style={{
-              top: `${(watermarkPos.top + 42) % 85}%`,
-              left: `${(watermarkPos.left + 38) % 72}%`,
-            }}
-          >
-            {currentUser.email || currentUser.id} · PROCTORED EXAM
-          </div>
+          {[0, 1, 2, 3].map((row) => (
+            <div
+              key={row}
+              className="absolute transition-all duration-1000 ease-in-out -rotate-12 text-slate-900/[0.065] dark:text-white/[0.065] font-mono font-extrabold text-xs sm:text-sm whitespace-nowrap"
+              style={{
+                top: `${(watermarkPos.top + row * 23) % 90}%`,
+                left: `${(watermarkPos.left + row * 21) % 68}%`,
+              }}
+            >
+              {currentUser.name} · {currentUser.phone || currentUser.email || currentUser.id} ·{' '}
+              {activeQuiz.title} · FOCUS MODE
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Privacy Blackout Shield on Blur / Tab Switch / PrintScreen */}
-      {privacyCurtainReason && examActivelyRunning && (
+      {/* Opaque Privacy & Anti-Capture Blackout Shield (Triggers synchronously on Blur / Tab Switch / Capture Keys) */}
+      {isContentObscured && (
         <div
           role="alertdialog"
           aria-modal="true"
-          className="fixed inset-0 z-[85] bg-slate-950/98 text-white flex flex-col items-center justify-center p-6 text-center space-y-5 backdrop-blur-xl"
+          className="fixed inset-0 z-[95] bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-5"
         >
           <div className="w-16 h-16 rounded-2xl bg-rose-600/20 border border-rose-500/40 text-rose-400 flex items-center justify-center">
             <EyeOff className="w-8 h-8" />
           </div>
           <div className="space-y-2 max-w-md">
-            <div className="text-xs font-mono font-extrabold text-rose-400">
-              {isEn
-                ? `SECURITY STRIKE ${violationCount} / ${maxAllowedViolations}`
-                : `مخالفة لجنة رقم ${violationCount} من ${maxAllowedViolations}`}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950 border border-rose-700/70 text-xs font-mono font-extrabold text-rose-300">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>
+                {isEn
+                  ? `FOCUS LOCK · STRIKE ${violationCount} / ${maxAllowedViolations}`
+                  : `قفل وضع التركيز · مخالفة ${violationCount} من ${maxAllowedViolations}`}
+              </span>
             </div>
             <h3 className="text-xl sm:text-2xl font-extrabold">
-              {isEn ? 'Exam Screen Protected' : 'حماية اللجنة مفعّلة — ممنوع الخروج'}
+              {isEn
+                ? 'Exam Screen Shielded — Anti-Capture & Focus Lock'
+                : 'تم تعتيم شاشة الاختبار تلقائياً — حماية ضد التصوير والخروج'}
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              {privacyCurtainReason}.{' '}
+              {privacyCurtainReason ||
+                (isEn
+                  ? 'Exam content is hidden whenever window focus is lost or screen capture is attempted.'
+                  : 'يتم إخفاء الأسئلة فوراً عند فقدان التركيز أو محاولة تصوير/تسجيل الشاشة.')}{' '}
               {isEn
-                ? `Warning: reaching ${maxAllowedViolations} violations will automatically cancel your exam and notify the teacher.`
-                : `تحذير: عند الوصول إلى (${maxAllowedViolations}) مخالفات سيتم إلغاء امتحانك تلقائياً وإرسال تقرير للمعلم.`}
+                ? `Reaching ${maxAllowedViolations} violations cancels your exam and notifies the teacher automatically.`
+                : `تم إرسال تنبيه تلقائي للأدمن، وعند بلوغ (${maxAllowedViolations}) مخالفات سيتم إلغاء الامتحان تلقائياً.`}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setPrivacyCurtainReason(null)}
-            className="min-h-[46px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm cursor-pointer"
+            onClick={handleResumeFocusMode}
+            className="min-h-[46px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm cursor-pointer flex items-center gap-2"
           >
-            {isEn ? 'Acknowledge & Resume Exam' : 'فهمت، العودة للامتحان الآن'}
+            <Lock className="w-4 h-4" />
+            <span>
+              {isEn
+                ? 'Re-enter Focus Mode & Resume Exam'
+                : 'تفعيل وضع التركيز واستئناف الامتحان'}
+            </span>
           </button>
         </div>
       )}
 
-      {/* Top Quiz Header Bar (Focused Exam Header with Zoom + Timer + Confirm Exit) */}
+      {/* Obscure actual question DOM underneath blackout shield so OS snapshots capture blank background */}
+      <div className={isContentObscured ? 'opacity-0 invisible pointer-events-none select-none space-y-4' : 'space-y-4'}>
+      {/* Top Quiz Header Bar (Dedicated Focus Mode Exam Header with Zoom + Timer + Confirm Exit) */}
       <div className="p-3.5 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 relative z-10 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-sm sm:text-lg text-slate-900 dark:text-white truncate">
-              {activeQuiz.title}
-            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-bold text-sm sm:text-lg text-slate-900 dark:text-white truncate">
+                {activeQuiz.title}
+              </h3>
+              {examActivelyRunning && isProctoringActive && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[10px] font-extrabold shrink-0">
+                  <Lock className="w-3 h-3" />
+                  <span>{isEn ? 'Focus Mode Locked' : 'وضع التركيز المشدد'}</span>
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 tabular-nums mt-0.5">
               <span>
                 {isEn
@@ -2091,6 +2424,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </div>
           )
         )}
+      </div>
       </div>
     </div>
   );

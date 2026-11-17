@@ -250,33 +250,43 @@ body {
 }
 
 /* ==========================================
-   EXAM ANTI-CHEAT & MOBILE POLISH
+   EXAM ANTI-CHEAT, FOCUS MODE & MOBILE POLISH
    ========================================== */
-.exam-secure-surface {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-user-drag: none;
+body.exam-active-lock {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  overscroll-behavior-x: none !important;
+  touch-action: manipulation;
+}
+
+.exam-secure-surface,
+.exam-secure-surface * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-drag: none !important;
 }
 
 .exam-secure-surface img {
-  -webkit-user-drag: none;
-  pointer-events: none;
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  pointer-events: none !important;
 }
 
 @media print {
   body.exam-active-lock * {
     display: none !important;
     visibility: hidden !important;
+    opacity: 0 !important;
   }
   body.exam-active-lock::after {
-    content: 'الطباعة وحفظ صفحات الاختبار غير مسموح به داخل لجنة الامتحان.';
+    content: 'الطباعة أو حفظ أو تصوير صفحات الاختبار محظور تماماً داخل وضع التركيز ولجنة المراقبة.';
     display: block !important;
     font-size: 20px;
     font-weight: bold;
     text-align: center;
-    padding: 48px 24px;
+    padding: 64px 24px;
     color: #be123c;
   }
 }

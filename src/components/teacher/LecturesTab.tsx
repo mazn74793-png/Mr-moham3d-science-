@@ -133,6 +133,20 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteConfirmLecId, setDeleteConfirmLecId] = useState<string | null>(null);
 
+  // Inline quick add-video directly under any specific unit card
+  const [inlineAddUnitId, setInlineAddUnitId] = useState<string | null>(null);
+  const [inlineTitle, setInlineTitle] = useState('');
+  const [inlineVideoUrl, setInlineVideoUrl] = useState('');
+  const [inlineDuration, setInlineDuration] = useState('45 دقيقة');
+  const [inlineOrder, setInlineOrder] = useState<number>(1);
+  const [inlineQuizId, setInlineQuizId] = useState('');
+  const [inlinePointsCost, setInlinePointsCost] = useState<number>(0);
+  const [inlineDesc, setInlineDesc] = useState('');
+  const [inlineUploadingVideo, setInlineUploadingVideo] = useState(false);
+  const [inlineUploadProgress, setInlineUploadProgress] = useState(0);
+  const [inlineUploadMeta, setInlineUploadMeta] = useState<UploadProgressInfo | null>(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
+
   const [previewModal, setPreviewModal] = useState<{
     url: string;
     title: string;
@@ -343,6 +357,98 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     setLecSessionOrder(uLecs.length + 1);
     onSwitchMode('upload');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenInlineAddVideo = (unit: GradeUnit) => {
+    if (inlineAddUnitId === unit.id) {
+      setInlineAddUnitId(null);
+      return;
+    }
+    const uLecs = getLecturesInUnit(listGradeLectures, unit);
+    setInlineAddUnitId(unit.id);
+    setInlineTitle('');
+    setInlineVideoUrl('');
+    setInlineDuration('45 دقيقة');
+    setInlineOrder(uLecs.length + 1);
+    setInlineQuizId('');
+    setInlinePointsCost(0);
+    setInlineDesc('');
+    setCollapsedUnitIds((prev) => ({ ...prev, [unit.id]: false }));
+  };
+
+  const handleInlineUnitVideoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setInlineUploadingVideo(true);
+    setInlineUploadProgress(0);
+    setInlineUploadMeta(null);
+    setLectureFormError(null);
+    try {
+      const result = await uploadMediaFile(file, {
+        cloudName,
+        uploadPreset,
+        resourceType: 'video',
+        onProgress: (percent, info) => {
+          setInlineUploadProgress(percent);
+          setInlineUploadMeta(info);
+        },
+      });
+      setInlineVideoUrl(result.url);
+      if (result.durationSeconds) {
+        setInlineDuration(`${Math.max(1, Math.round(result.durationSeconds / 60))} دقيقة`);
+      }
+      if (!inlineTitle.trim()) {
+        setInlineTitle(file.name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (err: any) {
+      setLectureFormError(err?.message || 'تعذر رفع الفيديو للوحدة.');
+    } finally {
+      setInlineUploadingVideo(false);
+    }
+  };
+
+  const handleSaveInlineUnitVideo = async (e: React.FormEvent, unit: GradeUnit) => {
+    e.preventDefault();
+    if (inlineUploadingVideo || inlineSaving) return;
+    setLectureFormError(null);
+    if (!inlineTitle.trim() || !inlineVideoUrl.trim()) {
+      setLectureFormError('يرجى إدخال عنوان الفيديو ورفع الفيديو أو لصق رابطه.');
+      return;
+    }
+    const resolvedUnitId = unit.id !== '__uncategorized__' ? unit.id : undefined;
+    const newLec: Lecture = {
+      id: `lec-${Date.now()}`,
+      sessionOrder: Math.max(1, Number(inlineOrder) || 1),
+      quizId: inlineQuizId || undefined,
+      title: inlineTitle.trim(),
+      grade: selectedListGrade,
+      gradeLabel: getGradeDisplayName(selectedListGrade, siteForm, 'ar'),
+      unitId: resolvedUnitId,
+      chapter: unit.titleAr,
+      duration: inlineDuration.trim() || '45 دقيقة',
+      videoUrl: inlineVideoUrl.trim(),
+      thumbnailUrl: '/images/chemistry_lab_visual_1794141316456.jpg',
+      description: inlineDesc.trim() || 'شرح تفاعلي لموضوع الدرس مع أمثلة وتدريبات تطبيقية.',
+      isFreePreview: false,
+      viewsCount: 0,
+      dateAdded: new Date().toISOString().split('T')[0],
+      pointsCost: Math.max(0, Math.round(Number(inlinePointsCost) || 0)),
+    };
+
+    setInlineSaving(true);
+    try {
+      const saved = await onAddLecture(newLec);
+      if (saved === false) {
+        setLectureFormError('تعذر نشر الفيديو في السحابة.');
+        return;
+      }
+      setInlineAddUnitId(null);
+      setLectureFormSuccess(`تمت إضافة "${newLec.title}" داخل وحدة "${unit.titleAr}" بنجاح!`);
+      setTimeout(() => setLectureFormSuccess(null), 4000);
+    } finally {
+      setInlineSaving(false);
+    }
   };
 
   const handleSelectUploadUnit = (unitId: string) => {
@@ -1717,14 +1823,144 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => handleJumpUploadToUnit(selectedListGrade, unit)}
-                    className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    onClick={() => handleOpenInlineAddVideo(unit)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                      inlineAddUnitId === unit.id
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                        : 'bg-teal-600 hover:bg-teal-700 text-white'
+                    }`}
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ إضافة محاضرة هنا</span>
+                    <span>{inlineAddUnitId === unit.id ? 'إغلاق الإضافة' : '+ إضافة فيديو للوحدة'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleJumpUploadToUnit(selectedListGrade, unit)}
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-teal-500 text-[11px] font-bold cursor-pointer"
+                    title="فتح نموذج الرفع الكامل لهذه الوحدة مع غلاف ومذكرة"
+                  >
+                    النموذج الكامل
                   </button>
                 </div>
               </div>
+
+              {/* Inline Add Video Form Directly Under This Unit */}
+              {inlineAddUnitId === unit.id && (
+                <form
+                  onSubmit={(e) => handleSaveInlineUnitVideo(e, unit)}
+                  className="p-4 sm:p-5 bg-teal-50/60 dark:bg-teal-950/30 border-b border-teal-200 dark:border-teal-800 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-extrabold text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                      <Film className="w-4 h-4 text-teal-600" />
+                      <span>إضافة فيديو مباشر داخل وحدة: {unit.titleAr}</span>
+                    </div>
+                    <label className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{inlineUploadingVideo ? `جاري الرفع ${inlineUploadProgress}%` : 'رفع فيديو من الجهاز'}</span>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        disabled={inlineUploadingVideo}
+                        onChange={handleInlineUnitVideoFile}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  {inlineUploadingVideo && (
+                    <UploadProgressBar
+                      label="جاري رفع الفيديو للوحدة..."
+                      progress={inlineUploadProgress}
+                      meta={inlineUploadMeta}
+                    />
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                    <input
+                      type="text"
+                      required
+                      value={inlineTitle}
+                      onChange={(e) => setInlineTitle(e.target.value)}
+                      placeholder="عنوان الفيديو / الحصة *"
+                      className="lg:col-span-2 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    />
+                    <input
+                      type="text"
+                      required
+                      value={inlineVideoUrl}
+                      onChange={(e) => setInlineVideoUrl(e.target.value)}
+                      placeholder="رابط الفيديو (يُعبأ تلقائياً بعد الرفع أو YouTube)"
+                      dir="ltr"
+                      className="lg:col-span-2 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={inlineDuration}
+                      onChange={(e) => setInlineDuration(e.target.value)}
+                      placeholder="المدة (مثال: 45 دقيقة)"
+                      className="p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={inlineOrder}
+                      onChange={(e) => setInlineOrder(Number(e.target.value))}
+                      placeholder="الترتيب"
+                      className="p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
+                    />
+                    <select
+                      value={inlineQuizId}
+                      onChange={(e) => setInlineQuizId(e.target.value)}
+                      className="p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    >
+                      <option value="">بدون كويز إجباري</option>
+                      {quizzes
+                        .filter((q) => q.grade === selectedListGrade)
+                        .map((q) => (
+                          <option key={q.id} value={q.id}>
+                            {q.title}
+                          </option>
+                        ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      value={inlinePointsCost}
+                      onChange={(e) => setInlinePointsCost(Math.max(0, Number(e.target.value)))}
+                      placeholder="تكلفة النقاط (0 = مجاني)"
+                      className="p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                    <input
+                      type="text"
+                      value={inlineDesc}
+                      onChange={(e) => setInlineDesc(e.target.value)}
+                      placeholder="وصف مختصر للحصة (اختياري)"
+                      className="flex-1 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setInlineAddUnitId(null)}
+                        className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={inlineUploadingVideo || inlineSaving}
+                        className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        {inlineSaving ? 'جاري النشر...' : 'نشر الفيديو في الوحدة'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
 
               {/* Lectures Inside Unit */}
               {!isCollapsed && (

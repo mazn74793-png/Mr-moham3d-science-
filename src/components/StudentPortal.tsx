@@ -8,6 +8,9 @@ import {
   BookOpen,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  FolderOpen,
   Video,
   Check,
   Lock,
@@ -151,9 +154,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [lectureSearch, setLectureSearch] = useState('');
   const [lectureFilter, setLectureFilter] = useState<'all' | 'available' | 'completed' | 'bookmarked'>('all');
   const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('all');
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setSelectedUnitFilter('all');
+    setExpandedChapterIds({});
   }, [selectedGrade]);
 
   const studentStorageKey = currentUser?.id || 'guest';
@@ -365,6 +370,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     () => (activeLecture ? getUnitForLecture(activeLecture, gradeUnits) : undefined),
     [activeLecture, gradeUnits]
   );
+
+  // Keep only the active/selected chapter expanded by default instead of dumping a long flat list
+  useEffect(() => {
+    if (selectedUnitFilter !== 'all') {
+      setExpandedChapterIds({ [selectedUnitFilter]: true });
+    } else if (activeLectureUnit) {
+      setExpandedChapterIds((prev) =>
+        Object.keys(prev).length === 0 ? { [activeLectureUnit.id]: true } : prev
+      );
+    } else if (gradeUnits.length > 0) {
+      setExpandedChapterIds((prev) =>
+        Object.keys(prev).length === 0 ? { [gradeUnits[0].id]: true } : prev
+      );
+    }
+  }, [selectedUnitFilter, activeLectureUnit?.id, gradeUnits]);
 
   const handleMarkWatched = (lecId: string) => {
     if (!currentUser) return;
@@ -996,45 +1016,33 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             {/* 1. LECTURES TAB */}
             {activeTab === 'lectures' && !activeQuiz && (
               <div className="space-y-5">
-                {/* Interactive Unit & Course Track Explorer */}
+                {/* Interactive Chapters / Units Overview Grid */}
                 {gradeUnits.length > 0 && (
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                         <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
                         <span>
-                          {lang === 'en' ? 'Units & Course Tracks' : 'الوحدات والمسارات التعليمية'}
+                          {lang === 'en' ? 'Curriculum Chapters (Units)' : 'أبواب ووحدات المنهج'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 text-[11px] font-mono tabular-nums">
+                          {gradeUnits.length}
                         </span>
                       </div>
-                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                        {gradeUnits.length} {lang === 'en' ? 'units' : 'وحدات'}
-                      </span>
+
+                      {selectedUnitFilter !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUnitFilter('all')}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                        >
+                          {lang === 'en' ? 'Show All Chapters' : 'عرض كل الوحدات'}
+                        </button>
+                      )}
                     </div>
 
-                    <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUnitFilter('all')}
-                        className={`min-w-[130px] px-3.5 py-2.5 rounded-xl border text-start transition-colors cursor-pointer shrink-0 flex flex-col justify-between gap-1 ${
-                          selectedUnitFilter === 'all'
-                            ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                            : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-teal-400'
-                        }`}
-                      >
-                        <div className="text-xs font-bold">
-                          {lang === 'en' ? 'All Units' : 'كل الوحدات'}
-                        </div>
-                        <div
-                          className={`text-[11px] font-mono tabular-nums ${
-                            selectedUnitFilter === 'all' ? 'text-teal-100' : 'text-slate-500'
-                          }`}
-                        >
-                          {completedLecturesCount}/{totalLecturesCount}{' '}
-                          {lang === 'en' ? 'done' : 'مكتملة'}
-                        </div>
-                      </button>
-
-                      {gradeUnits.map((u) => {
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {gradeUnits.map((u, uIdx) => {
                         const unitLecs = getLecturesInUnit(filteredLectures, u);
                         if (unitLecs.length === 0 && !isTeacher) return null;
                         const completedInUnit = unitLecs.filter((l) =>
@@ -1051,7 +1059,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             key={u.id}
                             type="button"
                             onClick={() => {
-                              setSelectedUnitFilter(u.id);
+                              const nextFilter = active ? 'all' : u.id;
+                              setSelectedUnitFilter(nextFilter);
+                              setExpandedChapterIds((prev) => ({ ...prev, [u.id]: true }));
                               if (
                                 unitLecs.length > 0 &&
                                 (!activeLecture || getUnitForLecture(activeLecture, gradeUnits)?.id !== u.id)
@@ -1061,26 +1071,51 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 setActiveLecture(firstAvailable);
                               }
                             }}
-                            className={`min-w-[185px] max-w-[240px] px-3.5 py-2.5 rounded-xl border text-start transition-colors cursor-pointer shrink-0 flex flex-col justify-between gap-1.5 ${
+                            className={`p-3.5 rounded-xl border text-start transition-colors cursor-pointer flex flex-col justify-between gap-2 ${
                               active
-                                ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-900 dark:text-teal-100'
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-400 text-slate-800 dark:text-slate-200'
+                                ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-950 dark:text-teal-100 shadow-xs'
+                                : 'bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 hover:border-teal-400 text-slate-800 dark:text-slate-200'
                             }`}
                           >
-                            <div className="text-xs font-bold truncate">{u.titleAr}</div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`w-7 h-7 rounded-lg text-[11px] font-mono font-extrabold flex items-center justify-center shrink-0 ${
+                                    active
+                                      ? 'bg-teal-600 text-white'
+                                      : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-teal-700 dark:text-teal-300'
+                                  }`}
+                                >
+                                  {uIdx + 1}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-xs sm:text-sm font-bold truncate">{u.titleAr}</div>
+                                  {u.descriptionAr && (
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                      {u.descriptionAr}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {active && (
+                                <span className="px-2 py-0.5 rounded-md bg-teal-600 text-white text-[10px] font-bold shrink-0">
+                                  {lang === 'en' ? 'Open' : 'مفتوحة'}
+                                </span>
+                              )}
+                            </div>
+
                             <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                                 <span>
                                   {completedInUnit}/{unitLecs.length}{' '}
-                                  {lang === 'en' ? 'sessions' : 'حصص'}
+                                  {lang === 'en' ? 'videos' : 'فيديو'}
                                 </span>
-                                {u.isIndependent !== false && (
-                                  <span className="text-teal-600 dark:text-teal-400 font-sans font-semibold">
-                                    {lang === 'en' ? 'Direct' : 'مستقلة'}
-                                  </span>
-                                )}
+                                <span className="font-sans font-semibold text-teal-600 dark:text-teal-400">
+                                  {pct}%
+                                </span>
                               </div>
-                              <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                              <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                                 <div
                                   className="h-full bg-teal-600 dark:bg-teal-500 rounded-full transition-all"
                                   style={{ width: `${pct}%` }}
@@ -1632,21 +1667,51 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   )}
                 </div>
 
-                {/* Lecture Curriculum Playlist Column (Grouped by Unit with 16:9 Thumbnails) */}
+                {/* Lecture Curriculum Chapters Accordion Column */}
                 <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                   <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
                         {selectedUnitFilter === 'all'
                           ? lang === 'en'
-                            ? 'Curriculum Playlist'
-                            : 'قائمة حصص المنهج'
+                            ? 'Chapters & Lectures'
+                            : 'وحدات ومحاضرات المنهج'
                           : gradeUnits.find((u) => u.id === selectedUnitFilter)?.titleAr ||
                             (lang === 'en' ? 'Unit Playlist' : 'حصص الوحدة')}
                       </h3>
-                      <span className="text-xs font-mono tabular-nums text-slate-500">
-                        {filteredLectures.length} {lang === 'en' ? 'sessions' : 'حصص'}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {selectedUnitFilter === 'all' && gradeUnits.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allExpanded = gradeUnits.every((u) => expandedChapterIds[u.id]);
+                              if (allExpanded) {
+                                setExpandedChapterIds(
+                                  activeLectureUnit ? { [activeLectureUnit.id]: true } : {}
+                                );
+                              } else {
+                                const next: Record<string, boolean> = {};
+                                gradeUnits.forEach((u) => {
+                                  next[u.id] = true;
+                                });
+                                setExpandedChapterIds(next);
+                              }
+                            }}
+                            className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline cursor-pointer"
+                          >
+                            {gradeUnits.every((u) => expandedChapterIds[u.id])
+                              ? lang === 'en'
+                                ? 'Collapse'
+                                : 'طي الوحدات'
+                              : lang === 'en'
+                              ? 'Expand all'
+                              : 'فتح الكل'}
+                          </button>
+                        )}
+                        <span className="text-xs font-mono tabular-nums text-slate-500">
+                          {filteredLectures.length} {lang === 'en' ? 'videos' : 'فيديو'}
+                        </span>
+                      </div>
                     </div>
 
                     {filteredLectures.length > 0 && (
@@ -1693,7 +1758,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         {nextTargetLecture && nextTargetLecture.id !== activeLecture?.id && (
                           <button
                             type="button"
-                            onClick={() => setActiveLecture(nextTargetLecture)}
+                            onClick={() => {
+                              setActiveLecture(nextTargetLecture);
+                              const targetUnit = getUnitForLecture(nextTargetLecture, gradeUnits);
+                              if (targetUnit) {
+                                setExpandedChapterIds((prev) => ({ ...prev, [targetUnit.id]: true }));
+                              }
+                            }}
                             className="w-full px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200/80 dark:border-teal-800/70 hover:border-teal-500 text-start transition-colors flex items-center justify-between gap-2 cursor-pointer"
                           >
                             <div className="min-w-0">
@@ -1711,7 +1782,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     )}
                   </div>
 
-                  <div className="max-h-[580px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                  <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
                     {(() => {
                       const unitsToRender =
                         selectedUnitFilter === 'all'
@@ -1856,18 +1927,52 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         const completedInUnit = unitAllLecs.filter((l) =>
                           currentUser?.watchedLectureIds?.includes(l.id)
                         ).length;
+                        const containsActive = matching.some((l) => l.id === activeLecture?.id);
+                        const isExpanded =
+                          Boolean(q) ||
+                          selectedUnitFilter !== 'all' ||
+                          Boolean(expandedChapterIds[unit.id]);
 
                         return (
                           <div key={unit.id}>
-                            <div className="px-4 py-2 bg-slate-50/90 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">
-                                {unit.titleAr}
-                              </span>
-                              <span className="text-[10px] font-mono tabular-nums text-slate-500 shrink-0">
-                                {completedInUnit}/{unitAllLecs.length}
-                              </span>
-                            </div>
-                            <div>{matching.map((lec, idx) => renderLectureItem(lec, idx))}</div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedChapterIds((prev) => ({
+                                  ...prev,
+                                  [unit.id]: !isExpanded,
+                                }))
+                              }
+                              className={`w-full px-4 py-3 text-start border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                containsActive
+                                  ? 'bg-teal-50/70 dark:bg-teal-950/30'
+                                  : 'bg-slate-50/90 dark:bg-slate-800/50 hover:bg-slate-100/80 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FolderOpen
+                                  className={`w-4 h-4 shrink-0 ${
+                                    containsActive ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500'
+                                  }`}
+                                />
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                  {unit.titleAr}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                                  {completedInUnit}/{unitAllLecs.length}
+                                </span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-slate-500" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                                )}
+                              </div>
+                            </button>
+                            {isExpanded && (
+                              <div>{matching.map((lec, idx) => renderLectureItem(lec, idx))}</div>
+                            )}
                           </div>
                         );
                       });
