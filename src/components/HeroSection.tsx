@@ -191,21 +191,12 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           {/* Teacher Photo Column */}
           <div className="lg:col-span-5 flex justify-center lg:justify-end animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
             <div className="relative w-full max-w-sm sm:max-w-md flex flex-col items-center">
-              
-              {/* Soft atmospheric radial glow */}
-              <div className="absolute inset-0 bg-gradient-to-t from-teal-500/25 via-teal-400/10 to-amber-400/10 rounded-full blur-3xl pointer-events-none animate-glow-pulse -z-10" />
-
-              {/* Floating Orbit Atom Ring */}
-              <div className="absolute -top-6 -right-6 w-20 h-20 text-teal-500/20 dark:text-teal-400/20 pointer-events-none animate-float-slow">
-                <Atom className="w-full h-full animate-orbit" />
-              </div>
-
               {/* Image or Clean Educator Crest Placeholder */}
               <div className="relative w-full flex items-center justify-center group">
                 {optimizedHeroSrc && !imgError ? (
-                  <div className="relative w-full min-h-[300px] sm:min-h-[390px] flex items-end justify-center overflow-hidden rounded-[2rem] bg-gradient-to-b from-teal-500/5 via-teal-500/10 to-teal-700/20 dark:from-slate-900/40 dark:via-teal-950/30 dark:to-teal-900/40 border border-teal-200/50 dark:border-teal-800/40 pt-4 px-4">
+                  <div className="relative w-full min-h-[280px] sm:min-h-[380px] flex items-end justify-center bg-transparent">
                     {!imgLoaded && (
-                      <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-teal-900/15 via-slate-200/60 to-teal-800/15 dark:from-teal-950/60 dark:via-slate-800/70 dark:to-teal-900/50 animate-pulse overflow-hidden">
+                      <div className="absolute inset-0 bg-slate-100/60 dark:bg-slate-800/40 rounded-3xl animate-pulse overflow-hidden">
                         {lqipHeroSrc && (
                           <img
                             src={lqipHeroSrc}
@@ -225,7 +216,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                       decoding="sync"
                       onLoad={() => setImgLoaded(true)}
                       onError={handleImageError}
-                      className={`relative z-10 w-full max-w-[380px] max-h-[430px] object-contain object-bottom drop-shadow-[0_18px_32px_rgba(13,148,136,0.22)] transition-all duration-300 ease-out group-hover:scale-[1.03] cursor-pointer ${
+                      className={`relative z-10 w-full max-w-[390px] max-h-[450px] object-contain object-bottom transition-transform duration-300 ease-out group-hover:scale-[1.02] cursor-pointer ${
                         imgLoaded ? 'opacity-100' : 'opacity-0'
                       }`}
                       referrerPolicy="no-referrer"
