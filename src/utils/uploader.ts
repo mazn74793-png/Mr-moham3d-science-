@@ -24,9 +24,12 @@ export interface UploadResult {
   source: 'cloudinary' | 'server';
   durationSeconds?: number;
   bytes?: number;
+  fallbackReason?: 'cloudinary_limit' | 'cloudinary_error';
 }
 
-const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5 MB chunks avoid proxy stalls and give instant streaming progress
+const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5 MB chunks for server uploads
+const CLOUDINARY_CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks for Cloudinary (>= 5 MB minimum)
+const CLOUDINARY_FREE_RAW_LIMIT_BYTES = 10 * 1024 * 1024; // 10 MB free plan cap for PDFs/docs/images
 const MAX_PARALLEL_CHUNKS = 3;
 
 function formatMB(bytes: number): string {
@@ -43,6 +46,20 @@ export function isCloudinaryConfigured(cloudName?: string, uploadPreset?: string
     (cleanPreset === 'mohamed_mostafa_preset' || cleanPreset === 'chemistry_uploads');
 
   return !isPlaceholder;
+}
+
+async function isServerUploadAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 2500);
+    const res = await fetch('/api/health', { method: 'GET', signal: controller.signal });
+    window.clearTimeout(timer);
+    if (!res.ok) return false;
+    const json = await res.json().catch(() => null);
+    return Boolean(json?.ok);
+  } catch {
+    return false;
+  }
 }
 
 function createSpeedTracker(totalBytes: number, onProgress?: (percent: number, info: UploadProgressInfo) => void) {
@@ -135,9 +152,66 @@ function uploadBlobViaXhr(
   });
 }
 
+async function uploadChunkedToCloudinary(
+  file: File,
+  cloudName: string,
+  uploadPreset: string,
+  endpoint: string,
+  onProgress?: (percent: number, info: UploadProgressInfo) => void
+): Promise<UploadResult> {
+  const uniqueUploadId = `cld_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const totalBytes = file.size;
+  const totalChunks = Math.ceil(totalBytes / CLOUDINARY_CHUNK_SIZE);
+  const tracker = createSpeedTracker(totalBytes, onProgress);
+
+  try {
+    let lastData: any = null;
+    for (let idx = 0; idx < totalChunks; idx++) {
+      const start = idx * CLOUDINARY_CHUNK_SIZE;
+      const end = Math.min(totalBytes, start + CLOUDINARY_CHUNK_SIZE);
+      const chunk = file.slice(start, end);
+
+      const fd = new FormData();
+      fd.append('file', chunk, file.name);
+      fd.append('upload_preset', uploadPreset);
+
+      lastData = await uploadBlobViaXhr(
+        `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${endpoint}/upload`,
+        fd,
+        {
+          'X-Unique-Upload-Id': uniqueUploadId,
+          'Content-Range': `bytes ${start}-${end - 1}/${totalBytes}`,
+        },
+        (loaded) => {
+          const aggregate = Math.min(totalBytes, start + loaded);
+          const pct = Math.min(99, Math.max(1, Math.round((aggregate / totalBytes) * 100)));
+          tracker.update(aggregate, pct);
+        },
+        240000
+      );
+    }
+
+    tracker.update(totalBytes, 100, true);
+    const finalUrl = lastData?.secure_url || lastData?.url;
+    if (!finalUrl || typeof finalUrl !== 'string') {
+      throw new Error('لم يتم استلام رابط الملف من Cloudinary');
+    }
+
+    return {
+      url: finalUrl,
+      source: 'cloudinary',
+      durationSeconds: typeof lastData?.duration === 'number' ? lastData.duration : undefined,
+      bytes: typeof lastData?.bytes === 'number' ? lastData.bytes : totalBytes,
+    };
+  } finally {
+    tracker.stop();
+  }
+}
+
 async function uploadChunkedToServer(
   file: File,
-  onProgress?: (percent: number, info: UploadProgressInfo) => void
+  onProgress?: (percent: number, info: UploadProgressInfo) => void,
+  fallbackReason?: UploadResult['fallbackReason']
 ): Promise<UploadResult> {
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const uploadId = `u_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -208,6 +282,7 @@ async function uploadChunkedToServer(
       url: data.url,
       source: 'server',
       bytes: file.size,
+      fallbackReason,
     };
   } finally {
     tracker.stop();
@@ -244,11 +319,10 @@ export async function uploadMediaFile(
     totalMB: formatMB(file.size),
   });
 
-  // 1. Direct FormData XHR upload to Cloudinary when configured
+  const isVideo = resourceType === 'video' || file.type.startsWith('video/');
+
+  // 1. Upload via Cloudinary when configured (unless a non-video exceeds the 10 MB free tier limit & server is available)
   if (isCloudinaryConfigured(cleanCloud, cleanPreset)) {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', cleanPreset);
     const endpoint =
       resourceType === 'video'
         ? 'video'
@@ -258,8 +332,25 @@ export async function uploadMediaFile(
         ? 'image'
         : 'auto';
 
+    // Free Cloudinary rejects raw/PDF/image files >= 10 MB immediately — route straight to parallel chunked server if available
+    if (!isVideo && file.size > CLOUDINARY_FREE_RAW_LIMIT_BYTES) {
+      if (await isServerUploadAvailable()) {
+        return await uploadChunkedToServer(file, onProgress, 'cloudinary_limit');
+      }
+    }
+
     const tracker = createSpeedTracker(file.size, onProgress);
     try {
+      // Large videos (> 18 MB) use Cloudinary's official 6 MB chunked upload so requests never stall
+      if (isVideo && file.size > 18 * 1024 * 1024) {
+        tracker.stop();
+        return await uploadChunkedToCloudinary(file, cleanCloud, cleanPreset, endpoint, onProgress);
+      }
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', cleanPreset);
+
       const data = await uploadBlobViaXhr(
         `https://api.cloudinary.com/v1_1/${encodeURIComponent(cleanCloud)}/${endpoint}/upload`,
         fd,
@@ -284,8 +375,49 @@ export async function uploadMediaFile(
       }
       throw new Error('لم يتم استلام رابط الملف من Cloudinary');
     } catch (err: any) {
+      tracker.stop();
+      const rawMsg = String(err?.message || '');
+      const isSizeLimit = /file size too large|maximum is|exceeds|413/i.test(rawMsg);
+
+      // Automatic resilient fallback to built-in parallel chunked server uploader if live
+      if (await isServerUploadAvailable()) {
+        try {
+          if (file.size > CHUNK_SIZE) {
+            return await uploadChunkedToServer(
+              file,
+              onProgress,
+              isSizeLimit ? 'cloudinary_limit' : 'cloudinary_error'
+            );
+          }
+          const rawRes = await uploadBlobViaXhr(
+            `/api/upload-raw?filename=${encodeURIComponent(file.name)}`,
+            file,
+            { 'Content-Type': 'application/octet-stream' },
+            (loaded, total) => {
+              const pct = Math.min(99, Math.max(1, Math.round((loaded / Math.max(1, total)) * 100)));
+              tracker.update(loaded, pct);
+            },
+            90000
+          );
+          if (rawRes?.success && rawRes?.url) {
+            return {
+              url: rawRes.url,
+              source: 'server',
+              bytes: file.size,
+              fallbackReason: isSizeLimit ? 'cloudinary_limit' : 'cloudinary_error',
+            };
+          }
+        } catch {}
+      }
+
+      if (isSizeLimit) {
+        throw new Error(
+          `حجم الملف (${formatMB(file.size)} MB) يتجاوز الحد الأقصى لخطة Cloudinary المجانية (10 MB لملفات PDF والصور، و100 MB للفيديو). قم بضغط الملف أقل من 10 MB أو فعّل الرفع عبر السيرفر.`
+        );
+      }
+
       throw new Error(
-        `فشل الرفع إلى Cloudinary: ${err?.message || 'تأكد من الاتصال وإعداد Unsigned Upload Preset'}`
+        `فشل الرفع إلى Cloudinary: ${rawMsg || 'تأكد من الاتصال وإعداد Unsigned Upload Preset'}`
       );
     } finally {
       tracker.stop();

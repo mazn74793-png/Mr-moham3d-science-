@@ -27,8 +27,6 @@ import {
   ExternalLink,
   PlayCircle,
   Bell,
-  Mail,
-  RefreshCw,
 } from 'lucide-react';
 import {
   Lecture,
@@ -57,7 +55,6 @@ import {
   STUDENT_CARD_THEMES,
 } from './student/StudentProfileModal';
 import { prefetchVideoStream } from '../utils/mediaOptimizer';
-import { auth, resendVerificationEmail, reloadCurrentAuthUser } from '../firebase';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -75,7 +72,6 @@ interface StudentPortalProps {
   onUnlockLecture?: (lecture: Lecture) => Promise<void>;
   onUnlockAttachment?: (file: AttachmentFile) => Promise<void>;
   onClaimReward?: (reward: PointReward) => Promise<void>;
-  onAuthUserRefreshed?: () => void;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -94,7 +90,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onUnlockLecture,
   onUnlockAttachment,
   onClaimReward,
-  onAuthUserRefreshed,
 }) => {
   const { lang, isRtl } = useLanguage();
   const resolvedGrades = getResolvedGrades(siteConfig);
@@ -123,9 +118,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const lastTabBeforeProfileRef = React.useRef<
     'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'notifications'
   >('lectures');
-
-  const [verifyBusy, setVerifyBusy] = useState(false);
-  const [verifyFeedback, setVerifyFeedback] = useState<string | null>(null);
 
   const openProfilePage = () => {
     if (activeTab !== 'profile') {
@@ -621,84 +613,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       {/* Main Content Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
-        {/* Inline Non-Blocking Email Verification Bar (for fresh manual signups) */}
-        {auth.currentUser && !auth.currentUser.emailVerified && auth.currentUser.email && (
-          <div className="rounded-2xl p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5 text-xs sm:text-sm text-amber-900 dark:text-amber-200">
-              <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <div className="font-bold">
-                  {lang === 'en'
-                    ? `Please verify your email (${auth.currentUser.email}) to sync progress and redeem codes in the cloud.`
-                    : `يرجى تأكيد بريدك الإلكتروني (${auth.currentUser.email}) لحفظ تقدمك وتفعيل محفظة النقاط سحابياً.`}
-                </div>
-                {verifyFeedback && (
-                  <div className="text-[11px] font-semibold text-teal-700 dark:text-teal-300">
-                    {verifyFeedback}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                type="button"
-                disabled={verifyBusy}
-                onClick={async () => {
-                  setVerifyBusy(true);
-                  setVerifyFeedback(null);
-                  try {
-                    await resendVerificationEmail();
-                    setVerifyFeedback(
-                      lang === 'en'
-                        ? 'Verification link sent! Check your inbox or spam folder.'
-                        : 'تم إرسال رابط التفعيل إلى بريدك! راجع صندوق الوارد أو الرسائل غير المرغوب فيها.'
-                    );
-                  } catch {
-                    setVerifyFeedback(
-                      lang === 'en'
-                        ? 'Could not send email right now. Wait a minute and try again.'
-                        : 'تعذر إرسال الرابط حالياً، انتظر دقيقة وحاول مرة أخرى.'
-                    );
-                  } finally {
-                    setVerifyBusy(false);
-                  }
-                }}
-                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-xs font-bold text-amber-800 dark:text-amber-200 cursor-pointer disabled:opacity-60"
-              >
-                {lang === 'en' ? 'Resend Link' : 'إعادة إرسال الرابط'}
-              </button>
-              <button
-                type="button"
-                disabled={verifyBusy}
-                onClick={async () => {
-                  setVerifyBusy(true);
-                  try {
-                    const refreshed = await reloadCurrentAuthUser();
-                    if (refreshed?.emailVerified) {
-                      onAuthUserRefreshed?.();
-                      setVerifyFeedback(
-                        lang === 'en' ? 'Verified! Syncing...' : 'تم التحقق! جاري المزامنة...'
-                      );
-                    } else {
-                      setVerifyFeedback(
-                        lang === 'en'
-                          ? 'Not verified yet — click the link inside your email first.'
-                          : 'لم يتم التأكيد بعد — افتح الرسالة في بريدك واضغط على رابط التفعيل أولاً.'
-                      );
-                    }
-                  } finally {
-                    setVerifyBusy(false);
-                  }
-                }}
-                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${verifyBusy ? 'animate-spin' : ''}`} />
-                <span>{lang === 'en' ? 'I Verified — Refresh' : 'تم التأكيد — تحديث'}</span>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Desktop Segmented Navigation & Teacher Grade Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

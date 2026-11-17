@@ -92,6 +92,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     const localUrl = URL.createObjectURL(file);
     setLocalPreviewUrl(localUrl);
     setHandoutFile(file);
+    setHandoutCloudUrl('');
 
     const fileType = resolveAttachmentType(file);
     setDetectedFileType(fileType);
@@ -107,6 +108,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     setHandoutProgress(0);
     setHandoutUploadMeta(null);
     setFileFormError(null);
+    setFileFormSuccess(null);
 
     try {
       const result = await uploadMediaFile(file, {
@@ -119,9 +121,17 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         },
       });
       setHandoutCloudUrl(result.url);
-      setFileFormSuccess(`تم رفع الملف بنجاح (${file.name} · ${sizeInMB} MB) ☁️`);
-      setTimeout(() => setFileFormSuccess(null), 4000);
+      if (result.fallbackReason === 'cloudinary_limit') {
+        setFileFormSuccess(
+          `حجم الملف (${sizeInMB} MB) تخطى حد 10 MB في خطة Cloudinary المجانية — تم رفعه تلقائياً عبر سيرفر المنصة السريع بنجاح (${file.name}) ☁️`
+        );
+      } else {
+        setFileFormSuccess(`تم رفع الملف بنجاح (${file.name} · ${sizeInMB} MB) ☁️`);
+      }
+      setTimeout(() => setFileFormSuccess(null), 6000);
     } catch (err: any) {
+      setHandoutCloudUrl('');
+      setHandoutFile(null);
       setFileFormError(err?.message || 'فشل رفع المذكرة، يرجى المحاولة مرة أخرى.');
     } finally {
       setUploadingHandout(false);
@@ -394,7 +404,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             </div>
           )}
 
-          {handoutFile && !uploadingHandout && (
+          {handoutFile && handoutCloudUrl && !uploadingHandout && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 text-xs font-bold font-mono">
               <CheckCircle className="w-4 h-4 text-emerald-600" />
               <span>
@@ -404,8 +414,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           )}
         </div>
 
-        {/* Instant Live Preview for Handout (image / PDF / doc) */}
-        {(localPreviewUrl || handoutCloudUrl) && (
+        {/* Instant Live Preview for Handout (only show when uploaded cleanly or while uploading) */}
+        {(handoutCloudUrl || (uploadingHandout && localPreviewUrl)) && (
           <InlineMediaPreview
             url={handoutCloudUrl || localPreviewUrl || ''}
             title={fileTitle || handoutFile?.name || 'معاينة المذكرة'}

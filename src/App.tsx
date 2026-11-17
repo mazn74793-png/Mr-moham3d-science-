@@ -1373,7 +1373,7 @@ export default function App() {
     setCurrentView('student');
     sessionStorage.setItem('mm_last_view', 'student');
 
-    if (finalUser.profileCompleted && fbUser && fbUser.emailVerified) {
+    if (finalUser.profileCompleted && fbUser) {
       saveStudentToCloud(finalUser, fbUser.uid).catch((err) =>
         console.warn('Cloud student save warning:', err)
       );
@@ -1761,8 +1761,7 @@ export default function App() {
 
     if (
       auth.currentUser &&
-      auth.currentUser.emailVerified &&
-      (auth.currentUser.uid === finalized.id || isUserAdmin(currentUser))
+      (auth.currentUser.uid === finalized.id || (auth.currentUser.emailVerified && isUserAdmin(currentUser)))
     ) {
       saveStudentToCloud(finalized, auth.currentUser.uid).catch((err) =>
         console.warn('Cloud student profile save warning:', err)
@@ -2074,14 +2073,6 @@ export default function App() {
                 onUnlockLecture={handleStudentUnlockLecture}
                 onUnlockAttachment={handleStudentUnlockAttachment}
                 onClaimReward={handleStudentClaimReward}
-                onAuthUserRefreshed={async () => {
-                  if (auth.currentUser) {
-                    await hydrateFirebaseUser(auth.currentUser);
-                    if (auth.currentUser.emailVerified && currentUser) {
-                      saveStudentToCloud(currentUser, auth.currentUser.uid).catch(() => {});
-                    }
-                  }
-                }}
               />
             </Suspense>
           )}

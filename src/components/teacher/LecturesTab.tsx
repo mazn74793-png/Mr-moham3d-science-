@@ -130,6 +130,8 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       setVideoUploadNotice(
         result.source === 'cloudinary'
           ? 'تم رفع الفيديو على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡'
+          : result.fallbackReason === 'cloudinary_limit'
+          ? 'تجاوز الملف حد الخطة المجانية في Cloudinary — تم رفعه تلقائياً عبر سيرفر المنصة السريع بنجاح ⚡'
           : 'تم رفع الفيديو وحفظه بنجاح للبث المباشر ⚡'
       );
     } catch (err: any) {

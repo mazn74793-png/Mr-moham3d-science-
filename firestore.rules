@@ -333,7 +333,7 @@ service cloud.firestore {
       allow update: if isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == existing().id && incoming().code == existing().code && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time && (
         isAdmin() ||
         (
-          isVerifiedUser() &&
+          isSignedIn() &&
           incoming().diff(existing()).affectedKeys().hasOnly(['usedCount', 'updatedAt']) &&
           existing().active == true &&
           existing().usedCount < existing().maxUses &&
@@ -348,7 +348,7 @@ service cloud.firestore {
       match /redemptions/{studentUid} {
         allow get: if isSignedIn() && isValidId(codeId) && isValidId(studentUid) && (request.auth.uid == studentUid || isAdmin());
         allow list: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-        allow create: if isVerifiedUser() &&
+        allow create: if isSignedIn() &&
           isValidId(codeId) &&
           isValidId(studentUid) &&
           request.auth.uid == studentUid &&
@@ -367,7 +367,7 @@ service cloud.firestore {
     match /students/{studentId} {
       allow get: if isValidId(studentId) && (isAdmin() || (isSignedIn() && request.auth.uid == studentId));
       allow list: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      allow create: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
+      allow create: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
         (
           request.auth.uid == studentId &&
@@ -380,7 +380,7 @@ service cloud.firestore {
           (!('claimedRewardIds' in incoming()) || incoming().claimedRewardIds.size() == 0)
         )
       ) && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser() && isValidId(studentId) && isValidStudent(incoming()) && (
+      allow update: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) && (
         isAdmin() ||
         (
           request.auth.uid == studentId &&

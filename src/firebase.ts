@@ -1033,8 +1033,8 @@ export async function deletePointRewardFromCloud(rewardId: string): Promise<void
 
 async function ensureStudentCloudDocExists(student: UserProfile): Promise<string> {
   const fbUser = auth.currentUser;
-  if (!fbUser || !fbUser.emailVerified) {
-    throw new Error('يرجى تأكيد بريدك الإلكتروني أو تسجيل الدخول بحساب Google لتفعيل الأكواد واستخدام محفظة النقاط بأمان.');
+  if (!fbUser) {
+    throw new Error('يرجى تسجيل الدخول أولاً لتفعيل الأكواد واستخدام محفظة النقاط بأمان.');
   }
   const uid = fbUser.uid;
   const studentRef = doc(db, 'students', uid);
