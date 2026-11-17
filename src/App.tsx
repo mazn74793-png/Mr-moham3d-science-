@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { onAuthStateChanged, signOut, getRedirectResult, reload, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { Clock3, XCircle, MessageCircle, LogOut, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
@@ -8,6 +9,7 @@ import { AcademicYearsSection } from './components/AcademicYearsSection';
 import { Footer, AppView } from './components/Footer';
 import { useLanguage } from './context/LanguageContext';
 import { INITIAL_CLOUDINARY_CONFIG } from './data/initialData';
+import { buildWhatsAppSupportUrl, isStudentApproved } from './utils/whatsapp';
 import {
   Lecture,
   AttachmentFile,
@@ -20,7 +22,7 @@ import {
   PlatformNotification,
   ExamSecurityAlert,
 } from './types';
-import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT } from './types/siteConfig';
+import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT, getGradeDisplayName } from './types/siteConfig';
 import { LinkPasswordSetup } from './components/LinkPasswordSetup';
 import {
   auth,
@@ -165,6 +167,7 @@ export default function App() {
   });
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register'>('login');
   const [teacherInitialTab, setTeacherInitialTab] = useState<'overview' | 'site-customizer'>('overview');
+  const [inExamFocusMode, setInExamFocusMode] = useState(false);
 
   const [lectures, setLectures] = useState<Lecture[]>(() => {
     const saved = localStorage.getItem('mm_lectures');
@@ -404,6 +407,7 @@ export default function App() {
             avatarUrl: fbUser.photoURL || '',
             score: 0,
             profileCompleted: isDoneLocally,
+            approvalStatus: isDoneLocally ? 'approved' : 'pending',
             watchedLectureIds: [],
             passedQuizIds: [],
             quizScores: {},
@@ -539,6 +543,9 @@ export default function App() {
             role: 'student',
             avatarUrl: fbUser.photoURL || cloudStudent.avatarUrl || '',
             profileCompleted: Boolean(cloudStudent.profileCompleted),
+            approvalStatus:
+              cloudStudent.approvalStatus ??
+              (cloudStudent.profileCompleted ? 'approved' : 'pending'),
           });
         }
       }
@@ -1038,6 +1045,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  useEffect(() => {
+    if (currentView !== 'student') {
+      setInExamFocusMode(false);
+    }
+  }, [currentView]);
+
   // Strict route guard
   useEffect(() => {
     if (!authReady) return;
@@ -1404,6 +1417,10 @@ export default function App() {
       avatarUrl: sanitizedStudentInput.avatarUrl || matched.avatarUrl,
       role: 'student',
       profileCompleted: isMarkedDone,
+      approvalStatus:
+        matched?.approvalStatus ??
+        sanitizedStudentInput.approvalStatus ??
+        (matched?.profileCompleted ? 'approved' : 'pending'),
     };
 
     setCurrentUser(finalUser);
@@ -1457,6 +1474,7 @@ export default function App() {
     setStudentsSyncError(null);
     setAdminCloudError(null);
     setLastCloudError(null);
+    setInExamFocusMode(false);
     setFirebaseUser(null);
     setCurrentUser(null);
     setCurrentView('landing');
@@ -1973,6 +1991,14 @@ export default function App() {
     currentUser && currentUser.role !== 'teacher' && !currentUser.profileCompleted
   );
 
+  const isPendingOrRejectedStudent = Boolean(
+    currentUser &&
+      currentUser.role !== 'teacher' &&
+      !isEmailAdmin(firebaseUser?.email || currentUser.email) &&
+      currentUser.profileCompleted &&
+      !isStudentApproved(currentUser)
+  );
+
   const shouldPromptPasswordLink = Boolean(
     (currentView === 'student' || currentView === 'onboarding') &&
       firebaseUser &&
@@ -1980,6 +2006,13 @@ export default function App() {
       isGoogleUserWithoutPassword(firebaseUser) &&
       !passwordPromptDismissedUids.includes(firebaseUser.uid)
   );
+
+  const hideChromeForExam =
+    currentView === 'student' &&
+    inExamFocusMode &&
+    !shouldShowOnboarding &&
+    !isPendingOrRejectedStudent &&
+    !shouldPromptPasswordLink;
 
   const dismissPasswordLinkPrompt = (uid: string) => {
     setPasswordPromptDismissedUids((prev) => {
@@ -2037,18 +2070,20 @@ export default function App() {
         </div>
       )}
 
-      <Navbar
-        siteConfig={siteConfig}
-        darkMode={darkMode}
-        onToggleTheme={handleToggleTheme}
-        currentUser={currentUser}
-        onOpenLogin={() => openAuthPage('login')}
-        onOpenRegister={() => openAuthPage('register')}
-        onLogout={handleLogout}
-        currentView={currentView}
-        onNavigate={handleNavigate}
-        onScrollToSection={handleScrollToSection}
-      />
+      {!hideChromeForExam && (
+        <Navbar
+          siteConfig={siteConfig}
+          darkMode={darkMode}
+          onToggleTheme={handleToggleTheme}
+          currentUser={currentUser}
+          onOpenLogin={() => openAuthPage('login')}
+          onOpenRegister={() => openAuthPage('register')}
+          onLogout={handleLogout}
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          onScrollToSection={handleScrollToSection}
+        />
+      )}
 
       <main className="flex-1 w-full max-w-full overflow-x-hidden">
         {currentView === 'landing' && (
@@ -2129,7 +2164,115 @@ export default function App() {
         {!shouldPromptPasswordLink &&
           currentView === 'student' &&
           currentUser &&
-          !shouldShowOnboarding && (
+          !shouldShowOnboarding &&
+          isPendingOrRejectedStudent && (
+            <section className="min-h-[75vh] flex flex-col items-center justify-center p-4 sm:p-8 font-cairo">
+              <div className="max-w-lg w-full rounded-3xl bg-white dark:bg-slate-900 border-2 border-amber-300/80 dark:border-amber-700/70 shadow-lg p-6 sm:p-9 text-center space-y-5">
+                {currentUser.approvalStatus === 'rejected' ? (
+                  <div className="w-16 h-16 rounded-2xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center justify-center mx-auto">
+                    <XCircle className="w-8 h-8" />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center justify-center mx-auto">
+                    <Clock3 className="w-8 h-8" />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold ${
+                      currentUser.approvalStatus === 'rejected'
+                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200'
+                    }`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    {currentUser.approvalStatus === 'rejected'
+                      ? lang === 'en'
+                        ? 'Registration Not Approved'
+                        : 'الحساب غير مفعّل من الإدارة'
+                      : lang === 'en'
+                      ? 'Pending Admin Approval'
+                      : 'بانتظار موافقة وتفعيل الإدارة'}
+                  </span>
+
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+                    {currentUser.approvalStatus === 'rejected'
+                      ? lang === 'en'
+                        ? 'Account Access Denied'
+                        : 'عذراً، لم يتم قبول هذا الحساب للدخول حالياً'
+                      : lang === 'en'
+                      ? `Welcome, ${currentUser.name.split(' ')[0]}! Waiting for Activation`
+                      : `أهلاً بك يا ${currentUser.name.split(' ')[0]}! حسابك قيد المراجعة الآن`}
+                  </h2>
+
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {currentUser.approvalStatus === 'rejected'
+                      ? lang === 'en'
+                        ? 'Only authorized students may access lectures and quizzes. Contact our WhatsApp support team if you believe this is a mistake.'
+                        : 'الدخول إلى المنصة مقتصر على الطلاب المعتمدين فقط. إذا كنت من طلاب الأستاذ محمد مصطفى فتواصل مع فريق الدعم على واتساب لمراجعة حسابك.'
+                      : lang === 'en'
+                      ? 'Your registration has been sent to the teacher/admin team. Once approved, your student portal will unlock automatically without refreshing — or message our support team on WhatsApp to activate faster.'
+                      : 'تم استلام طلب تسجيلك وإرساله للإدارة للمراجعة. بمجرد موافقة الأدمن ستفتح منصة الطالب تلقائياً فوراً، كما يمكنك التواصل مع فريق الدعم على واتساب لتفعيل حسابك.'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-start text-xs space-y-1">
+                  <div className="font-bold text-slate-900 dark:text-white">{currentUser.name}</div>
+                  <div className="text-slate-600 dark:text-slate-300 font-mono" dir="ltr">
+                    {currentUser.email || currentUser.id}
+                  </div>
+                  <div className="text-teal-700 dark:text-teal-300 font-semibold">
+                    {getGradeDisplayName(currentUser.grade, siteConfig, lang === 'en' ? 'en' : 'ar')}
+                    {currentUser.phone ? ` · ${currentUser.phone}` : ''}
+                  </div>
+                </div>
+
+                <a
+                  href={buildWhatsAppSupportUrl(
+                    siteConfig,
+                    lang === 'en'
+                      ? `Hello Support Team, please approve my student account:\nName: ${currentUser.name}\nEmail: ${currentUser.email || '-'}\nPhone: ${currentUser.phone || '-'}\nGrade: ${getGradeDisplayName(currentUser.grade, siteConfig, 'en')}`
+                      : `السلام عليكم فريق الدعم، أرجو تفعيل حسابي على منصة أ/ محمد مصطفى:\nالاسم: ${currentUser.name}\nالبريد: ${currentUser.email || '-'}\nالهاتف: ${currentUser.phone || '-'}\nالصف: ${getGradeDisplayName(currentUser.grade, siteConfig, 'ar')}`
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full min-h-[48px] px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                >
+                  <MessageCircle className="w-5 h-5 shrink-0" />
+                  <span>
+                    {lang === 'en'
+                      ? 'Contact Support Team on WhatsApp'
+                      : 'تواصل مع فريق الدعم على واتساب'}
+                  </span>
+                </a>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigate('landing')}
+                    className="w-full sm:flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                  >
+                    {lang === 'en' ? 'Back to Home' : 'العودة للرئيسية'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full sm:flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 hover:bg-rose-100 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{lang === 'en' ? 'Sign Out' : 'تسجيل الخروج'}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+        {!shouldPromptPasswordLink &&
+          currentView === 'student' &&
+          currentUser &&
+          !shouldShowOnboarding &&
+          !isPendingOrRejectedStudent && (
             <Suspense fallback={<ViewLoadingFallback />}>
               <StudentPortal
                 currentUser={currentUser}
@@ -2148,6 +2291,7 @@ export default function App() {
                 onUnlockAttachment={handleStudentUnlockAttachment}
                 onClaimReward={handleStudentClaimReward}
                 onReportExamAlert={handleReportExamAlert}
+                onExamFocusModeChange={setInExamFocusMode}
               />
             </Suspense>
           )}
@@ -2310,22 +2454,24 @@ export default function App() {
         )}
       </main>
 
-      <div className={currentView === 'student' ? 'hidden lg:block' : ''}>
-        <Footer
-          siteConfig={siteConfig}
-          onNavigate={handleNavigate}
-          onScrollToSection={handleScrollToSection}
-          onOpenLogin={() => openAuthPage('login')}
-          onOpenSecretAdmin={() => {
-            if (isUserAdmin(currentUser)) {
-              setTeacherInitialTab('site-customizer');
-              handleNavigate('teacher');
-            } else {
-              openAuthPage('login');
-            }
-          }}
-        />
-      </div>
+      {!hideChromeForExam && (
+        <div className={currentView === 'student' ? 'hidden lg:block' : ''}>
+          <Footer
+            siteConfig={siteConfig}
+            onNavigate={handleNavigate}
+            onScrollToSection={handleScrollToSection}
+            onOpenLogin={() => openAuthPage('login')}
+            onOpenSecretAdmin={() => {
+              if (isUserAdmin(currentUser)) {
+                setTeacherInitialTab('site-customizer');
+                handleNavigate('teacher');
+              } else {
+                openAuthPage('login');
+              }
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

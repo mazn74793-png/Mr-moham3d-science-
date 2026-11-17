@@ -19,6 +19,7 @@ import {
   RefreshCw,
   KeyRound,
   CheckCircle2,
+  MessageCircle,
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
@@ -35,6 +36,7 @@ import {
   sendPasswordReset,
 } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
+import { buildWhatsAppSupportUrl } from '../utils/whatsapp';
 
 interface AuthModalsProps {
   loginOpen: boolean;
@@ -403,6 +405,12 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       Boolean(existingRecord?.profileCompleted) ||
       isProfileMarkedCompleted(fbUser.uid, email);
 
+    const resolvedApprovalStatus: UserProfile['approvalStatus'] =
+      overrideFields?.approvalStatus ||
+      cloudRecord?.approvalStatus ||
+      existingRecord?.approvalStatus ||
+      (cloudRecord?.profileCompleted ? 'approved' : 'pending');
+
     onLoginSuccess({
       id: fbUser.uid,
       name:
@@ -428,6 +436,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       claimedRewardIds: existingRecord?.claimedRewardIds || [],
       pointsHistory: existingRecord?.pointsHistory || [],
       profileCompleted: isCompleted,
+      approvalStatus: resolvedApprovalStatus,
       watchedLectureIds: existingRecord?.watchedLectureIds || [],
       passedQuizIds: existingRecord?.passedQuizIds || [],
       quizScores: existingRecord?.quizScores || {},
@@ -728,6 +737,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
         parentPhone: parentPhoneClean,
         grade: regGrade,
         profileCompleted: true,
+        approvalStatus: 'pending',
       });
     } catch (err: any) {
       const code = err?.code || '';
@@ -823,20 +833,36 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               </div>
             </div>
 
-            <div className="pt-6 border-t border-white/10 space-y-2.5 text-xs text-slate-300">
+            <div className="pt-6 border-t border-white/10 space-y-3 text-xs text-slate-300">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
                 <span>
                   {isEn
-                    ? 'Isolated, verified session per browser tab & instant cloud sync.'
-                    : 'جلسة دخول حقيقية ومعزولة لكل متصفح مع مزامنة سحابية فورية.'}
+                    ? 'New student accounts require admin approval after signup.'
+                    : 'تخضع الحسابات الجديدة لمراجعة وتفعيل الإدارة فور التسجيل.'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 {isEn
-                  ? 'Google users can link a password to sign in manually anytime without Google.'
-                  : 'مستخدمو Google يمكنهم إضافة كلمة مرور للدخول يدوياً لاحقاً من أي جهاز دون جوجل.'}
+                  ? 'Need help registering or activating your account? Contact our WhatsApp support team.'
+                  : 'تحتاج مساعدة في التسجيل أو تفعيل حسابك؟ تواصل مباشرة مع فريق الدعم على واتساب.'}
               </p>
+              <a
+                href={buildWhatsAppSupportUrl(
+                  siteConfig,
+                  isEn
+                    ? 'Hello Support Team, I need help with my student account on the platform.'
+                    : 'السلام عليكم، أحتاج مساعدة من فريق الدعم بخصوص حسابي على المنصة.'
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-xs"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                <span>
+                  {isEn ? 'WhatsApp Support Team' : 'تواصل مع فريق الدعم على واتساب'}
+                </span>
+              </a>
             </div>
           </div>
 

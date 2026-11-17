@@ -28,6 +28,7 @@ import {
   Bell,
   Layers,
   ShieldAlert,
+  MessageCircle,
 } from 'lucide-react';
 import {
   Lecture,
@@ -63,6 +64,7 @@ import {
   isLectureUnlockedForStudent,
   getLecturePrerequisiteDetails,
 } from '../utils/units';
+import { buildWhatsAppSupportUrl } from '../utils/whatsapp';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -82,6 +84,7 @@ interface StudentPortalProps {
   onClaimReward?: (reward: PointReward) => Promise<void>;
   onReportExamAlert?: (alert: ExamSecurityAlert) => Promise<void> | void;
   onCheatCancelQuiz?: (quiz: Quiz, violationCount: number, reasons: string[]) => void;
+  onExamFocusModeChange?: (inExam: boolean) => void;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -102,6 +105,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onClaimReward,
   onReportExamAlert,
   onCheatCancelQuiz,
+  onExamFocusModeChange,
 }) => {
   const { lang, isRtl } = useLanguage();
   const resolvedGrades = getResolvedGrades(siteConfig);
@@ -283,6 +287,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   );
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [lecturePdfPreviewOpen, setLecturePdfPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    onExamFocusModeChange?.(Boolean(activeQuiz));
+    return () => {
+      onExamFocusModeChange?.(false);
+    };
+  }, [activeQuiz, onExamFocusModeChange]);
 
   useEffect(() => {
     if (orderedGradeLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
@@ -543,21 +554,42 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               {isRtl ? `السبب المسجل: ${currentUser.blockReason}` : `Reason: ${currentUser.blockReason}`}
             </div>
           )}
-          <button
-            type="button"
-            onClick={onBackToHome}
-            className="w-full min-h-[44px] px-6 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold hover:opacity-90 transition-opacity cursor-pointer"
-          >
-            {isRtl ? 'العودة للصفحة الرئيسية' : 'Back to Home'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <a
+              href={buildWhatsAppSupportUrl(
+                siteConfig,
+                isRtl
+                  ? `السلام عليكم فريق الدعم، تم تقييد حسابي (${currentUser.name} - ${currentUser.phone || currentUser.email}) وأرجو مراجعة الحالة.`
+                  : `Hello Support Team, my account (${currentUser.name} - ${currentUser.phone || currentUser.email}) is restricted. Please review.`
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4 shrink-0" />
+              <span>{isRtl ? 'التواصل مع فريق الدعم (واتساب)' : 'WhatsApp Support Team'}</span>
+            </a>
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="flex-1 min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              {isRtl ? 'العودة للصفحة الرئيسية' : 'Back to Home'}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo pb-24 lg:pb-12">
-      {/* Compact Non-Sticky Student Sub-Header */}
+    <div
+      className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden font-cairo ${
+        activeQuiz ? 'pb-8' : 'pb-24 lg:pb-12'
+      }`}
+    >
+      {/* Compact Non-Sticky Student Sub-Header (hidden in distraction-free exam mode) */}
+      {!activeQuiz && (
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
           <div className="flex items-center justify-between gap-3">
@@ -676,6 +708,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 <span className="hidden sm:inline">{lang === 'en' ? 'Pts' : 'نقطة'}</span>
               </button>
 
+              <a
+                href={buildWhatsAppSupportUrl(
+                  siteConfig,
+                  lang === 'en'
+                    ? `Hello Support Team, I am student ${currentUser.name} (${getGradeTitle(selectedGrade)}) and need support.`
+                    : `السلام عليكم فريق الدعم، أنا الطالب ${currentUser.name} (${getGradeTitle(selectedGrade)}) وأحتاج مساعدة.`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={lang === 'en' ? 'WhatsApp Support Team' : 'تواصل مع فريق الدعم على واتساب'}
+                className="min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                <span className="hidden md:inline">
+                  {lang === 'en' ? 'Support' : 'فريق الدعم'}
+                </span>
+              </a>
+
               {isTeacher && (
                 <button
                   type="button"
@@ -700,11 +750,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Main Content Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
+      <div
+        className={`max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 space-y-6 ${
+          activeQuiz ? 'pt-3 sm:pt-5' : 'pt-4 sm:pt-6'
+        }`}
+      >
 
-        {/* Desktop Segmented Navigation & Teacher Grade Switcher */}
+        {/* Desktop Segmented Navigation & Teacher Grade Switcher (hidden in distraction-free exam mode) */}
+        {!activeQuiz && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Desktop Module Tabs */}
           <div className="hidden lg:flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
@@ -856,6 +912,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
           )}
         </div>
+        )}
 
         <div className="flex flex-col gap-6">
           {/* Compact 4-Metric Quick Strip (hidden on active quiz or full-page profile view) */}
@@ -1970,7 +2027,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
       </div>
 
-      {/* Fixed Mobile Bottom Tab Bar */}
+      {/* Fixed Mobile Bottom Tab Bar (hidden inside distraction-free exam mode) */}
+      {!activeQuiz && (
       <nav
         aria-label={lang === 'en' ? 'Student Navigation' : 'التنقل الرئيسي للطالب'}
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)]"
@@ -2051,6 +2109,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </button>
         </div>
       </nav>
+      )}
     </div>
   );
 };

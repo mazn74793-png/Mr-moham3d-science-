@@ -835,6 +835,7 @@ export async function saveStudentToCloud(
               : [],
             isBlocked: Boolean(student.isBlocked),
             blockReason: student.blockReason ? student.blockReason.trim().slice(0, 500) : undefined,
+            approvalStatus: student.approvalStatus || 'approved',
           })
         : {
             points: 0,
@@ -842,6 +843,7 @@ export async function saveStudentToCloud(
             unlockedAttachmentIds: [],
             claimedRewardIds: [],
             pointsHistory: [],
+            approvalStatus: student.role === 'teacher' ? 'approved' : 'pending',
           };
 
       await setDoc(ref, {
@@ -855,7 +857,7 @@ export async function saveStudentToCloud(
         ...baseClean,
         updatedAt: serverTimestamp(),
       };
-      // Only admin updates should include wallet or block status fields on profile save;
+      // Only admin updates should include wallet, approval, or block status fields on profile save;
       // student updates omit them so Zero-Trust Action 1 affectedKeys rule passes.
       if (allowPointsOverride) {
         updatePayload.points = Math.max(0, Math.round(Number(student.points) || 0));
@@ -878,6 +880,9 @@ export async function saveStudentToCloud(
           updatePayload.blockReason = student.blockReason.trim()
             ? student.blockReason.trim().slice(0, 500)
             : deleteField();
+        }
+        if (student.approvalStatus !== undefined) {
+          updatePayload.approvalStatus = student.approvalStatus;
         }
       }
       await updateDoc(ref, updatePayload);

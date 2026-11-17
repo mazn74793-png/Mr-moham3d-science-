@@ -127,6 +127,7 @@ export interface UserProfile {
   pointsHistory?: PointsHistoryEntry[];
   isBlocked?: boolean;
   blockReason?: string;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
   cancelledQuizIds?: string[];
   quizViolations?: Record<string, QuizViolationRecord>;
 }

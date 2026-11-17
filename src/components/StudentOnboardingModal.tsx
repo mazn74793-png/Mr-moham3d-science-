@@ -8,10 +8,12 @@ import {
   Sparkles,
   ShieldCheck,
   LogOut,
+  MessageCircle,
 } from 'lucide-react';
 import { GradeLevel, UserProfile } from '../types';
 import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
+import { buildWhatsAppSupportUrl } from '../utils/whatsapp';
 
 interface StudentOnboardingModalProps {
   isOpen: boolean;
@@ -93,6 +95,7 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
       parentPhone: parentPhone.trim(),
       governorate,
       profileCompleted: true,
+      approvalStatus: currentUser.approvalStatus === 'approved' ? 'approved' : 'pending',
       score: currentUser.score ?? 0,
       watchedLectureIds: currentUser.watchedLectureIds || [],
       passedQuizIds: currentUser.passedQuizIds || [],
@@ -262,14 +265,30 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
             </select>
           </div>
 
-          {/* Security Notice */}
-          <div className="p-3.5 rounded-2xl bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 flex items-center gap-2.5 text-xs text-teal-800 dark:text-teal-300">
-            <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
-            <span>
-              {lang === 'en'
-                ? 'Your academic details and quiz records are securely encrypted.'
-                : 'بياناتك مؤمنة بالكامل ومشفرة لحفظ حقوق حسابك وربط نتائجك الدراسية.'}
-            </span>
+          {/* Security & Admin Approval Notice + WhatsApp Support */}
+          <div className="p-3.5 rounded-2xl bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-teal-800 dark:text-teal-300">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+              <span>
+                {lang === 'en'
+                  ? 'After saving, the admin reviews & approves your account before platform access unlocks.'
+                  : 'بعد الحفظ يتم إرسال طلبك لمراجعة الإدارة وتفعيل الحساب، ويمكنك التواصل مع الدعم لتسريع التفعيل.'}
+              </span>
+            </div>
+            <a
+              href={buildWhatsAppSupportUrl(
+                siteConfig,
+                lang === 'en'
+                  ? `Hello Support, I just registered (${name || currentUser.name}) and need help activating my account.`
+                  : `السلام عليكم فريق الدعم، قمت بتسجيل حسابي (${name || currentUser.name}) وأرجو المراجعة والتفعيل.`
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{lang === 'en' ? 'WhatsApp Support' : 'واتساب الدعم'}</span>
+            </a>
           </div>
 
           {/* Submit */}
@@ -280,8 +299,8 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
             <CheckCircle2 className="w-4 h-4" />
             <span>
               {lang === 'en'
-                ? 'Save & Activate My Learning Portal'
-                : 'حفظ البيانات وتفعيل منصتي الدراسية'}
+                ? 'Save Details & Request Activation'
+                : 'حفظ البيانات وإرسال طلب التفعيل'}
             </span>
           </button>
         </form>

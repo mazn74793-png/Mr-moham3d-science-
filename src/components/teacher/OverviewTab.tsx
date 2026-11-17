@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Sparkles, Video, FileText, Users, ShieldCheck, Plus, GraduationCap,
-  Palette, Trash2, RefreshCcw, Eye, Ticket, X, Bell, ShieldAlert
+  Palette, Trash2, RefreshCcw, Eye, Ticket, X, Bell, ShieldAlert, Clock3
 } from 'lucide-react';
 import { Lecture, AttachmentFile, UserProfile } from '../../types';
 import { SiteConfig } from '../../types/siteConfig';
@@ -20,6 +20,7 @@ interface OverviewTabProps {
   usedPercentage: number;
   totalQuotaGB: number;
   unresolvedAlertsCount?: number;
+  pendingApprovalsCount?: number;
   onNavigateTab: (
     tab:
       | 'overview'
@@ -51,6 +52,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   usedPercentage,
   totalQuotaGB,
   unresolvedAlertsCount = 0,
+  pendingApprovalsCount = 0,
   onNavigateTab,
   onOpenResetModal,
 }) => {
@@ -85,6 +87,36 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Pending Student Approvals Urgent Alert */}
+      {pendingApprovalsCount > 0 && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400/70 dark:border-amber-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+              <Clock3 className="w-5 h-5" />
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-sm font-extrabold font-kufi text-slate-900 dark:text-white">
+                {isEn
+                  ? `${pendingApprovalsCount} New Student Registration(s) Awaiting Your Approval`
+                  : `يوجد ${pendingApprovalsCount} طلب تسجيل طلاب جديد بانتظار موافقتك`}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-sans">
+                {isEn
+                  ? 'Approve or reject new Google & manual accounts from the Students Directory before they can access lectures or exams.'
+                  : 'قم بمراجعة بيانات الطلاب الجدد والموافقة عليهم من سجل الطلاب ليتمكنوا من الدخول.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('all-students')}
+            className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold cursor-pointer shrink-0 self-start sm:self-auto shadow-xs"
+          >
+            {isEn ? 'Review Approvals Now' : 'مراجعة الطلبات والموافقة الآن'}
+          </button>
+        </div>
+      )}
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up">
@@ -131,8 +163,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
             {students.filter((s) => s.role !== 'teacher').length}
           </div>
-          <div className="text-[11px] text-emerald-600 font-semibold">
-            {isEn ? 'Registered accounts' : 'حسابات حقيقية مسجلة'}
+          <div className="text-[11px] font-semibold">
+            {pendingApprovalsCount > 0 ? (
+              <span className="text-amber-600 dark:text-amber-400">
+                {isEn ? `${pendingApprovalsCount} awaiting approval` : `${pendingApprovalsCount} بانتظار الموافقة`}
+              </span>
+            ) : (
+              <span className="text-emerald-600">
+                {isEn ? 'Registered accounts' : 'حسابات حقيقية مسجلة'}
+              </span>
+            )}
           </div>
         </div>
 

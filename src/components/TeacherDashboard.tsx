@@ -132,6 +132,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const { lang } = useLanguage();
   const isEn = lang === 'en';
   const unresolvedExamAlertsCount = examAlerts.filter((a) => !a.resolved).length;
+  const pendingApprovalsCount = students.filter(
+    (s) => s.role !== 'teacher' && s.approvalStatus === 'pending'
+  ).length;
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>(initialTab || 'overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -344,6 +347,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                   activeTab === 'all-students'
                     ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                    : pendingApprovalsCount > 0
+                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-amber-50/80 dark:hover:bg-amber-950/30'
                 }`}
               >
@@ -351,9 +356,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <Users className="w-4 h-4 text-amber-500" />
                   <span>{isEn ? 'Students Directory' : 'سجل وقائمة الطلاب'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono tabular-nums">
-                  {students.filter((s) => s.role !== 'teacher').length}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {pendingApprovalsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-lg bg-rose-600 text-white text-[10px] font-bold font-mono tabular-nums">
+                      {pendingApprovalsCount} {isEn ? 'pending' : 'طلب'}
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono tabular-nums">
+                    {students.filter((s) => s.role !== 'teacher').length}
+                  </span>
+                </div>
               </button>
 
               <button
@@ -789,6 +801,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 usedPercentage={usedPercentage}
                 totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
                 unresolvedAlertsCount={unresolvedExamAlertsCount}
+                pendingApprovalsCount={pendingApprovalsCount}
                 onNavigateTab={setActiveTab}
                 onOpenResetModal={() => {
                   setResetConfirmOpen(true);

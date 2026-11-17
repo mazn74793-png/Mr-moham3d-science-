@@ -167,6 +167,7 @@
         "lastSpendTargetId": { "type": "string", "maxLength": 128 },
         "isBlocked": { "type": "boolean" },
         "blockReason": { "type": "string", "maxLength": 500 },
+        "approvalStatus": { "type": "string", "enum": ["pending", "approved", "rejected"] },
         "cancelledQuizIds": { "type": "array", "description": "Up to 200 quiz IDs terminated for exam violations" },
         "quizViolations": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" },
