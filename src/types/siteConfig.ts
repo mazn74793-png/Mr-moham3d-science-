@@ -4,6 +4,15 @@ export interface FooterQuickLink {
   url: string;
 }
 
+export interface GradeUnit {
+  id: string;
+  titleAr: string;
+  titleEn?: string;
+  descriptionAr?: string;
+  isIndependent?: boolean;
+  order?: number;
+}
+
 export interface GradeItem {
   id: string;
   badgeAr: string;
@@ -16,6 +25,7 @@ export interface GradeItem {
   yearLabelEn?: string;
   topicsAr?: string[];
   topicsEn?: string[];
+  units?: GradeUnit[];
   isPopular?: boolean;
 }
 
@@ -152,6 +162,8 @@ export interface SiteConfig {
   feature4Desc: string;
 }
 
+export const DEFAULT_TEACHER_PORTRAIT = '/assets/aistudio/2023-removebg-preview_ecfeb13b.png';
+
 export const DEFAULT_SITE_CONFIG: SiteConfig = {
   teacherName: 'محمد مصطفى',
   teacherTitle: 'Mr. Mohamed Mostafa',
@@ -159,7 +171,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   heroDescription:
     'مع مستر محمد مصطفى دراسة الـ Chemistry & Science بأسلوب تفاعلي حديث يجمع بين الفهم الدقيق والتدريب المستمر على نمط الامتحانات لطلاب مدارس اللغات والتجريبي دفعة 2026.',
   heroBadge: 'Chemistry & Science · Experimental & Language Schools 2026',
-  profileImageUrl: '',
+  profileImageUrl: DEFAULT_TEACHER_PORTRAIT,
   calligraphyFont: 'Cairo',
   bodyFont: 'Cairo',
   primaryColor: '#0d9488',

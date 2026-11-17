@@ -2,14 +2,16 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
   browserSessionPersistence,
-  inMemoryPersistence,
   browserPopupRedirectResolver,
   setPersistence,
   GoogleAuthProvider,
   EmailAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   linkWithCredential,
   updatePassword,
   updateProfile,
@@ -44,6 +46,7 @@ import {
   PointReward,
   PointsHistoryEntry,
   PlatformNotification,
+  ExamSecurityAlert,
 } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
 
@@ -65,42 +68,24 @@ export const db = initializeFirestore(
   firebaseConfig.firestoreDatabaseId
 );
 
-// Purge any legacy persistent Firebase auth storage from older builds so every browser session/tab stays strictly isolated
-function purgeLegacyPersistentAuthStorage() {
-  if (typeof window === 'undefined') return;
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (k && (k.startsWith('firebase:authUser:') || k.startsWith('firebase:previousExternalId:'))) {
-        keysToRemove.push(k);
-      }
-    }
-    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
-  } catch {}
-  try {
-    if (window.indexedDB && typeof window.indexedDB.deleteDatabase === 'function') {
-      window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
-    }
-  } catch {}
-}
-
-purgeLegacyPersistentAuthStorage();
-
-function createSessionIsolatedAuth(): Auth {
+function createPersistentAuth(): Auth {
   try {
     return initializeAuth(app, {
-      persistence: [browserSessionPersistence, inMemoryPersistence],
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+      ],
       popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch {
     const existingAuth = getAuth(app);
-    setPersistence(existingAuth, browserSessionPersistence).catch(() => {});
+    setPersistence(existingAuth, browserLocalPersistence).catch(() => {});
     return existingAuth;
   }
 }
 
-export const auth = createSessionIsolatedAuth();
+export const auth = createPersistentAuth();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -124,6 +109,11 @@ export async function signInManualWithEmail(
   return cred.user;
 }
 
+export async function sendPasswordReset(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  await sendPasswordResetEmail(auth, cleanEmail);
+}
+
 export async function registerManualWithEmail(
   email: string,
   password: string,
@@ -132,13 +122,14 @@ export async function registerManualWithEmail(
   const cleanEmail = email.trim().toLowerCase();
   const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
   if (displayName && displayName.trim()) {
-    try {
-      await updateProfile(cred.user, { displayName: displayName.trim().slice(0, 120) });
-    } catch {}
+    withTimeout(
+      updateProfile(cred.user, { displayName: displayName.trim().slice(0, 120) }),
+      1500,
+      undefined
+    ).catch(() => {});
   }
-  try {
-    await sendEmailVerification(cred.user);
-  } catch {}
+  // Dispatch verification email in the background so registration never blocks on slow mail servers
+  sendEmailVerification(cred.user).catch(() => {});
   return cred.user;
 }
 
@@ -377,43 +368,59 @@ let inflightAdminConfigFetch: {
   promise: Promise<AdminCloudConfig | null>;
 } | null = null;
 
+let adminConfigCache: {
+  uid: string;
+  ts: number;
+  data: AdminCloudConfig | null;
+} | null = null;
+
+export function clearAdminConfigCache(): void {
+  adminConfigCache = null;
+  inflightAdminConfigFetch = null;
+}
+
 /**
- * Queries protected adminConfig/settings inside try/catch with token sync + retry on transient
- * first-login token propagation delay, without caching timed-out/failed null lookups.
+ * Fast, session-cached query of protected adminConfig/settings without blocking student logins
+ * with redundant reloads or permission-denied retry sleeps.
  */
 export async function fetchAdminConfigIfAuthorized(
-  timeoutMs = 8000
+  timeoutMs = 3500
 ): Promise<AdminCloudConfig | null> {
   const user = auth.currentUser;
   if (!user || !user.email) return null;
-  if (!user.emailVerified) {
-    const hasGoogle = Boolean(user.providerData?.some((p) => p.providerId === 'google.com'));
-    if (!hasGoogle) return null;
-    try {
-      await reload(user);
-    } catch {}
-    if (!auth.currentUser?.emailVerified) return null;
+
+  const hasGoogle = Boolean(user.providerData?.some((p) => p.providerId === 'google.com'));
+  if (!user.emailVerified && !hasGoogle) {
+    return null;
   }
 
-  const activeUser = auth.currentUser || user;
-  const currentEmail = (activeUser.email || user.email).toLowerCase().trim();
+  const currentEmail = user.email.toLowerCase().trim();
+  const now = Date.now();
 
-  if (inflightAdminConfigFetch && inflightAdminConfigFetch.uid === activeUser.uid) {
+  if (
+    adminConfigCache &&
+    adminConfigCache.uid === user.uid &&
+    now - adminConfigCache.ts < 60000
+  ) {
+    return adminConfigCache.data;
+  }
+
+  if (inflightAdminConfigFetch && inflightAdminConfigFetch.uid === user.uid) {
     return inflightAdminConfigFetch.promise;
   }
 
   const runFetch = async (): Promise<AdminCloudConfig | null> => {
     try {
-      await withTimeout(activeUser.getIdToken(), 2500, '');
+      await withTimeout(user.getIdToken(), 1500, '');
 
       const readSettingsDoc = async () => {
         try {
           return await getDoc(doc(db, 'adminConfig', 'settings'));
         } catch (err: any) {
           const code = err?.code || '';
-          if (code === 'permission-denied' || code === 'unauthenticated') {
-            await new Promise((r) => setTimeout(r, 250));
-            await withTimeout(activeUser.getIdToken(true), 2500, '');
+          // Only refresh token on unauthenticated; regular students get permission-denied legitimately and must return immediately
+          if (code === 'unauthenticated') {
+            await withTimeout(user.getIdToken(true), 2000, '');
             return await getDoc(doc(db, 'adminConfig', 'settings'));
           }
           throw err;
@@ -430,18 +437,28 @@ export async function fetchAdminConfigIfAuthorized(
               .filter(Boolean)
           )
         );
-        if (!allowedList.includes(currentEmail)) {
-          return null;
-        }
-        return {
-          ...data,
-          adminEmails: allowedList,
-        };
+        const resolved = allowedList.includes(currentEmail)
+          ? { ...data, adminEmails: allowedList }
+          : null;
+        adminConfigCache = { uid: user.uid, ts: Date.now(), data: resolved };
+        return resolved;
       }
-      return currentEmail === 'mizoo2y2@gmail.com'
-        ? { adminEmails: ['mizoo2y2@gmail.com'] }
-        : null;
-    } catch {
+      const fallback =
+        currentEmail === 'mizoo2y2@gmail.com'
+          ? { adminEmails: ['mizoo2y2@gmail.com'] }
+          : null;
+      adminConfigCache = { uid: user.uid, ts: Date.now(), data: fallback };
+      return fallback;
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'permission-denied') {
+        const fallback =
+          currentEmail === 'mizoo2y2@gmail.com'
+            ? { adminEmails: ['mizoo2y2@gmail.com'] }
+            : null;
+        adminConfigCache = { uid: user.uid, ts: Date.now(), data: fallback };
+        return fallback;
+      }
       return currentEmail === 'mizoo2y2@gmail.com'
         ? { adminEmails: ['mizoo2y2@gmail.com'] }
         : null;
@@ -453,7 +470,7 @@ export async function fetchAdminConfigIfAuthorized(
       inflightAdminConfigFetch = null;
     }
   });
-  inflightAdminConfigFetch = { uid: activeUser.uid, promise };
+  inflightAdminConfigFetch = { uid: user.uid, promise };
   return promise;
 }
 
@@ -529,6 +546,7 @@ export async function saveAdminConfigToCloud(
         tx.set(ref, payload);
       });
     });
+    clearAdminConfigCache();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -576,6 +594,7 @@ export async function saveAdminEmailsToCloud(
       });
     });
 
+    clearAdminConfigCache();
     return cleanEmails;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -598,11 +617,13 @@ export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
   const path = `lectures/${lecture.id}`;
   try {
     const ref = doc(db, 'lectures', lecture.id);
+    const cleanUnitId = lecture.unitId ? String(lecture.unitId).trim().slice(0, 128) : undefined;
     const clean = stripUndefinedDeep({
       id: lecture.id,
       title: lecture.title,
       grade: lecture.grade,
       gradeLabel: lecture.gradeLabel || lecture.grade,
+      unitId: cleanUnitId,
       chapter: lecture.chapter || '',
       duration: lecture.duration || '45 دقيقة',
       videoUrl: lecture.videoUrl || '',
@@ -628,6 +649,7 @@ export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
     } else {
       await updateDoc(ref, {
         ...clean,
+        unitId: cleanUnitId ? cleanUnitId : deleteField(),
         pdfUrl: lecture.pdfUrl ? lecture.pdfUrl : deleteField(),
         pdfTitle: lecture.pdfTitle ? lecture.pdfTitle : deleteField(),
         sessionOrder: lecture.sessionOrder !== undefined ? Number(lecture.sessionOrder) : deleteField(),
@@ -698,12 +720,31 @@ export async function saveQuizToCloud(quiz: Quiz): Promise<void> {
   const path = `quizzes/${quiz.id}`;
   try {
     const ref = doc(db, 'quizzes', quiz.id);
+    const cleanInstructions = Array.isArray(quiz.examInstructions)
+      ? quiz.examInstructions.map((s) => String(s).trim()).filter(Boolean).slice(0, 25)
+      : undefined;
     const clean = stripUndefinedDeep({
       id: quiz.id,
       title: quiz.title,
       grade: quiz.grade,
       chapter: quiz.chapter || '',
-      durationMinutes: Number(quiz.durationMinutes) || 15,
+      durationMinutes: Math.max(1, Math.min(600, Number(quiz.durationMinutes) || 15)),
+      warningMinutes:
+        quiz.warningMinutes !== undefined
+          ? Math.max(0, Math.min(120, Math.round(Number(quiz.warningMinutes) || 0)))
+          : undefined,
+      passingScore:
+        quiz.passingScore !== undefined
+          ? Math.max(0, Math.min(100, Math.round(Number(quiz.passingScore) || 60)))
+          : undefined,
+      requireAgreement: quiz.requireAgreement !== undefined ? Boolean(quiz.requireAgreement) : undefined,
+      examInstructions: cleanInstructions,
+      proctoringEnabled:
+        quiz.proctoringEnabled !== undefined ? Boolean(quiz.proctoringEnabled) : undefined,
+      maxViolations:
+        quiz.maxViolations !== undefined
+          ? Math.max(1, Math.min(20, Math.round(Number(quiz.maxViolations) || 3)))
+          : undefined,
       lectureId: quiz.lectureId || undefined,
       questions: Array.isArray(quiz.questions) ? quiz.questions.slice(0, 200) : [],
     });
@@ -768,12 +809,16 @@ export async function saveStudentToCloud(
         ? student.passedQuizIds.slice(0, 500)
         : [],
       quizScores: student.quizScores || {},
+      cancelledQuizIds: Array.isArray(student.cancelledQuizIds)
+        ? student.cancelledQuizIds.slice(0, 200)
+        : undefined,
+      quizViolations: student.quizViolations || undefined,
       joinedAt: (student.joinedAt || new Date().toISOString().split('T')[0]).slice(0, 50),
     });
 
     const snap = await getDoc(ref);
     if (!snap.exists()) {
-      const initialPointsPayload = allowPointsOverride
+      const initialAdminPayload = allowPointsOverride
         ? stripUndefinedDeep({
             points: Math.max(0, Math.round(Number(student.points) || 0)),
             unlockedLectureIds: Array.isArray(student.unlockedLectureIds)
@@ -788,6 +833,8 @@ export async function saveStudentToCloud(
             pointsHistory: Array.isArray(student.pointsHistory)
               ? student.pointsHistory.slice(0, 50)
               : [],
+            isBlocked: Boolean(student.isBlocked),
+            blockReason: student.blockReason ? student.blockReason.trim().slice(0, 500) : undefined,
           })
         : {
             points: 0,
@@ -799,7 +846,7 @@ export async function saveStudentToCloud(
 
       await setDoc(ref, {
         ...baseClean,
-        ...initialPointsPayload,
+        ...initialAdminPayload,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -808,7 +855,7 @@ export async function saveStudentToCloud(
         ...baseClean,
         updatedAt: serverTimestamp(),
       };
-      // Only admin updates should include wallet fields on regular profile save;
+      // Only admin updates should include wallet or block status fields on profile save;
       // student updates omit them so Zero-Trust Action 1 affectedKeys rule passes.
       if (allowPointsOverride) {
         updatePayload.points = Math.max(0, Math.round(Number(student.points) || 0));
@@ -823,6 +870,14 @@ export async function saveStudentToCloud(
         }
         if (Array.isArray(student.pointsHistory)) {
           updatePayload.pointsHistory = stripUndefinedDeep(student.pointsHistory.slice(0, 50));
+        }
+        if (student.isBlocked !== undefined) {
+          updatePayload.isBlocked = Boolean(student.isBlocked);
+        }
+        if (student.blockReason !== undefined) {
+          updatePayload.blockReason = student.blockReason.trim()
+            ? student.blockReason.trim().slice(0, 500)
+            : deleteField();
         }
       }
       await updateDoc(ref, updatePayload);
@@ -1339,7 +1394,7 @@ export async function saveNotificationToCloud(notif: PlatformNotification): Prom
   try {
     const ref = doc(db, 'notifications', safeId);
     const validCategories = ['announcement', 'exam', 'lecture', 'urgent', 'congrats'];
-    const validTabs = ['lectures', 'quizzes', 'files', 'points', 'study-hub'];
+    const validTabs = ['lectures', 'quizzes', 'files', 'points'];
 
     const cleanGrade = (notif.grade || 'all').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'all';
     const cleanCtaLabel = notif.ctaLabel?.trim() ? notif.ctaLabel.trim().slice(0, 80) : undefined;
@@ -1389,4 +1444,83 @@ export async function deleteNotificationFromCloud(id: string): Promise<void> {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+// ==========================================
+// REAL-TIME EXAM SECURITY & ANTI-CHEAT ALERTS
+// ==========================================
+
+export async function createExamSecurityAlertToCloud(
+  alert: ExamSecurityAlert
+): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return;
+  const safeId = (alert.id || `alert_${Date.now()}`)
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+    .slice(0, 128);
+  const path = `examAlerts/${safeId}`;
+  try {
+    const clean = stripUndefinedDeep({
+      id: safeId,
+      studentUid: fbUser.uid,
+      studentName: (alert.studentName || 'طالب').trim().slice(0, 200) || 'طالب',
+      studentPhone: alert.studentPhone ? alert.studentPhone.trim().slice(0, 50) : undefined,
+      studentEmail: alert.studentEmail ? alert.studentEmail.trim().slice(0, 200) : undefined,
+      grade: alert.grade
+        ? alert.grade.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'third'
+        : undefined,
+      quizId: alert.quizId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128),
+      quizTitle: (alert.quizTitle || 'اختبار').trim().slice(0, 300) || 'اختبار',
+      violationCount: Math.max(1, Math.min(100, Math.round(Number(alert.violationCount) || 1))),
+      maxViolations: Math.max(1, Math.min(20, Math.round(Number(alert.maxViolations) || 3))),
+      reasons: (Array.isArray(alert.reasons) && alert.reasons.length > 0
+        ? alert.reasons
+        : ['مخالفة لائحة اللجنة']
+      )
+        .map((r) => String(r).trim().slice(0, 200))
+        .filter(Boolean)
+        .slice(0, 30),
+      actionTaken: alert.actionTaken === 'cancelled' ? 'cancelled' : 'warning',
+      resolved: false,
+      createdAtDate: alert.createdAtDate || new Date().toISOString().split('T')[0],
+    });
+    await setDoc(doc(db, 'examAlerts', safeId), {
+      ...clean,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.warn('Exam security alert write failed:', error);
+  }
+}
+
+export async function updateExamSecurityAlertInCloud(
+  alert: ExamSecurityAlert
+): Promise<void> {
+  const safeId = alert.id.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const path = `examAlerts/${safeId}`;
+  try {
+    await runWithAdminTokenRetry(async () => {
+      await updateDoc(doc(db, 'examAlerts', safeId), {
+        resolved: Boolean(alert.resolved),
+        resolvedNote: alert.resolvedNote ? alert.resolvedNote.trim().slice(0, 500) : deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteExamSecurityAlertFromCloud(alertId: string): Promise<void> {
+  const safeId = alertId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const path = `examAlerts/${safeId}`;
+  try {
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'examAlerts', safeId));
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 

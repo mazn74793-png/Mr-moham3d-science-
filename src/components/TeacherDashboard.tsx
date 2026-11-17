@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
-  Users, Shield, ShieldCheck, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck
+  Users, Shield, ShieldCheck, ShieldAlert, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck
 } from 'lucide-react';
-import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward, PlatformNotification } from '../types';
-import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
+import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward, PlatformNotification, ExamSecurityAlert } from '../types';
+import { SiteConfig, getResolvedGrades, DEFAULT_TEACHER_PORTRAIT } from '../types/siteConfig';
 import { auth, hasPasswordLinked, resendVerificationEmail } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { TeacherQuizManager } from './TeacherQuizManager';
@@ -18,6 +18,7 @@ import { CloudinaryTab } from './teacher/CloudinaryTab';
 import { SiteCustomizerTab } from './teacher/SiteCustomizerTab';
 import { PointsCodesTab } from './teacher/PointsCodesTab';
 import { NotificationsTab } from './teacher/NotificationsTab';
+import { ExamAlertsTab } from './teacher/ExamAlertsTab';
 import { LinkPasswordSetup } from './LinkPasswordSetup';
 
 interface TeacherDashboardProps {
@@ -61,11 +62,15 @@ interface TeacherDashboardProps {
   adminCloudError?: string | null;
   lastCloudError?: string | null;
   onRetryCloudSync?: () => Promise<void> | void;
+  examAlerts?: ExamSecurityAlert[];
+  onResolveExamAlert?: (alert: ExamSecurityAlert) => Promise<boolean>;
+  onDeleteExamAlert?: (alertId: string) => Promise<boolean>;
 }
 
 export type TeacherDashboardTab =
   | 'overview'
   | 'all-students'
+  | 'exam-alerts'
   | 'points-codes'
   | 'notifications'
   | 'upload-lecture'
@@ -120,9 +125,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   adminCloudError = null,
   lastCloudError = null,
   onRetryCloudSync,
+  examAlerts = [],
+  onResolveExamAlert,
+  onDeleteExamAlert,
 }) => {
   const { lang } = useLanguage();
   const isEn = lang === 'en';
+  const unresolvedExamAlertsCount = examAlerts.filter((a) => !a.resolved).length;
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>(initialTab || 'overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -283,12 +292,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="p-3 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/60 dark:border-teal-900/40 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-teal-600 shrink-0 border border-teal-400/40">
                 <img
-                  src={siteForm.profileImageUrl || '/images/teacher_placeholder.svg'}
+                  src={siteForm.profileImageUrl || DEFAULT_TEACHER_PORTRAIT}
                   alt={siteForm.teacherName}
                   decoding="async"
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    e.currentTarget.src = '/images/teacher_placeholder.svg';
+                    e.currentTarget.src = DEFAULT_TEACHER_PORTRAIT;
                   }}
                 />
               </div>
@@ -386,6 +395,37 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-mono tabular-nums">
                   {notifications.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('exam-alerts');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'exam-alerts'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : unresolvedExamAlertsCount > 0
+                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldAlert className={`w-4 h-4 ${activeTab === 'exam-alerts' ? 'text-white' : 'text-rose-500'}`} />
+                  <span>{isEn ? 'Exam Anti-Cheat' : 'مراقبة الغش والامتحانات'}</span>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums ${
+                    unresolvedExamAlertsCount > 0
+                      ? activeTab === 'exam-alerts'
+                        ? 'bg-white text-rose-600 font-extrabold'
+                        : 'bg-rose-600 text-white font-extrabold'
+                      : 'bg-slate-200 dark:bg-slate-800'
+                  }`}
+                >
+                  {unresolvedExamAlertsCount > 0 ? unresolvedExamAlertsCount : examAlerts.length}
                 </span>
               </button>
             </div>
@@ -748,6 +788,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 remainingGB={remainingGB}
                 usedPercentage={usedPercentage}
                 totalQuotaGB={CLOUDINARY_TOTAL_QUOTA_GB}
+                unresolvedAlertsCount={unresolvedExamAlertsCount}
                 onNavigateTab={setActiveTab}
                 onOpenResetModal={() => {
                   setResetConfirmOpen(true);
@@ -799,6 +840,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 students={students}
                 lectures={lectures}
                 quizzes={quizzes}
+                attachments={attachments}
                 grades={resolvedGrades}
                 onUpdateStudent={onUpdateStudent}
                 onDeleteStudent={onDeleteStudent}
@@ -809,6 +851,53 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
+          {activeTab === 'exam-alerts' && (
+            <ExamAlertsTab
+              alerts={examAlerts}
+              students={students}
+              grades={resolvedGrades}
+              onResolveAlert={onResolveExamAlert}
+              onDeleteAlert={onDeleteExamAlert}
+              onBlockToggleStudent={async (student, blocked, reason) => {
+                if (!onUpdateStudent) return false;
+                const ok = await onUpdateStudent({
+                  ...student,
+                  isBlocked: blocked,
+                  blockReason: blocked ? reason || 'تم إيقاف الحساب بواسطة الإدارة' : '',
+                });
+                return ok !== false;
+              }}
+              onAllowQuizRetake={async (student, quizId, alert) => {
+                if (!onUpdateStudent) return false;
+                const nextCancelled = (student.cancelledQuizIds || []).filter((id) => id !== quizId);
+                const nextPassed = (student.passedQuizIds || []).filter((id) => id !== quizId);
+                const nextScores = { ...(student.quizScores || {}) };
+                delete nextScores[quizId];
+                const nextViolations = { ...(student.quizViolations || {}) };
+                delete nextViolations[quizId];
+                const vals = Object.values(nextScores);
+                const nextAvg =
+                  vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+                const ok = await onUpdateStudent({
+                  ...student,
+                  cancelledQuizIds: nextCancelled,
+                  passedQuizIds: nextPassed,
+                      quizScores: nextScores,
+                  quizViolations: nextViolations,
+                  score: nextAvg,
+                });
+                if (ok !== false && alert && onResolveExamAlert) {
+                  await onResolveExamAlert({
+                    ...alert,
+                    resolved: true,
+                    resolvedNote: 'تم السماح للطالب بإعادة الامتحان',
+                  });
+                }
+                return ok !== false;
+              }}
+            />
+          )}
+
           {(activeTab === 'upload-lecture' || activeTab === 'lectures-list') && (
             <LecturesTab
               mode={activeTab === 'upload-lecture' ? 'upload' : 'list'}
@@ -816,6 +905,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               quizzes={quizzes}
               resolvedGrades={resolvedGrades}
               siteForm={siteForm}
+              setSiteForm={setSiteForm}
+              onSaveSiteConfig={onSaveSiteConfig}
               cloudinaryConfig={cloudinaryConfig}
               onAddLecture={onAddLecture}
               onUpdateLecture={onUpdateLecture}

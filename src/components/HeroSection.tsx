@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
-import { SiteConfig } from '../types/siteConfig';
+import { SiteConfig, DEFAULT_TEACHER_PORTRAIT } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 import { optimizeImageUrl, getImageLqipUrl } from '../utils/mediaOptimizer';
 
@@ -27,21 +27,29 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     if (trimmed.includes('teacher_mohamed_mostafa') || trimmed.includes('teacher_placeholder') || trimmed.includes('/src/assets/')) {
       return false;
     }
-    return trimmed.startsWith('http') || trimmed.startsWith('/uploads/') || trimmed.startsWith('data:');
+    return (
+      trimmed.startsWith('http') ||
+      trimmed.startsWith('/uploads/') ||
+      trimmed.startsWith('/assets/') ||
+      trimmed.startsWith('data:')
+    );
   };
 
-  const [imgSrc, setImgSrc] = useState<string>(() => (isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : ''));
-  const [imgError, setImgError] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const resolvePortraitUrl = (raw?: string) =>
+    isValidCustomImage(raw) ? String(raw).trim() : DEFAULT_TEACHER_PORTRAIT;
 
-  const optimizedHeroSrc = imgSrc ? optimizeImageUrl(imgSrc, 640) : '';
+  const [imgSrc, setImgSrc] = useState<string>(() => resolvePortraitUrl(siteConfig.profileImageUrl));
+  const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(() => resolvePortraitUrl(siteConfig.profileImageUrl).startsWith('/assets/'));
+
+  const optimizedHeroSrc = imgSrc ? optimizeImageUrl(imgSrc, 640) : DEFAULT_TEACHER_PORTRAIT;
   const lqipHeroSrc = imgSrc ? getImageLqipUrl(imgSrc) : undefined;
 
   useEffect(() => {
     setImgError(false);
-    const nextSrc = isValidCustomImage(siteConfig.profileImageUrl) ? siteConfig.profileImageUrl : '';
+    const nextSrc = resolvePortraitUrl(siteConfig.profileImageUrl);
     setImgSrc(nextSrc);
-    setImgLoaded(false);
+    setImgLoaded(nextSrc.startsWith('/assets/'));
   }, [siteConfig.profileImageUrl]);
 
   useEffect(() => {
@@ -67,6 +75,12 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   }, [optimizedHeroSrc]);
 
   const handleImageError = () => {
+    if (imgSrc !== DEFAULT_TEACHER_PORTRAIT) {
+      setImgSrc(DEFAULT_TEACHER_PORTRAIT);
+      setImgError(false);
+      setImgLoaded(true);
+      return;
+    }
     setImgError(true);
     setImgLoaded(true);
   };
@@ -189,9 +203,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               {/* Image or Clean Educator Crest Placeholder */}
               <div className="relative w-full flex items-center justify-center group">
                 {optimizedHeroSrc && !imgError ? (
-                  <div className="relative w-full min-h-[340px] sm:min-h-[420px] flex items-end justify-center overflow-hidden rounded-3xl">
+                  <div className="relative w-full min-h-[300px] sm:min-h-[390px] flex items-end justify-center overflow-hidden rounded-[2rem] bg-gradient-to-b from-teal-500/5 via-teal-500/10 to-teal-700/20 dark:from-slate-900/40 dark:via-teal-950/30 dark:to-teal-900/40 border border-teal-200/50 dark:border-teal-800/40 pt-4 px-4">
                     {!imgLoaded && (
-                      <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-teal-900/15 via-slate-200/60 to-teal-800/15 dark:from-teal-950/60 dark:via-slate-800/70 dark:to-teal-900/50 animate-pulse overflow-hidden">
+                      <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-teal-900/15 via-slate-200/60 to-teal-800/15 dark:from-teal-950/60 dark:via-slate-800/70 dark:to-teal-900/50 animate-pulse overflow-hidden">
                         {lqipHeroSrc && (
                           <img
                             src={lqipHeroSrc}
@@ -211,7 +225,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                       decoding="sync"
                       onLoad={() => setImgLoaded(true)}
                       onError={handleImageError}
-                      className={`relative z-10 w-full max-h-[480px] object-contain object-bottom drop-shadow-2xl transition-all duration-300 ease-out group-hover:scale-105 cursor-pointer rounded-3xl ${
+                      className={`relative z-10 w-full max-w-[380px] max-h-[430px] object-contain object-bottom drop-shadow-[0_18px_32px_rgba(13,148,136,0.22)] transition-all duration-300 ease-out group-hover:scale-[1.03] cursor-pointer ${
                         imgLoaded ? 'opacity-100' : 'opacity-0'
                       }`}
                       referrerPolicy="no-referrer"

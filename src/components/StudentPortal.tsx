@@ -20,13 +20,14 @@ import {
   Loader2,
   Bookmark,
   Search,
-  FlaskConical,
   Clock3,
   User,
   X,
   ExternalLink,
   PlayCircle,
   Bell,
+  Layers,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Lecture,
@@ -37,6 +38,7 @@ import {
   PointReward,
   CloudinaryConfig,
   PlatformNotification,
+  ExamSecurityAlert,
 } from '../types';
 import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
@@ -44,7 +46,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { detectMediaKind } from './MediaPreview';
 import { QuizRunner } from './student/QuizRunner';
 import { HandoutsTab } from './student/HandoutsTab';
-import { StudyLabTab } from './student/StudyLabTab';
 import { PointsWalletTab } from './student/PointsWalletTab';
 import { StudentNotificationsTab } from './student/NotificationsTab';
 import {
@@ -55,6 +56,13 @@ import {
   STUDENT_CARD_THEMES,
 } from './student/StudentProfileModal';
 import { prefetchVideoStream } from '../utils/mediaOptimizer';
+import {
+  resolveUnitsForGrade,
+  getLecturesInUnit,
+  getUnitForLecture,
+  isLectureUnlockedForStudent,
+  getLecturePrerequisiteDetails,
+} from '../utils/units';
 
 interface StudentPortalProps {
   currentUser: UserProfile | null;
@@ -72,6 +80,8 @@ interface StudentPortalProps {
   onUnlockLecture?: (lecture: Lecture) => Promise<void>;
   onUnlockAttachment?: (file: AttachmentFile) => Promise<void>;
   onClaimReward?: (reward: PointReward) => Promise<void>;
+  onReportExamAlert?: (alert: ExamSecurityAlert) => Promise<void> | void;
+  onCheatCancelQuiz?: (quiz: Quiz, violationCount: number, reasons: string[]) => void;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -90,6 +100,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onUnlockLecture,
   onUnlockAttachment,
   onClaimReward,
+  onReportExamAlert,
+  onCheatCancelQuiz,
 }) => {
   const { lang, isRtl } = useLanguage();
   const resolvedGrades = getResolvedGrades(siteConfig);
@@ -113,10 +125,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [currentUser?.grade, isTeacher]);
 
   const [activeTab, setActiveTab] = useState<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'notifications' | 'profile'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'notifications' | 'profile'
   >('lectures');
   const lastTabBeforeProfileRef = React.useRef<
-    'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub' | 'notifications'
+    'lectures' | 'quizzes' | 'files' | 'points' | 'notifications'
   >('lectures');
 
   const openProfilePage = () => {
@@ -134,6 +146,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   const [lectureSearch, setLectureSearch] = useState('');
   const [lectureFilter, setLectureFilter] = useState<'all' | 'available' | 'completed' | 'bookmarked'>('all');
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('all');
+
+  useEffect(() => {
+    setSelectedUnitFilter('all');
+  }, [selectedGrade]);
 
   const studentStorageKey = currentUser?.id || 'guest';
   const [customProfile, setCustomProfile] = useState<StudentCustomProfile>(() =>
@@ -173,9 +190,41 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   const videoTimeGetterRef = React.useRef<() => number>(() => 0);
 
-  const filteredLectures = lectures
-    .filter((l) => l.grade === selectedGrade)
-    .sort((a, b) => (a.sessionOrder || 1) - (b.sessionOrder || 1));
+  const filteredLectures = React.useMemo(
+    () =>
+      lectures
+        .filter((l) => l.grade === selectedGrade)
+        .sort((a, b) => (a.sessionOrder || 1) - (b.sessionOrder || 1)),
+    [lectures, selectedGrade]
+  );
+
+  const selectedGradeItem = React.useMemo(
+    () => resolvedGrades.find((g) => g.id === selectedGrade),
+    [resolvedGrades, selectedGrade]
+  );
+
+  const gradeUnits = React.useMemo(
+    () => resolveUnitsForGrade(selectedGradeItem, filteredLectures),
+    [selectedGradeItem, filteredLectures]
+  );
+
+  const orderedGradeLectures = React.useMemo(() => {
+    if (gradeUnits.length === 0) return filteredLectures;
+    const seen = new Set<string>();
+    const out: Lecture[] = [];
+    for (const u of gradeUnits) {
+      for (const l of getLecturesInUnit(filteredLectures, u)) {
+        if (!seen.has(l.id)) {
+          seen.add(l.id);
+          out.push(l);
+        }
+      }
+    }
+    for (const l of filteredLectures) {
+      if (!seen.has(l.id)) out.push(l);
+    }
+    return out;
+  }, [gradeUnits, filteredLectures]);
 
   const filteredQuizzes = quizzes.filter((q) => q.grade === selectedGrade);
   const filteredAttachments = attachments.filter((a) => a.grade === selectedGrade);
@@ -230,29 +279,29 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   ).length;
 
   const [activeLecture, setActiveLecture] = useState<Lecture | null>(
-    filteredLectures[0] || lectures[0] || null
+    orderedGradeLectures[0] || filteredLectures[0] || lectures[0] || null
   );
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [lecturePdfPreviewOpen, setLecturePdfPreviewOpen] = useState(false);
 
   useEffect(() => {
-    if (filteredLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
-      setActiveLecture(filteredLectures[0]);
-    } else if (filteredLectures.length === 0) {
+    if (orderedGradeLectures.length > 0 && (!activeLecture || activeLecture.grade !== selectedGrade)) {
+      setActiveLecture(orderedGradeLectures[0]);
+    } else if (orderedGradeLectures.length === 0) {
       setActiveLecture(null);
     }
-  }, [selectedGrade, filteredLectures, activeLecture]);
+  }, [selectedGrade, orderedGradeLectures, activeLecture]);
 
   // Pre-warm active and upcoming unlocked lecture streams for fast instant start
   useEffect(() => {
     if (!activeLecture?.videoUrl) return;
     prefetchVideoStream(activeLecture.videoUrl);
-    const curIdx = filteredLectures.findIndex((l) => l.id === activeLecture.id);
-    if (curIdx >= 0 && curIdx + 1 < filteredLectures.length) {
-      const nextLec = filteredLectures[curIdx + 1];
+    const curIdx = orderedGradeLectures.findIndex((l) => l.id === activeLecture.id);
+    if (curIdx >= 0 && curIdx + 1 < orderedGradeLectures.length) {
+      const nextLec = orderedGradeLectures[curIdx + 1];
       if (nextLec?.videoUrl) prefetchVideoStream(nextLec.videoUrl);
     }
-  }, [activeLecture?.id, activeLecture?.videoUrl, filteredLectures]);
+  }, [activeLecture?.id, activeLecture?.videoUrl, orderedGradeLectures]);
 
   // Quiz state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -294,45 +343,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     handleNotesChange(`${prefix}[${mm}:${ss}] `);
   };
 
-  // Sequential & Points-Gated Unlocking Logic
-  const isLectureUnlocked = (lec: Lecture): boolean => {
-    if (isTeacher) return true;
-    const pointsCost = lec.pointsCost || 0;
-    if (pointsCost > 0) {
-      return Boolean(currentUser?.unlockedLectureIds?.includes(lec.id));
-    }
+  // Unit-Aware Sequential & Points-Gated Unlocking Logic
+  const isLectureUnlocked = (lec: Lecture): boolean =>
+    isLectureUnlockedForStudent(lec, filteredLectures, gradeUnits, currentUser, isTeacher);
 
-    const idx = filteredLectures.findIndex((l) => l.id === lec.id);
-    if (idx <= 0) return true;
+  const getPrerequisiteDetails = (lec: Lecture) =>
+    getLecturePrerequisiteDetails(lec, filteredLectures, gradeUnits, quizzes, currentUser);
 
-    const prevLec = filteredLectures[idx - 1];
-    const prevWatched = currentUser?.watchedLectureIds?.includes(prevLec.id);
-    const prevQuizId = prevLec.quizId;
-
-    let prevQuizPassed = true;
-    if (prevQuizId) {
-      const isPassedInList = currentUser?.passedQuizIds?.includes(prevQuizId);
-      const score = currentUser?.quizScores?.[prevQuizId] ?? 0;
-      prevQuizPassed = Boolean(isPassedInList || score >= 60);
-    }
-
-    return Boolean(prevWatched && prevQuizPassed);
-  };
-
-  const getPrerequisiteDetails = (lec: Lecture) => {
-    const idx = filteredLectures.findIndex((l) => l.id === lec.id);
-    if (idx <= 0) return null;
-    const prevLec = filteredLectures[idx - 1];
-    const prevWatched = Boolean(currentUser?.watchedLectureIds?.includes(prevLec.id));
-    const prevQuiz = quizzes.find((q) => q.id === prevLec.quizId) || null;
-    const prevQuizPassed = prevQuiz
-      ? Boolean(
-          currentUser?.passedQuizIds?.includes(prevQuiz.id) ||
-            (currentUser?.quizScores?.[prevQuiz.id] ?? 0) >= 60
-        )
-      : true;
-    return { prevLec, prevWatched, prevQuiz, prevQuizPassed };
-  };
+  const activeLectureUnit = React.useMemo(
+    () => (activeLecture ? getUnitForLecture(activeLecture, gradeUnits) : undefined),
+    [activeLecture, gradeUnits]
+  );
 
   const handleMarkWatched = (lecId: string) => {
     if (!currentUser) return;
@@ -381,12 +402,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     const score = calculateScore();
     const total = activeQuiz.questions.length;
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+    const passThreshold = activeQuiz.passingScore ?? 60;
 
     if (currentUser) {
       const currentScores = { ...(currentUser.quizScores || {}), [activeQuiz.id]: percentage };
       const currentPassed = [...(currentUser.passedQuizIds || [])];
 
-      if (percentage >= 60 && !currentPassed.includes(activeQuiz.id)) {
+      if (percentage >= passThreshold && !currentPassed.includes(activeQuiz.id)) {
         currentPassed.push(activeQuiz.id);
         setShowQuizCelebration(
           lang === 'en'
@@ -410,6 +432,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
   };
 
+  const handleCheatCancelQuiz = (quiz: Quiz, violationCount: number, reasons: string[]) => {
+    if (onCheatCancelQuiz) {
+      onCheatCancelQuiz(quiz, violationCount, reasons);
+      return;
+    }
+    if (!currentUser) return;
+    const nextCancelled = Array.from(new Set([...(currentUser.cancelledQuizIds || []), quiz.id]));
+    const nextPassed = (currentUser.passedQuizIds || []).filter((id) => id !== quiz.id);
+    const nextScores = { ...(currentUser.quizScores || {}), [quiz.id]: 0 };
+    const scoreValues = Object.values(nextScores);
+    const avgScore =
+      scoreValues.length > 0
+        ? Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length)
+        : 0;
+    const nextViolations = {
+      ...(currentUser.quizViolations || {}),
+      [quiz.id]: {
+        count: violationCount,
+        reasons,
+        lastAt: new Date().toISOString(),
+      },
+    };
+    onUpdateStudentProfile?.({
+      ...currentUser,
+      cancelledQuizIds: nextCancelled,
+      passedQuizIds: nextPassed,
+      quizScores: nextScores,
+      score: avgScore,
+      quizViolations: nextViolations,
+    });
+  };
+
   const studentCumulativeScore = currentUser?.score ?? 0;
 
   const getGradeTitle = (g: GradeLevel) => {
@@ -422,10 +476,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const totalLecturesCount = filteredLectures.length;
   const progressPercentage =
     totalLecturesCount > 0 ? Math.round((completedLecturesCount / totalLecturesCount) * 100) : 0;
-  const passedQuizzesCount = filteredQuizzes.filter(
-    (q) =>
-      currentUser?.passedQuizIds?.includes(q.id) || (currentUser?.quizScores?.[q.id] ?? 0) >= 60
-  ).length;
+  const passedQuizzesCount = filteredQuizzes.filter((q) => {
+    if (currentUser?.cancelledQuizIds?.includes(q.id)) return false;
+    const passThreshold = q.passingScore ?? 60;
+    return (
+      currentUser?.passedQuizIds?.includes(q.id) ||
+      (currentUser?.quizScores?.[q.id] ?? 0) >= passThreshold
+    );
+  }).length;
 
   const nextTargetLecture =
     filteredLectures.find((l) => !currentUser?.watchedLectureIds?.includes(l.id)) ||
@@ -461,6 +519,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         >
           {isRtl ? 'العودة للصفحة الرئيسية وتسجيل الدخول' : 'Return Home & Log In'}
         </button>
+      </div>
+    );
+  }
+
+  if (currentUser.isBlocked && !isTeacher) {
+    return (
+      <div className="min-h-[75vh] flex flex-col items-center justify-center p-6 text-center font-cairo">
+        <div className="max-w-lg w-full p-7 sm:p-9 rounded-3xl bg-white dark:bg-slate-900 border-2 border-rose-300 dark:border-rose-800 shadow-lg space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto border border-rose-200 dark:border-rose-800">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+            {isRtl ? 'تم تقييد حسابك من قِبل الإدارة' : 'Your Account Has Been Restricted'}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            {isRtl
+              ? 'تم إيقاف وصول هذا الحساب مؤقتاً إلى المحاضرات والامتحانات. يرجى التواصل مع المعلم أو الدعم الفني لمراجعة الحالة.'
+              : 'Access to lectures and exams has been temporarily suspended for this account. Please contact your teacher or support.'}
+          </p>
+          {currentUser.blockReason && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-800 dark:text-rose-200">
+              {isRtl ? `السبب المسجل: ${currentUser.blockReason}` : `Reason: ${currentUser.blockReason}`}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="w-full min-h-[44px] px-6 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold hover:opacity-90 transition-opacity cursor-pointer"
+          >
+            {isRtl ? 'العودة للصفحة الرئيسية' : 'Back to Home'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -694,22 +784,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <button
               type="button"
               onClick={() => {
-                setActiveTab('study-hub');
-                setActiveQuiz(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'study-hub'
-                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <FlaskConical className="w-4 h-4" />
-              <span>{lang === 'en' ? 'Study & Equations' : 'المعادلات والمذاكرة'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
                 setActiveTab('notifications');
                 setActiveQuiz(null);
               }}
@@ -730,13 +804,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </div>
 
           {/* Mobile / Tablet Quick Scrollable Strip */}
-          <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-1">
+          <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
             {[
               { id: 'lectures' as const, label: lang === 'en' ? 'Lectures' : `المحاضرات (${filteredLectures.length})`, icon: Video },
               { id: 'quizzes' as const, label: lang === 'en' ? 'Quizzes' : `الامتحانات (${filteredQuizzes.length})`, icon: Award },
               { id: 'files' as const, label: lang === 'en' ? 'Handouts' : `الملازم (${filteredAttachments.length})`, icon: FileText },
               { id: 'points' as const, label: lang === 'en' ? 'Points' : 'النقاط والأكواد', icon: Ticket },
-              { id: 'study-hub' as const, label: lang === 'en' ? 'Equations' : 'المعادلات والمذاكرة', icon: FlaskConical },
               { id: 'notifications' as const, label: lang === 'en' ? `Notices (${visibleNotifications.length})` : `الإشعارات (${visibleNotifications.length})`, icon: Bell },
             ].map((item) => {
               const IconComp = item.icon;
@@ -865,46 +938,151 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <div className="order-1 lg:order-2">
             {/* 1. LECTURES TAB */}
             {activeTab === 'lectures' && !activeQuiz && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div id="videoPlayerSection" className="lg:col-span-8 space-y-5">
-                  {activeLecture ? (
-                    isLectureUnlocked(activeLecture) ? (
-                      <div className="space-y-4">
-                        <SecureVideoPlayer
-                          lecture={activeLecture}
-                          currentUser={currentUser}
-                          isWatched={Boolean(
-                            currentUser?.watchedLectureIds?.includes(activeLecture.id)
-                          )}
-                          onMarkWatched={handleMarkWatched}
-                          onRegisterTimeGetter={(fn) => {
-                            videoTimeGetterRef.current = fn;
-                          }}
-                          onTakeQuiz={(quizId) => {
-                            const targetQuiz =
-                              quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
-                            if (targetQuiz) handleStartQuiz(targetQuiz);
-                          }}
-                        />
+              <div className="space-y-5">
+                {/* Interactive Unit & Course Track Explorer */}
+                {gradeUnits.length > 0 && (
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                        <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span>
+                          {lang === 'en' ? 'Units & Course Tracks' : 'الوحدات والمسارات التعليمية'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                        {gradeUnits.length} {lang === 'en' ? 'units' : 'وحدات'}
+                      </span>
+                    </div>
 
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1.5 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                                <span className="font-semibold text-teal-700 dark:text-teal-400">
-                                  {activeLecture.chapter}
-                                </span>
-                                <span aria-hidden="true">·</span>
-                                <span className="flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  {activeLecture.duration}
-                                </span>
-                                <span aria-hidden="true">·</span>
+                    <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUnitFilter('all')}
+                        className={`min-w-[130px] px-3.5 py-2.5 rounded-xl border text-start transition-colors cursor-pointer shrink-0 flex flex-col justify-between gap-1 ${
+                          selectedUnitFilter === 'all'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                            : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-teal-400'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">
+                          {lang === 'en' ? 'All Units' : 'كل الوحدات'}
+                        </div>
+                        <div
+                          className={`text-[11px] font-mono tabular-nums ${
+                            selectedUnitFilter === 'all' ? 'text-teal-100' : 'text-slate-500'
+                          }`}
+                        >
+                          {completedLecturesCount}/{totalLecturesCount}{' '}
+                          {lang === 'en' ? 'done' : 'مكتملة'}
+                        </div>
+                      </button>
+
+                      {gradeUnits.map((u) => {
+                        const unitLecs = getLecturesInUnit(filteredLectures, u);
+                        if (unitLecs.length === 0 && !isTeacher) return null;
+                        const completedInUnit = unitLecs.filter((l) =>
+                          currentUser?.watchedLectureIds?.includes(l.id)
+                        ).length;
+                        const pct =
+                          unitLecs.length > 0
+                            ? Math.round((completedInUnit / unitLecs.length) * 100)
+                            : 0;
+                        const active = selectedUnitFilter === u.id;
+
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedUnitFilter(u.id);
+                              if (
+                                unitLecs.length > 0 &&
+                                (!activeLecture || getUnitForLecture(activeLecture, gradeUnits)?.id !== u.id)
+                              ) {
+                                const firstAvailable =
+                                  unitLecs.find((l) => isLectureUnlocked(l)) || unitLecs[0];
+                                setActiveLecture(firstAvailable);
+                              }
+                            }}
+                            className={`min-w-[185px] max-w-[240px] px-3.5 py-2.5 rounded-xl border text-start transition-colors cursor-pointer shrink-0 flex flex-col justify-between gap-1.5 ${
+                              active
+                                ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-900 dark:text-teal-100'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-teal-400 text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            <div className="text-xs font-bold truncate">{u.titleAr}</div>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                                 <span>
-                                  {activeLecture.viewsCount}{' '}
-                                  {lang === 'en' ? 'views' : 'مشاهدة'}
+                                  {completedInUnit}/{unitLecs.length}{' '}
+                                  {lang === 'en' ? 'sessions' : 'حصص'}
                                 </span>
+                                {u.isIndependent !== false && (
+                                  <span className="text-teal-600 dark:text-teal-400 font-sans font-semibold">
+                                    {lang === 'en' ? 'Direct' : 'مستقلة'}
+                                  </span>
+                                )}
                               </div>
+                              <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                                <div
+                                  className="h-full bg-teal-600 dark:bg-teal-500 rounded-full transition-all"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  <div id="videoPlayerSection" className="lg:col-span-8 space-y-5">
+                    {activeLecture ? (
+                      isLectureUnlocked(activeLecture) ? (
+                        <div className="space-y-4">
+                          <SecureVideoPlayer
+                            lecture={activeLecture}
+                            currentUser={currentUser}
+                            isWatched={Boolean(
+                              currentUser?.watchedLectureIds?.includes(activeLecture.id)
+                            )}
+                            onMarkWatched={handleMarkWatched}
+                            onRegisterTimeGetter={(fn) => {
+                              videoTimeGetterRef.current = fn;
+                            }}
+                            onTakeQuiz={(quizId) => {
+                              const targetQuiz =
+                                quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
+                              if (targetQuiz) handleStartQuiz(targetQuiz);
+                            }}
+                          />
+
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1.5 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                                  <span className="font-semibold text-teal-700 dark:text-teal-400">
+                                    {activeLectureUnit?.titleAr || activeLecture.chapter}
+                                  </span>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono">
+                                    {lang === 'en'
+                                      ? `Session ${activeLecture.sessionOrder || 1}`
+                                      : `حصة ${activeLecture.sessionOrder || 1}`}
+                                  </span>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    {activeLecture.duration}
+                                  </span>
+                                  <span aria-hidden="true">·</span>
+                                  <span>
+                                    {activeLecture.viewsCount}{' '}
+                                    {lang === 'en' ? 'views' : 'مشاهدة'}
+                                  </span>
+                                </div>
 
                               <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
                                 {activeLecture.title}
@@ -1092,12 +1270,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           </div>
 
                           {/* Previous / Next Lecture Navigation */}
-                          {filteredLectures.length > 1 && (() => {
-                            const curIdx = filteredLectures.findIndex((l) => l.id === activeLecture.id);
-                            const prevL = curIdx > 0 ? filteredLectures[curIdx - 1] : null;
+                          {(() => {
+                            const activeNavList =
+                              selectedUnitFilter !== 'all'
+                                ? (() => {
+                                    const u = gradeUnits.find((gu) => gu.id === selectedUnitFilter);
+                                    return u ? getLecturesInUnit(filteredLectures, u) : orderedGradeLectures;
+                                  })()
+                                : orderedGradeLectures;
+                            if (activeNavList.length <= 1) return null;
+                            const curIdx = activeNavList.findIndex((l) => l.id === activeLecture.id);
+                            const prevL = curIdx > 0 ? activeNavList[curIdx - 1] : null;
                             const nextL =
-                              curIdx >= 0 && curIdx + 1 < filteredLectures.length
-                                ? filteredLectures[curIdx + 1]
+                              curIdx >= 0 && curIdx + 1 < activeNavList.length
+                                ? activeNavList[curIdx + 1]
                                 : null;
                             const PrevIcon = isRtl ? ChevronRight : ChevronLeft;
                             const NextIcon = isRtl ? ChevronLeft : ChevronRight;
@@ -1389,12 +1575,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   )}
                 </div>
 
-                {/* Lecture Curriculum Playlist Column */}
+                {/* Lecture Curriculum Playlist Column (Grouped by Unit with 16:9 Thumbnails) */}
                 <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                   <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                        {lang === 'en' ? 'Curriculum Playlist' : 'قائمة حصص المنهج'}
+                        {selectedUnitFilter === 'all'
+                          ? lang === 'en'
+                            ? 'Curriculum Playlist'
+                            : 'قائمة حصص المنهج'
+                          : gradeUnits.find((u) => u.id === selectedUnitFilter)?.titleAr ||
+                            (lang === 'en' ? 'Unit Playlist' : 'حصص الوحدة')}
                       </h3>
                       <span className="text-xs font-mono tabular-nums text-slate-500">
                         {filteredLectures.length} {lang === 'en' ? 'sessions' : 'حصص'}
@@ -1413,7 +1604,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             type="text"
                             value={lectureSearch}
                             onChange={(e) => setLectureSearch(e.target.value)}
-                            placeholder={lang === 'en' ? 'Search lecture or unit...' : 'ابحث عن حصة أو باب...'}
+                            placeholder={lang === 'en' ? 'Search lecture or unit...' : 'ابحث عن حصة أو وحدة...'}
                             className={`w-full min-h-[36px] py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 ${
                               isRtl ? 'pr-8 pl-3' : 'pl-8 pr-3'
                             }`}
@@ -1463,140 +1654,207 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     )}
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[540px] overflow-y-auto">
-                    {filteredLectures
-                      .filter((lec) => {
-                        const unlocked = isLectureUnlocked(lec);
-                        const isWatched = Boolean(currentUser?.watchedLectureIds?.includes(lec.id));
-                        const isBookmarked = bookmarkedLectureIds.includes(lec.id);
-                        if (lectureFilter === 'available' && !unlocked) return false;
-                        if (lectureFilter === 'completed' && !isWatched) return false;
-                        if (lectureFilter === 'bookmarked' && !isBookmarked) return false;
-                        const q = lectureSearch.trim().toLowerCase();
-                        if (!q) return true;
-                        return (
-                          lec.title.toLowerCase().includes(q) ||
-                          lec.chapter.toLowerCase().includes(q)
-                        );
-                      })
-                      .map((lec, idx) => {
-                      const isCurrent = activeLecture?.id === lec.id;
-                      const unlocked = isLectureUnlocked(lec);
-                      const isWatched = currentUser?.watchedLectureIds?.includes(lec.id);
-                      const isBookmarked = bookmarkedLectureIds.includes(lec.id);
+                  <div className="max-h-[580px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                    {(() => {
+                      const unitsToRender =
+                        selectedUnitFilter === 'all'
+                          ? gradeUnits
+                          : gradeUnits.filter((u) => u.id === selectedUnitFilter);
+                      const q = lectureSearch.trim().toLowerCase();
 
-                      return (
-                        <button
-                          key={lec.id}
-                          type="button"
-                          onMouseEnter={() => {
-                            if (unlocked && lec.videoUrl) prefetchVideoStream(lec.videoUrl);
-                          }}
-                          onClick={() => {
-                            setActiveLecture(lec);
-                            if (window.innerWidth < 1024) {
-                              document
-                                .getElementById('videoPlayerSection')
-                                ?.scrollIntoView({ behavior: 'smooth' });
-                            }
-                          }}
-                          className={`w-full min-h-[64px] px-4 py-3 text-start transition-colors cursor-pointer flex items-center gap-3 ${
-                            isCurrent
-                              ? 'bg-teal-50/80 dark:bg-teal-950/40'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                          }`}
-                        >
-                          <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-mono tabular-nums text-xs font-bold ${
-                              !unlocked
-                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                                : isCurrent
-                                ? 'bg-teal-600 text-white'
-                                : isWatched
-                                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      const renderLectureItem = (lec: Lecture, idx: number) => {
+                        const isCurrent = activeLecture?.id === lec.id;
+                        const unlocked = isLectureUnlocked(lec);
+                        const isWatched = currentUser?.watchedLectureIds?.includes(lec.id);
+                        const isBookmarked = bookmarkedLectureIds.includes(lec.id);
+
+                        return (
+                          <button
+                            key={lec.id}
+                            type="button"
+                            onMouseEnter={() => {
+                              if (unlocked && lec.videoUrl) prefetchVideoStream(lec.videoUrl);
+                            }}
+                            onClick={() => {
+                              setActiveLecture(lec);
+                              if (window.innerWidth < 1024) {
+                                document
+                                  .getElementById('videoPlayerSection')
+                                  ?.scrollIntoView({ behavior: 'smooth' });
+                              }
+                            }}
+                            className={`w-full px-3.5 py-3 text-start transition-colors cursor-pointer flex items-center gap-3 border-b border-slate-100/80 dark:border-slate-800/80 last:border-b-0 ${
+                              isCurrent
+                                ? 'bg-teal-50/80 dark:bg-teal-950/40'
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                             }`}
                           >
-                            {!unlocked ? (
-                              <Lock className="w-4 h-4 text-amber-500" />
-                            ) : isWatched ? (
-                              <Check className="w-4 h-4" />
-                            ) : (
-                              lec.sessionOrder || idx + 1
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-1.5">
-                              <div
-                                className={`text-xs sm:text-sm font-bold truncate ${
-                                  isCurrent
-                                    ? 'text-teal-800 dark:text-teal-300'
-                                    : 'text-slate-900 dark:text-white'
-                                }`}
-                              >
-                                {lec.title}
-                              </div>
-                              {isBookmarked && (
-                                <Bookmark className="w-3.5 h-3.5 text-amber-500 fill-current shrink-0" />
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums truncate">
-                              <span>{lec.duration}</span>
-                              <span aria-hidden="true">·</span>
-                              <span className="truncate">{lec.chapter.split(':')[0]}</span>
-                              <span aria-hidden="true">·</span>
-                              <span
-                                className={
-                                  !unlocked
-                                    ? 'text-amber-600 dark:text-amber-400'
-                                    : isWatched
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-teal-600 dark:text-teal-400'
+                            {/* 16:9 Mini Thumbnail with Status Overlay */}
+                            <div className="w-20 h-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 relative bg-slate-900">
+                              <img
+                                src={
+                                  lec.thumbnailUrl ||
+                                  '/images/chemistry_lab_visual_1794141316456.jpg'
                                 }
-                              >
-                                {!unlocked
-                                  ? (lec.pointsCost || 0) > 0
+                                alt={lec.title}
+                                loading="lazy"
+                                decoding="async"
+                                className={`w-full h-full object-cover ${
+                                  !unlocked ? 'opacity-50 grayscale-[35%]' : ''
+                                }`}
+                              />
+                              <div className="absolute inset-0 bg-slate-950/35 flex items-center justify-center">
+                                {!unlocked ? (
+                                  <Lock className="w-4 h-4 text-amber-300" />
+                                ) : isWatched ? (
+                                  <Check className="w-4 h-4 text-emerald-300" />
+                                ) : (
+                                  <PlayCircle
+                                    className={`w-5 h-5 ${
+                                      isCurrent ? 'text-teal-300' : 'text-white/95'
+                                    }`}
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-1.5">
+                                <div
+                                  className={`text-xs sm:text-sm font-bold line-clamp-2 leading-snug ${
+                                    isCurrent
+                                      ? 'text-teal-800 dark:text-teal-300'
+                                      : 'text-slate-900 dark:text-white'
+                                  }`}
+                                >
+                                  {lec.title}
+                                </div>
+                                {isBookmarked && (
+                                  <Bookmark className="w-3.5 h-3.5 text-amber-500 fill-current shrink-0 mt-0.5" />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums truncate">
+                                <span>
+                                  {lang === 'en'
+                                    ? `#${lec.sessionOrder || idx + 1}`
+                                    : `حصة ${lec.sessionOrder || idx + 1}`}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-sans">{lec.duration}</span>
+                                <span aria-hidden="true">·</span>
+                                <span
+                                  className={`font-sans font-semibold ${
+                                    !unlocked
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : isWatched
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-teal-600 dark:text-teal-400'
+                                  }`}
+                                >
+                                  {!unlocked
+                                    ? (lec.pointsCost || 0) > 0
+                                      ? lang === 'en'
+                                        ? `${lec.pointsCost} Pts`
+                                        : `${lec.pointsCost} نقطة`
+                                      : lang === 'en'
+                                      ? 'Locked'
+                                      : 'مقفلة'
+                                    : isWatched
                                     ? lang === 'en'
-                                      ? `${lec.pointsCost} Pts`
-                                      : `تُفتح بـ ${lec.pointsCost} نقطة`
+                                      ? 'Completed'
+                                      : 'مكتملة'
                                     : lang === 'en'
-                                    ? 'Locked'
-                                    : 'مقفلة'
-                                  : isWatched
-                                  ? lang === 'en'
-                                    ? 'Completed'
-                                    : 'مكتملة'
-                                  : lang === 'en'
-                                  ? 'Available'
-                                  : 'متاحة'}
+                                    ? 'Available'
+                                    : 'متاحة'}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      };
+
+                      let totalRendered = 0;
+
+                      const unitSections = unitsToRender.map((unit) => {
+                        const unitAllLecs = getLecturesInUnit(filteredLectures, unit);
+                        const matching = unitAllLecs.filter((lec) => {
+                          const unlocked = isLectureUnlocked(lec);
+                          const isWatched = Boolean(
+                            currentUser?.watchedLectureIds?.includes(lec.id)
+                          );
+                          const isBookmarked = bookmarkedLectureIds.includes(lec.id);
+                          if (lectureFilter === 'available' && !unlocked) return false;
+                          if (lectureFilter === 'completed' && !isWatched) return false;
+                          if (lectureFilter === 'bookmarked' && !isBookmarked) return false;
+                          if (!q) return true;
+                          return (
+                            lec.title.toLowerCase().includes(q) ||
+                            lec.chapter.toLowerCase().includes(q) ||
+                            unit.titleAr.toLowerCase().includes(q)
+                          );
+                        });
+
+                        if (matching.length === 0) return null;
+                        totalRendered += matching.length;
+                        const completedInUnit = unitAllLecs.filter((l) =>
+                          currentUser?.watchedLectureIds?.includes(l.id)
+                        ).length;
+
+                        return (
+                          <div key={unit.id}>
+                            <div className="px-4 py-2 bg-slate-50/90 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                                {unit.titleAr}
+                              </span>
+                              <span className="text-[10px] font-mono tabular-nums text-slate-500 shrink-0">
+                                {completedInUnit}/{unitAllLecs.length}
                               </span>
                             </div>
+                            <div>{matching.map((lec, idx) => renderLectureItem(lec, idx))}</div>
                           </div>
-                        </button>
-                      );
-                    })}
+                        );
+                      });
 
-                    {filteredLectures.length === 0 && (
-                      <div className="p-8 text-center text-xs text-slate-500 space-y-2">
-                        <BookOpen className="w-7 h-7 text-teal-600/40 mx-auto" />
-                        <div className="font-bold text-slate-700 dark:text-slate-300">
-                          {lang === 'en'
-                            ? 'No lectures published yet'
-                            : 'لم يتم نشر محاضرات لهذا الصف حتى الآن'}
-                        </div>
-                      </div>
-                    )}
+                      if (filteredLectures.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-xs text-slate-500 space-y-2">
+                            <BookOpen className="w-7 h-7 text-teal-600/40 mx-auto" />
+                            <div className="font-bold text-slate-700 dark:text-slate-300">
+                              {lang === 'en'
+                                ? 'No lectures published yet'
+                                : 'لم يتم نشر محاضرات لهذا الصف حتى الآن'}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (totalRendered === 0) {
+                        return (
+                          <div className="p-8 text-center text-xs text-slate-500 space-y-2">
+                            <Search className="w-6 h-6 text-slate-400 mx-auto" />
+                            <div className="font-bold text-slate-700 dark:text-slate-300">
+                              {lang === 'en'
+                                ? 'No matching lectures in this filter'
+                                : 'لا توجد محاضرات مطابقة للبحث أو الفلتر المحدد'}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return unitSections;
+                    })()}
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
             {/* 2. QUIZZES TAB & ACTIVE EXAM ENGINE */}
             {(activeTab === 'quizzes' || activeQuiz) && (
               <QuizRunner
                 lang={lang}
                 currentUser={currentUser}
+                siteConfig={siteConfig}
                 filteredQuizzes={filteredQuizzes}
                 activeQuiz={activeQuiz}
                 currentQuestionIndex={currentQuestionIndex}
@@ -1613,6 +1871,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 onSelectAnswer={handleSelectAnswer}
                 onSubmitQuiz={handleSubmitQuiz}
                 calculateScore={calculateScore}
+                onReportExamAlert={onReportExamAlert}
+                onCheatCancelQuiz={handleCheatCancelQuiz}
               />
             )}
 
@@ -1665,12 +1925,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               />
             )}
 
-            {/* 5. STUDY & EQUATIONS HUB */}
-            {activeTab === 'study-hub' && !activeQuiz && (
-              <StudyLabTab studentId={currentUser?.id} />
-            )}
-
-            {/* 6. NOTIFICATIONS & ANNOUNCEMENTS TAB */}
+            {/* 5. NOTIFICATIONS & ANNOUNCEMENTS TAB */}
             {activeTab === 'notifications' && !activeQuiz && (
               <StudentNotificationsTab
                 notifications={visibleNotifications}
@@ -1679,7 +1934,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 onMarkAllRead={markAllNotificationsRead}
                 onMarkOneRead={markNotificationRead}
                 onNavigateTab={(tab) => {
-                  setActiveTab(tab);
+                  const safeTab = (tab as string) === 'study-hub' ? 'lectures' : tab;
+                  setActiveTab(safeTab);
                   setActiveQuiz(null);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}

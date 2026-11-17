@@ -4,7 +4,7 @@ import {
   User, Cloud, Trash2, Plus, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { CloudinaryConfig } from '../../types';
-import { SiteConfig, DEFAULT_SITE_CONFIG } from '../../types/siteConfig';
+import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT } from '../../types/siteConfig';
 import { uploadMediaFile, UploadProgressInfo } from '../../utils/uploader';
 import { UploadProgressBar } from '../UploadProgressBar';
 import { InlineMediaPreview } from '../MediaPreview';
@@ -395,6 +395,31 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
                   <Check className="w-4 h-4" />
                   <span>حفظ وتثبيت للجميع الآن</span>
                 </button>
+                {siteForm.profileImageUrl !== DEFAULT_TEACHER_PORTRAIT && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const nextCfg = { ...siteForm, profileImageUrl: DEFAULT_TEACHER_PORTRAIT };
+                      const saved = await onSaveSiteConfig({
+                        ...siteConfig,
+                        ...nextCfg,
+                      });
+                      if (saved === false) {
+                        setNotice({ type: 'error', message: 'تعذر استعادة الصورة الأساسية في السحابة.' });
+                      } else {
+                        setSiteForm(nextCfg);
+                        setNotice({
+                          type: 'success',
+                          message: 'تم تثبيت الصورة الأساسية السريعة للأستاذ بنجاح ⚡',
+                        });
+                      }
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                    <span>الصورة الأساسية السريعة</span>
+                  </button>
+                )}
                 {siteForm.profileImageUrl && (
                   <button
                     type="button"
@@ -410,14 +435,14 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
                         setSiteForm(nextCfg);
                         setNotice({
                           type: 'success',
-                          message: 'تم مسح صورة الأستاذ القديمة من المنصة بالكامل.',
+                          message: 'تم إرجاع الصورة إلى الافتراضية الأساسية.',
                         });
                       }
                     }}
                     className="px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs font-kufi flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span>مسح الصورة</span>
+                    <span>حذف المخصصة</span>
                   </button>
                 )}
               </div>

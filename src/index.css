@@ -248,3 +248,45 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(13, 148, 136, 0.6);
 }
+
+/* ==========================================
+   EXAM ANTI-CHEAT & MOBILE POLISH
+   ========================================== */
+.exam-secure-surface {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+.exam-secure-surface img {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+@media print {
+  body.exam-active-lock * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  body.exam-active-lock::after {
+    content: 'الطباعة وحفظ صفحات الاختبار غير مسموح به داخل لجنة الامتحان.';
+    display: block !important;
+    font-size: 20px;
+    font-weight: bold;
+    text-align: center;
+    padding: 48px 24px;
+    color: #be123c;
+  }
+}
+
+/* Smooth horizontal touch scrollbars for mobile tabs */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

@@ -3,15 +3,16 @@ import {
   Trophy, Users, UserX, UserCheck, MessageSquare, Phone, 
   Search, Filter, ExternalLink, Sparkles, Award, ArrowUpRight, 
   CheckCircle2, AlertTriangle, ShieldCheck, Edit3, Trash2, RotateCcw, 
-  UserPlus, X, Check, AlertCircle, RefreshCw
+  UserPlus, X, Check, AlertCircle, RefreshCw, Ban, Unlock, Lock, KeyRound, ShieldAlert, Plus
 } from 'lucide-react';
-import { UserProfile, GradeLevel, Lecture, Quiz } from '../types';
+import { UserProfile, GradeLevel, Lecture, Quiz, AttachmentFile } from '../types';
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 
 interface TeacherReportsManagerProps {
   students: UserProfile[];
   lectures: Lecture[];
   quizzes: Quiz[];
+  attachments?: AttachmentFile[];
   grades?: GradeItem[];
   onUpdateStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
   onDeleteStudent?: (studentId: string) => Promise<boolean> | boolean | void;
@@ -24,6 +25,7 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   students,
   lectures,
   quizzes,
+  attachments = [],
   grades,
   onUpdateStudent,
   onDeleteStudent,
@@ -75,6 +77,125 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
 
   // Deletion confirm tracking
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  // Expanded Admin Permissions & Security Panel per student
+  const [controllingStudentId, setControllingStudentId] = useState<string | null>(null);
+  const [blockReasonDraft, setBlockReasonDraft] = useState<string>('');
+
+  const handleToggleStudentBlock = async (std: UserProfile) => {
+    if (!onUpdateStudent || savingAction) return;
+    const nextBlocked = !Boolean(std.isBlocked);
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent({
+        ...std,
+        isBlocked: nextBlocked,
+        blockReason: nextBlocked
+          ? blockReasonDraft.trim() || 'تم إيقاف الحساب مؤقتاً من قبل الإدارة.'
+          : '',
+      });
+      if (ok === false) {
+        showFeedback('تعذر حفظ حالة حظر الطالب في السحابة.', 'error');
+        return;
+      }
+      showFeedback(
+        nextBlocked
+          ? `تم حظر الطالب (${std.name}) ومنعه من الدخول للمنصة.`
+          : `تم فك الحظر وتفعيل حساب الطالب (${std.name}).`,
+        'success'
+      );
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  const handleUnlockQuizForStudent = async (std: UserProfile, quizId: string) => {
+    if (!onUpdateStudent || savingAction) return;
+    const nextCancelled = (std.cancelledQuizIds || []).filter((id) => id !== quizId);
+    const nextPassed = (std.passedQuizIds || []).filter((id) => id !== quizId);
+    const nextScores = { ...(std.quizScores || {}) };
+    delete nextScores[quizId];
+    const nextViolations = { ...(std.quizViolations || {}) };
+    delete nextViolations[quizId];
+    const vals = Object.values(nextScores);
+    const nextAvg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent({
+        ...std,
+        cancelledQuizIds: nextCancelled,
+        passedQuizIds: nextPassed,
+        quizScores: nextScores,
+        quizViolations: nextViolations,
+        score: nextAvg,
+      });
+      if (ok === false) {
+        showFeedback('تعذر إعادة فتح الامتحان للطالب.', 'error');
+        return;
+      }
+      showFeedback(`تم فتح الامتحان مجدداً للطالب (${std.name}) ومسح أي حظر سابق عليه.`, 'success');
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  const handleToggleLectureGrant = async (std: UserProfile, lecId: string) => {
+    if (!onUpdateStudent || savingAction) return;
+    const current = std.unlockedLectureIds || [];
+    const exists = current.includes(lecId);
+    const next = exists ? current.filter((id) => id !== lecId) : [...current, lecId];
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent({ ...std, unlockedLectureIds: next });
+      if (ok === false) {
+        showFeedback('تعذر تعديل صلاحية المحاضرة في السحابة.', 'error');
+        return;
+      }
+      showFeedback(
+        exists ? `تم سحب الصلاحية اليدوية للمحاضرة من (${std.name}).` : `تم منح صلاحية المحاضرة للطالب (${std.name}).`,
+        'success'
+      );
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  const handleToggleAttachmentGrant = async (std: UserProfile, fileId: string) => {
+    if (!onUpdateStudent || savingAction) return;
+    const current = std.unlockedAttachmentIds || [];
+    const exists = current.includes(fileId);
+    const next = exists ? current.filter((id) => id !== fileId) : [...current, fileId];
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent({ ...std, unlockedAttachmentIds: next });
+      if (ok === false) {
+        showFeedback('تعذر تعديل صلاحية المذكرة في السحابة.', 'error');
+        return;
+      }
+      showFeedback(
+        exists ? `تم سحب صلاحية المذكرة من (${std.name}).` : `تم منح صلاحية المذكرة للطالب (${std.name}).`,
+        'success'
+      );
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  const handleAdjustPoints = async (std: UserProfile, delta: number) => {
+    if (!onUpdateStudent || savingAction) return;
+    const nextPts = Math.max(0, (std.points ?? 0) + delta);
+    setSavingAction(true);
+    try {
+      const ok = await onUpdateStudent({ ...std, points: nextPts });
+      if (ok === false) {
+        showFeedback('تعذر تعديل نقاط الطالب في السحابة.', 'error');
+        return;
+      }
+      showFeedback(`أصبح رصيد (${std.name}) الآن ${nextPts} نقطة.`, 'success');
+    } finally {
+      setSavingAction(false);
+    }
+  };
 
   // Only consider student role (exclude teacher)
   const allStudents = students.filter((s) => s.role !== 'teacher');
@@ -722,12 +843,25 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                 const isAttending = watchedCount > 0;
 
                 return (
-                  <tr key={std.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                  <React.Fragment key={std.id}>
+                  <tr className={`transition-colors ${std.isBlocked ? 'bg-rose-50/40 dark:bg-rose-950/20' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}>
                     
                     {/* Student Info */}
                     <td className="py-3.5 px-3">
-                      <div className="font-bold text-slate-900 dark:text-white font-sans text-xs sm:text-sm">
-                        {std.name}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 dark:text-white font-sans text-xs sm:text-sm">
+                          {std.name}
+                        </span>
+                        {std.isBlocked && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
+                            محظور
+                          </span>
+                        )}
+                        {(std.cancelledQuizIds?.length || 0) > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold">
+                            إلغاء غش ({std.cancelledQuizIds?.length})
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
                         {std.email || std.id}
@@ -780,7 +914,12 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
 
                     {/* Status */}
                     <td className="py-3.5 px-3">
-                      {isAttending ? (
+                      {std.isBlocked ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
+                          <Ban className="w-3 h-3" />
+                          <span>محظور</span>
+                        </span>
+                      ) : isAttending ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
                           <CheckCircle2 className="w-3 h-3" />
                           <span>ملتزم ✅</span>
@@ -793,9 +932,31 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                       )}
                     </td>
 
-                    {/* Actions: WhatsApp Report + Edit + Reset + Delete */}
+                    {/* Actions: Permissions + WhatsApp + Edit + Reset + Delete */}
                     <td className="py-3.5 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        {onUpdateStudent && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (controllingStudentId === std.id) {
+                                setControllingStudentId(null);
+                              } else {
+                                setControllingStudentId(std.id);
+                                setBlockReasonDraft(std.blockReason || '');
+                              }
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer ${
+                              controllingStudentId === std.id
+                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                : 'bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 hover:bg-teal-100'
+                            }`}
+                            title="صلاحيات الطالب (حظر / فتح محاضرات / إعادة امتحان)"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            <span>صلاحيات</span>
+                          </button>
+                        )}
                         
                         {/* WhatsApp Report Link */}
                         {(() => {
@@ -897,6 +1058,217 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                     </td>
 
                   </tr>
+
+                  {/* EXPANDED ADMIN STUDENT CONTROL DRAWER */}
+                  {controllingStudentId === std.id && onUpdateStudent && (
+                    <tr>
+                      <td colSpan={9} className="p-4 bg-slate-50/90 dark:bg-slate-900/90 border-b border-teal-200 dark:border-teal-800">
+                        <div className="rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2">
+                              <ShieldCheck className="w-5 h-5 text-teal-600" />
+                              <div>
+                                <h4 className="font-bold text-sm text-slate-900 dark:text-white font-kufi">
+                                  تحكم الإدارة المتقدم في حساب: {std.name}
+                                </h4>
+                                <p className="text-[11px] text-slate-500">
+                                  تحكم في الحظر، إعادة فتح الامتحانات الملغاة، منح صلاحية المحاضرات والمذكرات، وتعديل النقاط فورياً.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setControllingStudentId(null)}
+                              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer self-end sm:self-auto"
+                            >
+                              إغلاق اللوحة
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            {/* 1. Account Block & Points Controls */}
+                            <div className="p-4 rounded-2xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200/80 dark:border-rose-900/60 space-y-3">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <Ban className="w-4 h-4 text-rose-600" />
+                                <span>حظر / تفعيل الحساب</span>
+                              </div>
+                              <input
+                                type="text"
+                                value={blockReasonDraft}
+                                onChange={(e) => setBlockReasonDraft(e.target.value)}
+                                placeholder="سبب الحظر (اختياري يظهر للطالب)..."
+                                className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
+                              />
+                              <button
+                                type="button"
+                                disabled={savingAction}
+                                onClick={() => handleToggleStudentBlock(std)}
+                                className={`w-full py-2.5 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                  std.isBlocked
+                                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                                    : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
+                              >
+                                {std.isBlocked ? <CheckCircle2 className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                                <span>{std.isBlocked ? 'فك حظر الحساب الآن' : 'حظر حساب الطالب فوراً'}</span>
+                              </button>
+
+                              <div className="pt-2 border-t border-rose-200/60 dark:border-rose-900/40 space-y-2">
+                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                                  <span>تعديل سريع لرصيد النقاط:</span>
+                                  <span className="font-mono text-amber-600 dark:text-amber-400">
+                                    {std.points ?? 0} نقطة
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={savingAction}
+                                    onClick={() => handleAdjustPoints(std, 25)}
+                                    className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold font-mono text-[11px] cursor-pointer"
+                                  >
+                                    +25
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={savingAction}
+                                    onClick={() => handleAdjustPoints(std, 50)}
+                                    className="flex-1 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold font-mono text-[11px] cursor-pointer"
+                                  >
+                                    +50
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={savingAction}
+                                    onClick={() => handleAdjustPoints(std, -25)}
+                                    className="flex-1 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold font-mono text-[11px] cursor-pointer"
+                                  >
+                                    -25
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 2. Quizzes, Cheat Cancellations & Retake Unlock */}
+                            <div className="p-4 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/60 space-y-3">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <ShieldAlert className="w-4 h-4 text-amber-600" />
+                                <span>حالة الامتحانات وإعادة الفتح</span>
+                              </div>
+                              <div className="max-h-48 overflow-y-auto space-y-2">
+                                {quizzes
+                                  .filter((q) => !std.grade || q.grade === std.grade)
+                                  .map((qz) => {
+                                    const isCancelled = Boolean(std.cancelledQuizIds?.includes(qz.id));
+                                    const scoreVal = std.quizScores?.[qz.id];
+                                    const viol = std.quizViolations?.[qz.id];
+                                    return (
+                                      <div
+                                        key={qz.id}
+                                        className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="font-bold text-[11px] text-slate-900 dark:text-white truncate">
+                                            {qz.title}
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-2">
+                                            {isCancelled ? (
+                                              <span className="text-rose-600 font-bold">ملغى (غش)</span>
+                                            ) : scoreVal !== undefined ? (
+                                              <span className="font-mono text-teal-600 font-bold">الدرجة: {scoreVal}%</span>
+                                            ) : (
+                                              <span>لم يُمتحن</span>
+                                            )}
+                                            {viol && (
+                                              <span className="text-amber-600 font-bold">
+                                                ({viol.count} مخالفات)
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {(isCancelled || scoreVal !== undefined || Boolean(viol)) && (
+                                          <button
+                                            type="button"
+                                            disabled={savingAction}
+                                            onClick={() => handleUnlockQuizForStudent(std, qz.id)}
+                                            className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                                          >
+                                            <Unlock className="w-3 h-3" />
+                                            <span>{isCancelled ? 'فك الإلغاء' : 'إعادة'}</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+
+                            {/* 3. Manual Grant/Revoke Lectures & Handouts */}
+                            <div className="p-4 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/80 dark:border-teal-900/60 space-y-3">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <Plus className="w-4 h-4 text-teal-600" />
+                                <span>منح/سحب المحاضرات والمذكرات يدوياً</span>
+                              </div>
+
+                              <div className="max-h-48 overflow-y-auto space-y-1.5">
+                                {lectures
+                                  .filter((l) => !std.grade || l.grade === std.grade)
+                                  .map((lec) => {
+                                    const granted = Boolean(std.unlockedLectureIds?.includes(lec.id));
+                                    return (
+                                      <button
+                                        key={lec.id}
+                                        type="button"
+                                        disabled={savingAction}
+                                        onClick={() => handleToggleLectureGrant(std, lec.id)}
+                                        className={`w-full p-2 rounded-xl border text-start text-[11px] font-bold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                          granted
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                      >
+                                        <span className="truncate">🎥 {lec.title}</span>
+                                        <span className="shrink-0 flex items-center gap-1">
+                                          {granted ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3 opacity-50" />}
+                                          <span>{granted ? 'مفتوحة' : 'منح'}</span>
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+
+                                {attachments
+                                  .filter((f) => !std.grade || f.grade === std.grade)
+                                  .map((file) => {
+                                    const granted = Boolean(std.unlockedAttachmentIds?.includes(file.id));
+                                    return (
+                                      <button
+                                        key={file.id}
+                                        type="button"
+                                        disabled={savingAction}
+                                        onClick={() => handleToggleAttachmentGrant(std, file.id)}
+                                        className={`w-full p-2 rounded-xl border text-start text-[11px] font-bold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                          granted
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                      >
+                                        <span className="truncate">📄 {file.title}</span>
+                                        <span className="shrink-0 flex items-center gap-1">
+                                          {granted ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3 opacity-50" />}
+                                          <span>{granted ? 'مفتوحة' : 'منح'}</span>
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

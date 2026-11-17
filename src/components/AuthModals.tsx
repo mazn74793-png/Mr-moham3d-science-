@@ -17,6 +17,8 @@ import {
   EyeOff,
   MailCheck,
   RefreshCw,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { UserProfile, GradeLevel } from '../types';
@@ -30,6 +32,7 @@ import {
   registerManualWithEmail,
   resendVerificationEmail,
   reloadCurrentAuthUser,
+  sendPasswordReset,
 } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -52,6 +55,62 @@ function isTopLevelWindow(): boolean {
   } catch {
     return false;
   }
+}
+
+function withRaceTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(fallback);
+        }
+      });
+  });
+}
+
+function withRejectTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        const err: any = new Error('AUTH_TIMEOUT');
+        err.code = 'auth/network-request-failed';
+        reject(err);
+      }
+    }, ms);
+    promise
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch((err) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          reject(err);
+        }
+      });
+  });
 }
 
 export const AuthModals: React.FC<AuthModalsProps> = ({
@@ -99,6 +158,90 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [googleLoading, setGoogleLoading] = useState(false);
   const [manualLoading, setManualLoading] = useState(false);
 
+  // Forgot Password + Human Verification state
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotNumA, setForgotNumA] = useState(() => Math.floor(Math.random() * 8) + 2);
+  const [forgotNumB, setForgotNumB] = useState(() => Math.floor(Math.random() * 8) + 2);
+  const [forgotAnswer, setForgotAnswer] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotStatus, setForgotStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const resetForgotChallenge = () => {
+    setForgotNumA(Math.floor(Math.random() * 8) + 2);
+    setForgotNumB(Math.floor(Math.random() * 8) + 2);
+    setForgotAnswer('');
+  };
+
+  const handleOpenForgotMode = () => {
+    setForgotMode(true);
+    setForgotEmail(loginEmail || '');
+    setForgotStatus(null);
+    resetForgotChallenge();
+  };
+
+  const handleSendPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotStatus(null);
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setForgotStatus({
+        type: 'error',
+        text: isEn ? 'Please enter a valid email address.' : 'يرجى إدخال بريد إلكتروني صحيح أولاً.',
+      });
+      return;
+    }
+    const expected = forgotNumA + forgotNumB;
+    if (Number(forgotAnswer.trim()) !== expected) {
+      setForgotStatus({
+        type: 'error',
+        text: isEn
+          ? 'Human verification answer is incorrect. Please calculate again.'
+          : 'إجابة التحقق الأمني غير صحيحة. يرجى كتابة ناتج الجمع بشكل صحيح.',
+      });
+      resetForgotChallenge();
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      await sendPasswordReset(cleanEmail);
+      setForgotStatus({
+        type: 'success',
+        text: isEn
+          ? `Password reset link sent to ${cleanEmail}. Check your inbox (and Spam/Junk folder).`
+          : `تم إرسال رابط استعادة كلمة المرور إلى (${cleanEmail}). راجع بريدك الوارد أو مجلد الرسائل غير المرغوب فيها (Spam).`,
+      });
+      resetForgotChallenge();
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/user-not-found') {
+        setForgotStatus({
+          type: 'error',
+          text: isEn
+            ? 'No manual account found for this email.'
+            : 'لا يوجد حساب مسجل بهذا البريد الإلكتروني.',
+        });
+      } else if (code === 'auth/too-many-requests') {
+        setForgotStatus({
+          type: 'error',
+          text: isEn
+            ? 'Too many requests. Please wait a few minutes before retrying.'
+            : 'تم إرسال عدة طلبات متتالية، يرجى الانتظار بضع دقائق ثم المحاولة مرة أخرى.',
+        });
+      } else {
+        setForgotStatus({
+          type: 'error',
+          text: isEn
+            ? 'Could not send reset email. Please verify your email or try signing in with Google.'
+            : 'تعذر إرسال رسالة الاستعادة، تأكد من صحة البريد الإلكتروني أو جرب الدخول بحساب Google.',
+        });
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const BackIcon = isRtl ? ArrowRight : ArrowLeft;
   const inputIconPos = isRtl ? 'right-3.5' : 'left-3.5';
   const inputPad = isRtl ? 'pl-4 pr-10' : 'pr-4 pl-10';
@@ -115,7 +258,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
   const getExistingStudentRecord = (id?: string, email?: string): UserProfile | null => {
     try {
-      const savedRaw = sessionStorage.getItem('mm_registered_students');
+      const savedRaw =
+        localStorage.getItem('mm_registered_students') ||
+        sessionStorage.getItem('mm_registered_students');
       if (savedRaw) {
         const list: UserProfile[] = JSON.parse(savedRaw);
         if (Array.isArray(list)) {
@@ -171,21 +316,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       fbUser.providerData?.some((p) => p.providerId === 'google.com')
     );
 
-    if (!fbUser.emailVerified || hasGoogleProvider) {
-      try {
-        await reloadCurrentAuthUser();
-      } catch {}
-    }
-
-    const activeUser = auth.currentUser || fbUser;
-    try {
-      await activeUser.getIdToken(true);
-    } catch {}
-
     const cachedAdminEmails = siteConfig?.adminEmails || ['mizoo2y2@gmail.com'];
     const isAdminEmailMatch =
       cleanEmail === 'mizoo2y2@gmail.com' ||
       cachedAdminEmails.some((e) => e.toLowerCase().trim() === cleanEmail);
+
+    // Only reload auth user when an unverified admin is signing in manually (to check if they clicked their link)
+    let activeUser = fbUser;
+    if (!fbUser.emailVerified && !hasGoogleProvider && isAdminEmailMatch) {
+      const reloaded = await withRaceTimeout(reloadCurrentAuthUser(), 1800, fbUser);
+      if (reloaded) activeUser = reloaded;
+    }
 
     if (isAdminEmailMatch && !activeUser.emailVerified && !hasGoogleProvider) {
       setPendingAdminVerification({ email: cleanEmail });
@@ -195,7 +336,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     }
 
     const isInstantAdmin =
-      Boolean(activeUser.emailVerified) && isAdminEmailMatch;
+      Boolean(activeUser.emailVerified || hasGoogleProvider) && isAdminEmailMatch;
 
     if (isInstantAdmin) {
       setPendingAdminVerification(null);
@@ -219,16 +360,21 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
+    // Fast bounded parallel lookup: check co-admin privileges (if verified) and student cloud doc simultaneously
+    const isVerifiedOrGoogle = Boolean(activeUser.emailVerified || hasGoogleProvider);
     const [adminCfg, cloudRecord] = await Promise.all([
-      fbUser.emailVerified || hasGoogleProvider
-        ? fetchAdminConfigIfAuthorized(8000)
+      isVerifiedOrGoogle
+        ? withRaceTimeout(fetchAdminConfigIfAuthorized(2500), 2600, null)
         : Promise.resolve(null),
-      getStudentFromCloud(fbUser.uid, 3500).catch(() => null),
+      withRaceTimeout(
+        getStudentFromCloud(fbUser.uid, 2000).catch(() => null),
+        2100,
+        null
+      ),
     ]);
 
     const isAdmin =
-      Boolean((auth.currentUser || fbUser).emailVerified || hasGoogleProvider) &&
-      checkIsAdminEmail(email, adminCfg?.adminEmails);
+      isVerifiedOrGoogle && checkIsAdminEmail(email, adminCfg?.adminEmails);
 
     if (isAdmin) {
       onLoginSuccess({
@@ -451,7 +597,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     setManualLoading(true);
     try {
-      const fbUser = await signInManualWithEmail(cleanEmail, loginPassword);
+      const fbUser = await withRejectTimeout(
+        signInManualWithEmail(cleanEmail, loginPassword),
+        15000
+      );
       await completeFirebaseUserLogin(fbUser);
     } catch (err: any) {
       const code = err?.code || '';
@@ -561,7 +710,10 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
     setManualLoading(true);
     try {
-      const fbUser = await registerManualWithEmail(emailClean, passClean, nameClean);
+      const fbUser = await withRejectTimeout(
+        registerManualWithEmail(emailClean, passClean, nameClean),
+        15000
+      );
 
       try {
         localStorage.setItem(`mm_profile_done_${emailClean}`, 'true');
@@ -861,7 +1013,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <div className="grow border-t border-slate-200 dark:border-slate-800" />
             </div>
 
-            {activeTab === 'login' && (
+            {activeTab === 'login' && !forgotMode && (
               <form onSubmit={handleManualLogin} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -882,9 +1034,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {isEn ? 'Password' : 'كلمة المرور'}
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {isEn ? 'Password' : 'كلمة المرور'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleOpenForgotMode}
+                      className="text-[11px] sm:text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline cursor-pointer"
+                    >
+                      {isEn ? 'Forgot Password?' : 'نسيت كلمة المرور؟'}
+                    </button>
+                  </div>
                   <div className="relative">
                     <input
                       type={showLoginPass ? 'text' : 'password'}
@@ -925,6 +1086,120 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                       : isEn
                       ? 'Sign In Manually'
                       : 'تسجيل الدخول اليدوي'}
+                  </span>
+                </button>
+              </form>
+            )}
+
+            {activeTab === 'login' && forgotMode && (
+              <form
+                onSubmit={handleSendPasswordReset}
+                className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-teal-200 dark:border-teal-800 space-y-4"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                    <KeyRound className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    <span>{isEn ? 'Reset Password Verification' : 'استعادة كلمة المرور بعد التحقق'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotMode(false);
+                      setForgotStatus(null);
+                    }}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    {isEn ? 'Back to Sign In' : 'رجوع للدخول'}
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {isEn
+                    ? 'Enter your registered email and solve the security check below to receive a password reset link.'
+                    : 'أدخل بريدك الإلكتروني المسجل وأكمل التحقق الأمني التالي لإرسال رابط تعيين كلمة مرور جديدة على بريدك.'}
+                </p>
+
+                {forgotStatus && (
+                  <div
+                    className={`p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 ${
+                      forgotStatus.type === 'success'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                        : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200'
+                    }`}
+                  >
+                    {forgotStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    )}
+                    <span>{forgotStatus.text}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {isEn ? 'Registered Email' : 'البريد الإلكتروني المسجل'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      dir="ltr"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className={`w-full py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm text-left focus:outline-hidden focus:border-teal-500 ${inputPad}`}
+                      required
+                    />
+                    <Mail className={`w-4 h-4 text-slate-400 absolute top-3 ${inputIconPos}`} />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-teal-600" />
+                      <span>
+                        {isEn ? 'Human Check: What is' : 'تحقق أمني: ما ناتج'} ({forgotNumA} + {forgotNumB})؟
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={resetForgotChallenge}
+                      className="text-[11px] font-bold text-teal-600 dark:text-teal-400 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{isEn ? 'New' : 'تغيير'}</span>
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={forgotAnswer}
+                    onChange={(e) => setForgotAnswer(e.target.value)}
+                    placeholder={isEn ? 'Enter the sum...' : 'اكتب الناتج بالأرقام هنا...'}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-mono font-bold text-center focus:outline-hidden focus:border-teal-500"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-teal-600 hover:bg-teal-700 transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[46px] disabled:opacity-60"
+                >
+                  {forgotLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <MailCheck className="w-4 h-4" />
+                  )}
+                  <span>
+                    {forgotLoading
+                      ? isEn
+                        ? 'Sending Reset Link...'
+                        : 'جاري التحقق والإرسال...'
+                      : isEn
+                      ? 'Verify & Send Reset Link'
+                      : 'تحقق وإرسال رابط الاستعادة'}
                   </span>
                 </button>
               </form>

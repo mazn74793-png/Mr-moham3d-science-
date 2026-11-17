@@ -6,6 +6,7 @@ export interface Lecture {
   grade: GradeLevel;
   gradeLabel: string;
   chapter: string;
+  unitId?: string;
   duration: string;
   videoUrl: string;
   thumbnailUrl: string;
@@ -36,6 +37,12 @@ export interface Quiz {
   grade: GradeLevel;
   chapter: string;
   durationMinutes: number;
+  warningMinutes?: number;
+  passingScore?: number;
+  requireAgreement?: boolean;
+  examInstructions?: string[];
+  proctoringEnabled?: boolean;
+  maxViolations?: number;
   lectureId?: string;
   questions: QuizQuestion[];
 }
@@ -91,6 +98,12 @@ export interface PointReward {
   dateAdded: string;
 }
 
+export interface QuizViolationRecord {
+  count: number;
+  reasons: string[];
+  lastAt: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -112,10 +125,32 @@ export interface UserProfile {
   unlockedAttachmentIds?: string[];
   claimedRewardIds?: string[];
   pointsHistory?: PointsHistoryEntry[];
+  isBlocked?: boolean;
+  blockReason?: string;
+  cancelledQuizIds?: string[];
+  quizViolations?: Record<string, QuizViolationRecord>;
+}
+
+export interface ExamSecurityAlert {
+  id: string;
+  studentUid: string;
+  studentName: string;
+  studentPhone?: string;
+  studentEmail?: string;
+  grade?: GradeLevel;
+  quizId: string;
+  quizTitle: string;
+  violationCount: number;
+  maxViolations: number;
+  reasons: string[];
+  actionTaken: 'warning' | 'cancelled';
+  resolved: boolean;
+  resolvedNote?: string;
+  createdAtDate: string;
 }
 
 export type NotificationCategory = 'announcement' | 'exam' | 'lecture' | 'urgent' | 'congrats';
-export type NotificationCtaTab = 'lectures' | 'quizzes' | 'files' | 'points' | 'study-hub';
+export type NotificationCtaTab = 'lectures' | 'quizzes' | 'files' | 'points';
 
 export interface PlatformNotification {
   id: string;

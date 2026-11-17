@@ -15,6 +15,9 @@ import {
   ChevronRight,
   ChevronLeft,
   Grid3X3,
+  ShieldAlert,
+  FileCheck2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Quiz, QuizQuestion, GradeLevel, Lecture, CloudinaryConfig } from '../types';
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
@@ -80,6 +83,14 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
   const [quizGrade, setQuizGrade] = useState<GradeLevel>(defaultGradeId);
   const [quizChapter, setQuizChapter] = useState('الباب الأول: العناصر الانتقالية');
   const [quizDuration, setQuizDuration] = useState<number>(15);
+  const [warningMinutes, setWarningMinutes] = useState<number>(5);
+  const [passingScore, setPassingScore] = useState<number>(60);
+  const [requireAgreement, setRequireAgreement] = useState<boolean>(true);
+  const [proctoringEnabled, setProctoringEnabled] = useState<boolean>(true);
+  const [maxViolations, setMaxViolations] = useState<number>(3);
+  const [examInstructionsText, setExamInstructionsText] = useState<string>(
+    'ممنوع مغادرة صفحة الامتحان أو فتح تبويبات وتطبيقات أخرى.\nممنوع التقاط لقطة شاشة أو تسجيل الشاشة أو الطباعة أثناء اللجنة.\nسيتم تسليم الإجابات تلقائياً فور انتهاء الوقت المحدد للامتحان.'
+  );
   const [selectedLectureId, setSelectedLectureId] = useState<string>('');
 
   // Question image upload state
@@ -111,6 +122,14 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     setQuizGrade(defaultGradeId);
     setQuizChapter('الباب الأول: العناصر الانتقالية');
     setQuizDuration(15);
+    setWarningMinutes(5);
+    setPassingScore(60);
+    setRequireAgreement(true);
+    setProctoringEnabled(true);
+    setMaxViolations(3);
+    setExamInstructionsText(
+      'ممنوع مغادرة صفحة الامتحان أو فتح تبويبات وتطبيقات أخرى.\nممنوع التقاط لقطة شاشة أو تسجيل الشاشة أو الطباعة أثناء اللجنة.\nسيتم تسليم الإجابات تلقائياً فور انتهاء الوقت المحدد للامتحان.'
+    );
     setSelectedLectureId('');
     setQuestions([firstQ]);
     setActiveQuestionIdx(0);
@@ -144,6 +163,16 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
     setQuizGrade(quiz.grade || defaultGradeId);
     setQuizChapter(quiz.chapter || '');
     setQuizDuration(quiz.durationMinutes || 15);
+    setWarningMinutes(quiz.warningMinutes ?? 5);
+    setPassingScore(quiz.passingScore ?? 60);
+    setRequireAgreement(quiz.requireAgreement !== false);
+    setProctoringEnabled(quiz.proctoringEnabled !== false);
+    setMaxViolations(quiz.maxViolations ?? 3);
+    setExamInstructionsText(
+      Array.isArray(quiz.examInstructions) && quiz.examInstructions.length > 0
+        ? quiz.examInstructions.join('\n')
+        : 'ممنوع مغادرة صفحة الامتحان أو فتح تبويبات وتطبيقات أخرى.\nممنوع التقاط لقطة شاشة أو تسجيل الشاشة أو الطباعة أثناء اللجنة.\nسيتم تسليم الإجابات تلقائياً فور انتهاء الوقت المحدد للامتحان.'
+    );
     setSelectedLectureId(quiz.lectureId || '');
     setQuestions(clonedQuestions);
     setActiveQuestionIdx(0);
@@ -298,12 +327,24 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
       }
     }
 
+    const parsedInstructions = examInstructionsText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 25);
+
     const payloadQuiz: Quiz = {
       id: editingQuizId || `quiz-${Date.now()}`,
       title: quizTitle.trim(),
       grade: quizGrade,
       chapter: quizChapter.trim() || 'كيمياء عامة',
-      durationMinutes: Number(quizDuration) || 15,
+      durationMinutes: Math.max(1, Number(quizDuration) || 15),
+      warningMinutes: Math.max(0, Math.min(Number(quizDuration) || 15, Number(warningMinutes) || 0)),
+      passingScore: Math.max(0, Math.min(100, Number(passingScore) || 60)),
+      requireAgreement: Boolean(requireAgreement),
+      proctoringEnabled: Boolean(proctoringEnabled),
+      maxViolations: Math.max(1, Math.min(20, Number(maxViolations) || 3)),
+      examInstructions: parsedInstructions,
       lectureId: selectedLectureId || undefined,
       questions,
     };
@@ -507,6 +548,95 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* EXAM RULES, TIMER WARNING & ANTI-CHEAT SETTINGS */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/70 space-y-4">
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 font-kufi">
+              <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              <span>إعدادات الوقت، شروط بدء الامتحان، وحماية اللجنة من الغش</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                  <span>تنبيه قرب انتهاء الوقت (قبل النهاية بـ دقائق)</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={60}
+                  value={warningMinutes}
+                  onChange={(e) => setWarningMinutes(Number(e.target.value))}
+                  className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-right"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  درجة النجاح المطلوبة (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={passingScore}
+                  onChange={(e) => setPassingScore(Number(e.target.value))}
+                  className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-right"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  أقصى عدد مخالفات قبل إلغاء الامتحان
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={maxViolations}
+                  onChange={(e) => setMaxViolations(Number(e.target.value))}
+                  className="w-full p-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-right"
+                />
+              </div>
+
+              <div className="flex flex-col justify-center gap-2 pt-1">
+                <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireAgreement}
+                    onChange={(e) => setRequireAgreement(e.target.checked)}
+                    className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                  />
+                  <span>تأكيد شروط الامتحان قبل البدء</span>
+                </label>
+
+                <label className="inline-flex items-center gap-2 text-xs font-bold text-rose-700 dark:text-rose-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proctoringEnabled}
+                    onChange={(e) => setProctoringEnabled(e.target.checked)}
+                    className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                  />
+                  <span>تفعيل مراقبة الغش ولقطات الشاشة</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <FileCheck2 className="w-3.5 h-3.5 text-teal-600" />
+                <span>تعليمات وشروط اللجنة التي يوافق عليها الطالب قبل بدء الامتحان (كل شرط في سطر):</span>
+              </label>
+              <textarea
+                rows={3}
+                value={examInstructionsText}
+                onChange={(e) => setExamInstructionsText(e.target.value)}
+                placeholder="اكتب كل شرط من شروط الامتحان في سطر مستقل..."
+                className="w-full p-3 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
             </div>
           </div>
 
@@ -927,6 +1057,14 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
                     <span className="text-xs text-slate-500 font-mono">
                       {quiz.questions.length} سؤال
                     </span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                      نجاح {quiz.passingScore ?? 60}%
+                    </span>
+                    {quiz.proctoringEnabled !== false && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-[10px] font-bold text-rose-700 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/60">
+                        حماية ضد الغش ({quiz.maxViolations ?? 3} مخالفات)
+                      </span>
+                    )}
                   </div>
 
                   <h4 className="font-bold text-base text-slate-900 dark:text-white font-kufi">

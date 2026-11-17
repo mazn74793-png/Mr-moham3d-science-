@@ -454,7 +454,6 @@ export const NotificationsTab: React.FC<NotificationsTabProps> = ({
                   <option value="quizzes">{isEn ? 'Open Quizzes' : 'قسم الامتحانات'}</option>
                   <option value="files">{isEn ? 'Open PDF Handouts' : 'قسم الملازم PDF'}</option>
                   <option value="points">{isEn ? 'Open Points Wallet' : 'قسم النقاط والأكواد'}</option>
-                  <option value="study-hub">{isEn ? 'Open Study & Equations' : 'قسم المعادلات والمذاكرة'}</option>
                 </select>
               </div>
 

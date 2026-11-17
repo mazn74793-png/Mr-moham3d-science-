@@ -1,12 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Upload, Plus, Film, RefreshCw, CheckCircle, AlertCircle, Edit3, Trash2, X, Eye, Image as ImageIcon
+  Upload,
+  Plus,
+  Film,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Edit3,
+  Trash2,
+  X,
+  Eye,
+  Image as ImageIcon,
+  FolderPlus,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Unlock,
+  Link2,
+  Check,
 } from 'lucide-react';
 import { Lecture, GradeLevel, Quiz, CloudinaryConfig } from '../../types';
-import { GradeItem, SiteConfig, getGradeDisplayName } from '../../types/siteConfig';
+import { GradeItem, GradeUnit, SiteConfig, getGradeDisplayName } from '../../types/siteConfig';
 import { uploadMediaFile, UploadProgressInfo } from '../../utils/uploader';
 import { UploadProgressBar } from '../UploadProgressBar';
 import { InlineMediaPreview, MediaPreviewModal } from '../MediaPreview';
+import {
+  resolveUnitsForGrade,
+  getLecturesInUnit,
+  getUnitForLecture,
+  slugifyUnitId,
+} from '../../utils/units';
 
 interface LecturesTabProps {
   mode: 'upload' | 'list';
@@ -14,6 +37,8 @@ interface LecturesTabProps {
   quizzes: Quiz[];
   resolvedGrades: GradeItem[];
   siteForm: SiteConfig;
+  setSiteForm?: React.Dispatch<React.SetStateAction<SiteConfig>>;
+  onSaveSiteConfig?: (newConfig: SiteConfig) => Promise<boolean> | boolean | void;
   cloudinaryConfig: CloudinaryConfig;
   onAddLecture: (lec: Lecture) => Promise<boolean> | boolean | void;
   onUpdateLecture?: (lec: Lecture) => Promise<boolean> | boolean | void;
@@ -27,6 +52,8 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   quizzes,
   resolvedGrades,
   siteForm,
+  setSiteForm,
+  onSaveSiteConfig,
   cloudinaryConfig,
   onAddLecture,
   onUpdateLecture,
@@ -36,6 +63,30 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const cloudName = cloudinaryConfig.cloudName || 'chemistry-egypt';
   const uploadPreset = cloudinaryConfig.uploadPreset || 'chemistry_uploads';
 
+  // Pick initial grade smartly: grade with existing lectures or popular/first grade
+  const defaultGradeId = useMemo(() => {
+    const popular = resolvedGrades.find((g) => g.isPopular)?.id;
+    if (popular && lectures.some((l) => l.grade === popular)) return popular;
+    if (lectures.length > 0 && resolvedGrades.some((g) => g.id === lectures[0].grade)) {
+      return lectures[0].grade;
+    }
+    return popular || resolvedGrades[0]?.id || 'third';
+  }, [resolvedGrades, lectures]);
+
+  const [selectedListGrade, setSelectedListGrade] = useState<GradeLevel>(defaultGradeId);
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('all');
+  const [collapsedUnitIds, setCollapsedUnitIds] = useState<Record<string, boolean>>({});
+
+  // Unit creation & inline rename state
+  const [newUnitCreatorOpen, setNewUnitCreatorOpen] = useState(false);
+  const [newUnitTitle, setNewUnitTitle] = useState('');
+  const [newUnitIndependent, setNewUnitIndependent] = useState(true);
+  const [savingUnit, setSavingUnit] = useState(false);
+
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [editingUnitTitle, setEditingUnitTitle] = useState('');
+
+  // Upload form state
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [localVideoPreview, setLocalVideoPreview] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
@@ -44,7 +95,6 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [videoUploadSuccess, setVideoUploadSuccess] = useState(false);
   const [videoUploadNotice, setVideoUploadNotice] = useState<string | null>(null);
 
-  // Thumbnail upload state
   const [localThumbPreview, setLocalThumbPreview] = useState<string | null>(null);
   const [uploadingThumb, setUploadingThumb] = useState(false);
   const [thumbProgress, setThumbProgress] = useState(0);
@@ -55,9 +105,8 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [savingLecture, setSavingLecture] = useState(false);
 
   const [lecTitle, setLecTitle] = useState('');
-  const [lecGrade, setLecGrade] = useState<GradeLevel>(
-    resolvedGrades.find((g) => g.isPopular)?.id || resolvedGrades[0]?.id || 'third'
-  );
+  const [lecGrade, setLecGrade] = useState<GradeLevel>(defaultGradeId);
+  const [lecUnitId, setLecUnitId] = useState<string>('');
   const [lecChapter, setLecChapter] = useState('الباب الأول: العناصر الانتقالية');
   const [lecDuration, setLecDuration] = useState('45 دقيقة');
   const [lecVideoUrl, setLecVideoUrl] = useState('');
@@ -65,11 +114,14 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [lecPdfTitle, setLecPdfTitle] = useState('');
   const [lecDescription, setLecDescription] = useState('');
   const [lecIsFree, setLecIsFree] = useState(false);
-  const [lecSessionOrder, setLecSessionOrder] = useState<number>(
-    () => lectures.filter((l) => l.grade === lecGrade).length + 1
-  );
+  const [lecSessionOrder, setLecSessionOrder] = useState<number>(1);
   const [lecQuizId, setLecQuizId] = useState<string>('');
   const [lecPointsCost, setLecPointsCost] = useState<number>(0);
+
+  // Quick unit creator inside upload form
+  const [uploadNewUnitOpen, setUploadNewUnitOpen] = useState(false);
+  const [uploadNewUnitTitle, setUploadNewUnitTitle] = useState('');
+  const [uploadNewUnitIndependent, setUploadNewUnitIndependent] = useState(true);
 
   const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
   const [uploadingEditThumb, setUploadingEditThumb] = useState(false);
@@ -81,7 +133,6 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteConfirmLecId, setDeleteConfirmLecId] = useState<string | null>(null);
 
-  // Quick modal preview for existing lectures
   const [previewModal, setPreviewModal] = useState<{
     url: string;
     title: string;
@@ -94,6 +145,214 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       if (localThumbPreview) URL.revokeObjectURL(localThumbPreview);
     };
   }, [localVideoPreview, localThumbPreview]);
+
+  // Derived unit structures for Upload Grade
+  const uploadGradeItem = useMemo(
+    () => resolvedGrades.find((g) => g.id === lecGrade),
+    [resolvedGrades, lecGrade]
+  );
+  const uploadGradeLectures = useMemo(
+    () => lectures.filter((l) => l.grade === lecGrade),
+    [lectures, lecGrade]
+  );
+  const uploadGradeUnits = useMemo(
+    () => resolveUnitsForGrade(uploadGradeItem, uploadGradeLectures),
+    [uploadGradeItem, uploadGradeLectures]
+  );
+
+  // Keep selected upload unit synced with available units for selected grade
+  useEffect(() => {
+    if (uploadGradeUnits.length === 0) {
+      setLecUnitId('');
+      setLecSessionOrder(uploadGradeLectures.length + 1);
+      return;
+    }
+    const valid = uploadGradeUnits.find((u) => u.id === lecUnitId);
+    if (!valid) {
+      const first = uploadGradeUnits[0];
+      setLecUnitId(first.id);
+      setLecChapter(first.titleAr);
+      setLecSessionOrder(getLecturesInUnit(uploadGradeLectures, first).length + 1);
+    }
+  }, [lecGrade, uploadGradeUnits, lecUnitId, uploadGradeLectures]);
+
+  // Derived unit structures for List Grade
+  const listGradeItem = useMemo(
+    () => resolvedGrades.find((g) => g.id === selectedListGrade),
+    [resolvedGrades, selectedListGrade]
+  );
+  const listGradeLectures = useMemo(
+    () => lectures.filter((l) => l.grade === selectedListGrade),
+    [lectures, selectedListGrade]
+  );
+  const listGradeUnits = useMemo(
+    () => resolveUnitsForGrade(listGradeItem, listGradeLectures),
+    [listGradeItem, listGradeLectures]
+  );
+
+  // Derived units for Edit Modal grade
+  const editGradeItem = useMemo(
+    () => resolvedGrades.find((g) => g.id === editingLecture?.grade),
+    [resolvedGrades, editingLecture?.grade]
+  );
+  const editGradeLectures = useMemo(
+    () => (editingLecture ? lectures.filter((l) => l.grade === editingLecture.grade) : []),
+    [lectures, editingLecture]
+  );
+  const editGradeUnits = useMemo(
+    () => (editingLecture ? resolveUnitsForGrade(editGradeItem, editGradeLectures) : []),
+    [editGradeItem, editGradeLectures, editingLecture]
+  );
+
+  const persistUnitsForGrade = async (
+    targetGradeId: GradeLevel,
+    nextUnits: GradeUnit[],
+    successText: string
+  ): Promise<boolean> => {
+    const cleanUnits = nextUnits
+      .filter((u) => u.id !== '__uncategorized__')
+      .map((u, idx) => ({
+        id: u.id,
+        titleAr: u.titleAr.trim(),
+        titleEn: u.titleEn?.trim() || undefined,
+        descriptionAr: u.descriptionAr?.trim() || undefined,
+        isIndependent: u.isIndependent !== false,
+        order: idx + 1,
+      }));
+
+    const nextGrades = resolvedGrades.map((g) =>
+      g.id === targetGradeId ? { ...g, units: cleanUnits } : g
+    );
+    const nextConfig: SiteConfig = { ...siteForm, grades: nextGrades };
+
+    setSiteForm?.(nextConfig);
+    if (!onSaveSiteConfig) return true;
+
+    setSavingUnit(true);
+    setLectureFormError(null);
+    try {
+      const ok = await onSaveSiteConfig(nextConfig);
+      if (ok !== false) {
+        setLectureFormSuccess(successText);
+        setTimeout(() => setLectureFormSuccess(null), 3500);
+        return true;
+      }
+      setLectureFormError('تعذر حفظ الوحدة في السحابة، حاول مرة أخرى.');
+      return false;
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
+  const handleCreateUnit = async (
+    gradeId: GradeLevel,
+    titleRaw: string,
+    isIndependent: boolean
+  ): Promise<GradeUnit | null> => {
+    const cleanTitle = titleRaw.trim();
+    if (!cleanTitle) {
+      setLectureFormError('يرجى إدخال اسم الوحدة أو المسار الجديد أولاً.');
+      return null;
+    }
+
+    const gradeObj = resolvedGrades.find((g) => g.id === gradeId);
+    const currentLectures = lectures.filter((l) => l.grade === gradeId);
+    const existingUnits = resolveUnitsForGrade(gradeObj, currentLectures).filter(
+      (u) => u.id !== '__uncategorized__'
+    );
+
+    const duplicate = existingUnits.find(
+      (u) => u.titleAr.trim().toLowerCase() === cleanTitle.toLowerCase()
+    );
+    if (duplicate) {
+      setLectureFormError('يوجد وحدة بنفس الاسم بالفعل في هذه السنة الدراسية.');
+      return duplicate;
+    }
+
+    const newUnit: GradeUnit = {
+      id: slugifyUnitId(cleanTitle),
+      titleAr: cleanTitle,
+      isIndependent,
+      order: existingUnits.length + 1,
+    };
+
+    const ok = await persistUnitsForGrade(
+      gradeId,
+      [...existingUnits, newUnit],
+      `تم إنشاء الوحدة "${cleanTitle}" (${isIndependent ? 'مسار مستقل' : 'مسار متسلسل'}) بنجاح!`
+    );
+    return ok ? newUnit : null;
+  };
+
+  const handleToggleUnitIndependence = async (unit: GradeUnit) => {
+    const currentUnits = listGradeUnits.filter((u) => u.id !== '__uncategorized__');
+    const existsInExplicit = currentUnits.some((u) => u.id === unit.id);
+    const baseList = existsInExplicit ? currentUnits : [...currentUnits, unit];
+    const nextIndependent = unit.isIndependent === false;
+    const nextUnits = baseList.map((u) =>
+      u.id === unit.id ? { ...u, isIndependent: nextIndependent } : u
+    );
+    await persistUnitsForGrade(
+      selectedListGrade,
+      nextUnits,
+      nextIndependent
+        ? `تم تحويل "${unit.titleAr}" إلى وحدة مستقلة — الحصة الأولى تفتح مباشرة.`
+        : `تم ربط "${unit.titleAr}" تسلسلياً بالوحدة السابقة.`
+    );
+  };
+
+  const handleRenameUnit = async (unit: GradeUnit) => {
+    const clean = editingUnitTitle.trim();
+    if (!clean) {
+      setEditingUnitId(null);
+      return;
+    }
+    const currentUnits = listGradeUnits.filter((u) => u.id !== '__uncategorized__');
+    const existsInExplicit = currentUnits.some((u) => u.id === unit.id);
+    const baseList = existsInExplicit ? currentUnits : [...currentUnits, unit];
+    const nextUnits = baseList.map((u) => (u.id === unit.id ? { ...u, titleAr: clean } : u));
+    const ok = await persistUnitsForGrade(
+      selectedListGrade,
+      nextUnits,
+      `تم تعديل اسم الوحدة إلى "${clean}".`
+    );
+    if (ok) {
+      setEditingUnitId(null);
+    }
+  };
+
+  const handleDeleteEmptyUnit = async (unit: GradeUnit) => {
+    const unitLecs = getLecturesInUnit(listGradeLectures, unit);
+    if (unitLecs.length > 0) {
+      setLectureFormError('لا يمكن حذف وحدة تحتوي على محاضرات — انقل المحاضرات أو احذفها أولاً.');
+      return;
+    }
+    const currentUnits = (listGradeItem?.units || []).filter((u) => u.id !== unit.id);
+    await persistUnitsForGrade(selectedListGrade, currentUnits, `تم حذف الوحدة "${unit.titleAr}".`);
+    if (selectedUnitFilter === unit.id) {
+      setSelectedUnitFilter('all');
+    }
+  };
+
+  const handleJumpUploadToUnit = (gradeId: GradeLevel, unit: GradeUnit) => {
+    const gLecs = lectures.filter((l) => l.grade === gradeId);
+    const uLecs = getLecturesInUnit(gLecs, unit);
+    setLecGrade(gradeId);
+    setLecUnitId(unit.id);
+    setLecChapter(unit.titleAr);
+    setLecSessionOrder(uLecs.length + 1);
+    onSwitchMode('upload');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectUploadUnit = (unitId: string) => {
+    setLecUnitId(unitId);
+    const found = uploadGradeUnits.find((u) => u.id === unitId);
+    if (found) {
+      setLecChapter(found.titleAr);
+      setLecSessionOrder(getLecturesInUnit(uploadGradeLectures, found).length + 1);
+    }
+  };
 
   const handleVideoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -129,12 +388,14 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       setVideoUploadSuccess(true);
       setVideoUploadNotice(
         result.source === 'cloudinary'
-          ? 'تم رفع الفيديو على كلاودنري وأصبح جاهزاً للبث السحابي المباشر ⚡'
+          ? 'تم رفع الفيديو على كلاودنري وأصبح جاهزاً للبث السحابي المباشر'
           : result.fallbackReason === 'cloudinary_limit'
-          ? 'تجاوز الملف حد الخطة المجانية في Cloudinary — تم رفعه تلقائياً عبر سيرفر المنصة السريع بنجاح ⚡'
-          : 'تم رفع الفيديو وحفظه بنجاح للبث المباشر ⚡'
+          ? 'تجاوز الملف حد الخطة المجانية في Cloudinary — تم رفعه تلقائياً عبر سيرفر المنصة السريع بنجاح'
+          : 'تم رفع الفيديو وحفظه بنجاح للبث المباشر'
       );
     } catch (err: any) {
+      setVideoUploadSuccess(false);
+      setVideoUploadNotice(null);
       setLectureFormError(
         err?.message || 'تعذر رفع الفيديو، يرجى التحقق من إعدادات Cloudinary واتصال الشبكة.'
       );
@@ -284,15 +545,24 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       return;
     }
 
+    const activeUnit = uploadGradeUnits.find((u) => u.id === lecUnitId);
+    const resolvedUnitId =
+      lecUnitId && lecUnitId !== '__uncategorized__' ? lecUnitId : undefined;
+    const resolvedChapter =
+      lecChapter.trim() || activeUnit?.titleAr || 'محاضرات عامة';
+
+    // Ensure explicit unit is saved if user chose a unit or typed a new chapter
     const newLec: Lecture = {
       id: `lec-${Date.now()}`,
       sessionOrder:
-        Number(lecSessionOrder) || lectures.filter((l) => l.grade === lecGrade).length + 1,
+        Number(lecSessionOrder) ||
+        (activeUnit ? getLecturesInUnit(uploadGradeLectures, activeUnit).length + 1 : uploadGradeLectures.length + 1),
       quizId: lecQuizId || undefined,
       title: lecTitle.trim(),
       grade: lecGrade,
       gradeLabel: getGradeDisplayName(lecGrade, siteForm, 'ar'),
-      chapter: lecChapter,
+      unitId: resolvedUnitId,
+      chapter: resolvedChapter,
       duration: lecDuration || '50 دقيقة',
       videoUrl: lecVideoUrl.trim(),
       thumbnailUrl: lecThumbnail || '/images/chemistry_lab_visual_1794141316456.jpg',
@@ -311,7 +581,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         setLectureFormError('تعذر نشر المحاضرة في السحابة، يرجى المحاولة مرة أخرى.');
         return;
       }
-      setLectureFormSuccess('تم نشر المحاضرة بنجاح وأصبحت متاحة للطلاب في المنصة! 🚀');
+      setLectureFormSuccess('تم نشر المحاضرة بنجاح داخل الوحدة المحددة وأصبحت متاحة للطلاب!');
       setTimeout(() => setLectureFormSuccess(null), 4000);
       setLecTitle('');
       setLecVideoUrl('');
@@ -319,6 +589,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       setLecDescription('');
       setLecQuizId('');
       setLecPointsCost(0);
+      setLecSessionOrder((prev) => prev + 1);
       setVideoFile(null);
       if (localVideoPreview) {
         URL.revokeObjectURL(localVideoPreview);
@@ -329,6 +600,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         setLocalThumbPreview(null);
       }
       setVideoUploadSuccess(false);
+      setVideoUploadNotice(null);
       setVideoUploadProgress(0);
       setVideoUploadMeta(null);
     } finally {
@@ -346,7 +618,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         setLectureFormError('تعذر حفظ تعديلات المحاضرة في السحابة.');
         return;
       }
-      setLectureFormSuccess('تم تحديث وتعديل المحاضرة بنجاح! ⚡');
+      setLectureFormSuccess('تم تحديث وتعديل المحاضرة بنجاح!');
       setTimeout(() => setLectureFormSuccess(null), 3500);
       setEditingLecture(null);
     } finally {
@@ -357,13 +629,23 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   if (mode === 'upload') {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-            رفع ونشر محاضرة تعليمية جديدة
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            ارفع الفيديو وشاهد معاينة حية فورية للفيديو وصورة الغلاف قبل وأثناء النشر.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
+              رفع ونشر محاضرة تعليمية جديدة
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              اختر السنة والوحدة أو أنشئ وحدة مستقلة جديدة داخل نفس السنة، وارفع الفيديو مع معاينة حية.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSwitchMode('list')}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+          >
+            <Layers className="w-4 h-4 text-teal-600" />
+            <span>عرض الوحدات والمحاضرات ({lectures.length})</span>
+          </button>
         </div>
 
         {lectureFormSuccess && (
@@ -402,7 +684,11 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
               </label>
               <select
                 value={lecGrade}
-                onChange={(e) => setLecGrade(e.target.value as GradeLevel)}
+                onChange={(e) => {
+                  const g = e.target.value as GradeLevel;
+                  setLecGrade(g);
+                  setLecUnitId('');
+                }}
                 className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
               >
                 {resolvedGrades.map((g) => (
@@ -413,9 +699,88 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
               </select>
             </div>
 
+            {/* Unit Selector + Inline New Unit Creator */}
             <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  الوحدة / المسار داخل السنة *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setUploadNewUnitOpen((v) => !v)}
+                  className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>{uploadNewUnitOpen ? 'إغلاق' : '+ وحدة جديدة مستقلة'}</span>
+                </button>
+              </div>
+
+              <select
+                value={lecUnitId}
+                onChange={(e) => handleSelectUploadUnit(e.target.value)}
+                className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              >
+                {uploadGradeUnits.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.titleAr} ({u.isIndependent !== false ? 'مسار مستقل' : 'تسلسل مرتبط'})
+                  </option>
+                ))}
+                {uploadGradeUnits.length === 0 && (
+                  <option value="">وحدة افتراضية جديدة</option>
+                )}
+              </select>
+
+              {uploadNewUnitOpen && (
+                <div className="p-3.5 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 space-y-2.5 mt-2">
+                  <div className="text-xs font-bold text-teal-900 dark:text-teal-200">
+                    إنشاء وحدة / كورس منفصل في {getGradeDisplayName(lecGrade, siteForm, 'ar')}
+                  </div>
+                  <input
+                    type="text"
+                    value={uploadNewUnitTitle}
+                    onChange={(e) => setUploadNewUnitTitle(e.target.value)}
+                    placeholder="مثال: مراجعة الباب الثاني / كورس تأسيس الكيمياء"
+                    className="w-full p-2.5 text-xs rounded-xl border border-teal-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                  />
+                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={uploadNewUnitIndependent}
+                      onChange={(e) => setUploadNewUnitIndependent(e.target.checked)}
+                      className="w-4 h-4 accent-teal-600 rounded"
+                    />
+                    <span>وحدة مستقلة (أول محاضرة فيها تفتح فوراً دون انتظار الوحدات القديمة)</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={savingUnit || !uploadNewUnitTitle.trim()}
+                      onClick={async () => {
+                        const created = await handleCreateUnit(
+                          lecGrade,
+                          uploadNewUnitTitle,
+                          uploadNewUnitIndependent
+                        );
+                        if (created) {
+                          setLecUnitId(created.id);
+                          setLecChapter(created.titleAr);
+                          setLecSessionOrder(1);
+                          setUploadNewUnitTitle('');
+                          setUploadNewUnitOpen(false);
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      {savingUnit ? 'جاري الإنشاء...' : 'حفظ واختيار الوحدة'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                اسم الباب أو الفصل *
+                اسم الباب أو عنوان الوحدة الظاهر للطلاب
               </label>
               <input
                 type="text"
@@ -435,7 +800,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-teal-950 dark:text-teal-200 font-kufi">
-                      رفع فيديو المحاضرة بسرعة عالية (رفع متوازي مقسم ⚡)
+                      رفع فيديو المحاضرة بسرعة عالية (رفع متوازي مقسم)
                     </h4>
                     <p className="text-xs text-teal-700/80 dark:text-teal-400">
                       يتم تقسيم الفيديوهات الكبيرة تلقائياً ورفعها بالتوازي لضمان أقصى سرعة وثبات.
@@ -497,7 +862,6 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 </div>
               )}
 
-              {/* Live Video Preview (Instant local or uploaded/pasted URL) */}
               {(localVideoPreview || lecVideoUrl.trim()) && (
                 <InlineMediaPreview
                   url={lecVideoUrl.trim() || localVideoPreview || ''}
@@ -582,7 +946,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                ترتيب الحصة في التسلسل (رقم الحصة) *
+                ترتيب الحصة داخل الوحدة *
               </label>
               <input
                 type="number"
@@ -593,7 +957,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 className="w-full p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono text-right"
               />
               <p className="text-[10px] text-slate-500">
-                يستخدم لتطبيق نظام القفل المتسلسل للحصص (1 ثم 2 ثم 3...)
+                يحدد ترتيب الحصة داخل هذه الوحدة فقط (1 ثم 2 ثم 3...)
               </p>
             </div>
 
@@ -700,26 +1064,165 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     );
   }
 
+  // Visible units in List Mode after unit filter tab
+  const displayedUnits =
+    selectedUnitFilter === 'all'
+      ? listGradeUnits
+      : listGradeUnits.filter((u) => u.id === selectedUnitFilter);
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+      {/* Header Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold font-kufi text-slate-900 dark:text-white">
-            المحاضرات المنشورة على المنصة ({lectures.length})
+            تنظيم الوحدات والمحاضرات ({lectures.length})
           </h2>
           <p className="text-sm text-slate-500">
-            يمكنك معاينة الفيديو والغلاف أو تعديل وتحديث أي محاضرة فوراً.
+            قسّم كل سنة دراسية إلى وحدات أو كورسات مستقلة دون تداخل، وانقل أو عدّل أي محاضرة بسهولة.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onSwitchMode('upload')}
-          className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>إضافة درس جديد</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setNewUnitCreatorOpen((v) => !v)}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-teal-500 flex items-center gap-1.5 cursor-pointer"
+          >
+            <FolderPlus className="w-4 h-4 text-teal-600" />
+            <span>+ وحدة جديدة في هذه السنة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSwitchMode('upload')}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة محاضرة جديدة</span>
+          </button>
+        </div>
       </div>
+
+      {/* Academic Grade Tabs */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/70 overflow-x-auto">
+        {resolvedGrades.map((g) => {
+          const count = lectures.filter((l) => l.grade === g.id).length;
+          const active = selectedListGrade === g.id;
+          return (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => {
+                setSelectedListGrade(g.id);
+                setSelectedUnitFilter('all');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
+                active
+                  ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>{g.badgeAr}</span>
+              <span className="font-mono tabular-nums text-[11px] opacity-75">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Inline Create Unit Panel */}
+      {newUnitCreatorOpen && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FolderPlus className="w-4 h-4 text-teal-600" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white font-kufi">
+                إنشاء وحدة أو كورس جديد في {getGradeDisplayName(selectedListGrade, siteForm, 'ar')}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewUnitCreatorOpen(false)}
+              className="p-1 rounded-lg text-slate-500 hover:bg-white/60 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+            <input
+              type="text"
+              value={newUnitTitle}
+              onChange={(e) => setNewUnitTitle(e.target.value)}
+              placeholder="اسم الوحدة (مثال: الباب الثاني أو كورس المراجعة النهائية)"
+              className="sm:col-span-6 p-2.5 text-xs rounded-xl border border-teal-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            />
+            <label className="sm:col-span-4 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newUnitIndependent}
+                onChange={(e) => setNewUnitIndependent(e.target.checked)}
+                className="w-4 h-4 accent-teal-600 rounded"
+              />
+              <span>وحدة مستقلة (تفتح محاضراتها منفصلة عن الوحدات السابقة)</span>
+            </label>
+            <button
+              type="button"
+              disabled={savingUnit || !newUnitTitle.trim()}
+              onClick={async () => {
+                const created = await handleCreateUnit(
+                  selectedListGrade,
+                  newUnitTitle,
+                  newUnitIndependent
+                );
+                if (created) {
+                  setNewUnitTitle('');
+                  setNewUnitCreatorOpen(false);
+                }
+              }}
+              className="sm:col-span-2 py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+            >
+              {savingUnit ? 'جاري الحفظ...' : 'إنشاء الوحدة'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Unit Filter Chips Strip */}
+      {listGradeUnits.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 pb-1">
+          <button
+            type="button"
+            onClick={() => setSelectedUnitFilter('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+              selectedUnitFilter === 'all'
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-500'
+            }`}
+          >
+            كل الوحدات ({listGradeLectures.length})
+          </button>
+
+          {listGradeUnits.map((u) => {
+            const uCount = getLecturesInUnit(listGradeLectures, u).length;
+            const active = selectedUnitFilter === u.id;
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => setSelectedUnitFilter(u.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-500'
+                }`}
+              >
+                <span>{u.titleAr}</span>
+                <span className="font-mono tabular-nums opacity-80">({uCount})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {lectureFormSuccess && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 text-xs font-bold text-emerald-800 dark:text-emerald-200">
@@ -751,7 +1254,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                 <Edit3 className="w-4 h-4" />
               </div>
               <h3 className="text-base sm:text-lg font-bold font-kufi text-slate-900 dark:text-white">
-                تعديل تفاصيل المحاضرة
+                تعديل ونقل المحاضرة
               </h3>
             </div>
             <button
@@ -777,7 +1280,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
                   السنة الدراسية
@@ -790,6 +1293,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                       ...editingLecture,
                       grade: g,
                       gradeLabel: getGradeDisplayName(g, siteForm, 'ar'),
+                      unitId: undefined,
                     });
                   }}
                   className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
@@ -797,6 +1301,38 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                   {resolvedGrades.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.badgeAr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
+                  نقل إلى وحدة
+                </label>
+                <select
+                  value={
+                    editingLecture.unitId ||
+                    getUnitForLecture(editingLecture, editGradeUnits)?.id ||
+                    ''
+                  }
+                  onChange={(e) => {
+                    const nextUnitId = e.target.value;
+                    const targetUnit = editGradeUnits.find((u) => u.id === nextUnitId);
+                    setEditingLecture({
+                      ...editingLecture,
+                      unitId:
+                        nextUnitId && nextUnitId !== '__uncategorized__'
+                          ? nextUnitId
+                          : undefined,
+                      chapter: targetUnit ? targetUnit.titleAr : editingLecture.chapter,
+                    });
+                  }}
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-1"
+                >
+                  {editGradeUnits.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.titleAr}
                     </option>
                   ))}
                 </select>
@@ -832,7 +1368,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
 
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 font-kufi">
-                  ترتيب الحصة في المنصة
+                  الترتيب بالوحدة
                 </label>
                 <input
                   type="number"
@@ -1058,139 +1594,296 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         </div>
       )}
 
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {lectures.map((lec) => (
-          <div
-            key={lec.id}
-            className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-          >
-            <div className="flex items-start gap-3 min-w-0">
-              <button
-                type="button"
-                onClick={() =>
-                  setPreviewModal({
-                    url: lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg',
-                    title: lec.title,
-                    kind: 'image',
-                  })
-                }
-                className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-zoom-in"
-                title="معاينة صورة الغلاف"
-              >
-                <img
-                  src={lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'}
-                  alt={lec.title}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full h-full object-cover"
-                />
-              </button>
+      {/* Grouped Unit Cards */}
+      <div className="space-y-4">
+        {displayedUnits.map((unit) => {
+          const unitLectures = getLecturesInUnit(listGradeLectures, unit);
+          const isCollapsed = Boolean(collapsedUnitIds[unit.id]);
+          const isIndependent = unit.isIndependent !== false;
+          const isRealCustomUnit = unit.id !== '__uncategorized__';
 
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
-                    {getGradeDisplayName(lec.grade, siteForm, 'ar') || lec.gradeLabel}
-                  </span>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    حصة رقم {lec.sessionOrder || 1}
-                  </span>
-                  <span className="text-xs text-slate-500 font-mono">{lec.duration}</span>
-                  {lec.isFreePreview && (
-                    <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
-                      مجانية
-                    </span>
-                  )}
-                  {(lec.pointsCost || 0) > 0 && (
-                    <span className="text-xs font-bold font-mono text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/70 px-2 py-0.5 rounded-md">
-                      {lec.pointsCost} نقطة
-                    </span>
-                  )}
-                  {lec.quizId && (
-                    <span className="text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-md">
-                      مرتبطة بكويز إجباري
-                    </span>
+          return (
+            <div
+              key={unit.id}
+              className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/40 dark:bg-slate-950/40"
+            >
+              {/* Unit Header */}
+              <div className="px-4 sm:px-5 py-3.5 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollapsedUnitIds((prev) => ({ ...prev, [unit.id]: !prev[unit.id] }))
+                    }
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-teal-50 dark:hover:bg-teal-950 cursor-pointer shrink-0"
+                    aria-label={isCollapsed ? 'توسيع الوحدة' : 'طي الوحدة'}
+                  >
+                    {isCollapsed ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronUp className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  {editingUnitId === unit.id ? (
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <input
+                        type="text"
+                        value={editingUnitTitle}
+                        onChange={(e) => setEditingUnitTitle(e.target.value)}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-teal-400 bg-white dark:bg-slate-800 min-w-[180px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRenameUnit(unit)}
+                        className="p-1.5 rounded-lg bg-teal-600 text-white cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingUnitId(null)}
+                        className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-bold font-kufi text-slate-900 dark:text-white truncate">
+                          {unit.titleAr}
+                        </h3>
+                        <span className="text-xs font-mono tabular-nums text-slate-500">
+                          · {unitLectures.length} محاضرات
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        {isIndependent ? (
+                          <span className="text-teal-700 dark:text-teal-400 font-semibold flex items-center gap-1">
+                            <Unlock className="w-3 h-3" />
+                            <span>مسار مستقل — أول محاضرة تفتح مباشرة بدون انتظار الوحدات السابقة</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
+                            <Link2 className="w-3 h-3" />
+                            <span>متسلسلة — تتطلب إنهاء الوحدة السابقة أولاً</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
-                <h3 className="font-bold text-base text-slate-900 dark:text-white font-kufi truncate">
-                  {lec.title}
-                </h3>
-                <p className="text-xs text-slate-500 line-clamp-1">{lec.description}</p>
+
+                {/* Unit Controls */}
+                <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                  {isRealCustomUnit && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={savingUnit}
+                        onClick={() => handleToggleUnitIndependence(unit)}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-teal-500 cursor-pointer"
+                        title="التبديل بين مسار مستقل ومتسلسل"
+                      >
+                        {isIndependent ? 'تحويل لمتسلسل' : 'جعلها مستقلة'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingUnitId(unit.id);
+                          setEditingUnitTitle(unit.titleAr);
+                        }}
+                        className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-teal-500 cursor-pointer"
+                        title="إعادة تسمية الوحدة"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {unitLectures.length === 0 && (
+                        <button
+                          type="button"
+                          disabled={savingUnit}
+                          onClick={() => handleDeleteEmptyUnit(unit)}
+                          className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                          title="حذف الوحدة الفارغة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleJumpUploadToUnit(selectedListGrade, unit)}
+                    className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ إضافة محاضرة هنا</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-              {lec.videoUrl && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPreviewModal({
-                      url: lec.videoUrl,
-                      title: lec.title,
-                      kind: 'video',
-                    })
-                  }
-                  className="px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                  title="معاينة الفيديو"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>معاينة</span>
-                </button>
-              )}
+              {/* Lectures Inside Unit */}
+              {!isCollapsed && (
+                <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
+                  {unitLectures.map((lec, idx) => (
+                    <div
+                      key={lec.id}
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white dark:hover:bg-slate-900/70 transition-colors"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewModal({
+                              url: lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg',
+                              title: lec.title,
+                              kind: 'image',
+                            })
+                          }
+                          className="w-24 h-14 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-zoom-in relative"
+                          title="معاينة صورة الغلاف"
+                        >
+                          <img
+                            src={lec.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg'}
+                            alt={lec.title}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
 
-              <button
-                type="button"
-                onClick={() => setEditingLecture(lec)}
-                className="px-3 py-1.5 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="تعديل المحاضرة"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>تعديل</span>
-              </button>
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums flex-wrap">
+                            <span className="font-bold text-teal-700 dark:text-teal-400">
+                              حصة {lec.sessionOrder || idx + 1}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>{lec.duration}</span>
+                            {lec.isFreePreview && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-bold text-amber-600 dark:text-amber-400">
+                                  مجانية للزوار
+                                </span>
+                              </>
+                            )}
+                            {(lec.pointsCost || 0) > 0 && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-bold text-amber-700 dark:text-amber-300">
+                                  {lec.pointsCost} نقطة
+                                </span>
+                              </>
+                            )}
+                            {lec.quizId && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-bold text-teal-700 dark:text-teal-300">
+                                  مرتبطة بكويز إجباري
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white font-kufi truncate">
+                            {lec.title}
+                          </h4>
+                          <p className="text-xs text-slate-500 line-clamp-1">{lec.description}</p>
+                        </div>
+                      </div>
 
-              {deleteConfirmLecId === lec.id ? (
-                <div className="flex items-center gap-1.5 p-1 bg-rose-50 dark:bg-rose-950/80 rounded-xl border border-rose-300 dark:border-rose-800">
-                  <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 px-1">
-                    حذف نهائي؟
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onDeleteLecture(lec.id);
-                      setDeleteConfirmLecId(null);
-                    }}
-                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    تأكيد
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirmLecId(null)}
-                    className="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors cursor-pointer"
-                  >
-                    إلغاء
-                  </button>
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        {lec.videoUrl && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewModal({
+                                url: lec.videoUrl,
+                                title: lec.title,
+                                kind: 'video',
+                              })
+                            }
+                            className="px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                            title="معاينة الفيديو"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>معاينة</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setEditingLecture(lec)}
+                          className="px-3 py-1.5 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="تعديل ونقل المحاضرة"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل / نقل</span>
+                        </button>
+
+                        {deleteConfirmLecId === lec.id ? (
+                          <div className="flex items-center gap-1.5 p-1 bg-rose-50 dark:bg-rose-950/80 rounded-xl border border-rose-300 dark:border-rose-800">
+                            <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 px-1">
+                              حذف؟
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteLecture(lec.id);
+                                setDeleteConfirmLecId(null);
+                              }}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              تأكيد
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmLecId(null)}
+                              className="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors cursor-pointer"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmLecId(lec.id)}
+                            className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                            title="حذف المحاضرة"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {unitLectures.length === 0 && (
+                    <div className="p-6 text-center text-xs text-slate-500">
+                      لا توجد محاضرات داخل هذه الوحدة بعد — اضغط «+ إضافة محاضرة هنا» لرفع أول درس بها.
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirmLecId(lec.id)}
-                  className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
-                  title="حذف المحاضرة"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {lectures.length === 0 && (
-          <div className="py-12 text-center text-slate-400">
-            لا توجد محاضرات منشورة حالياً. ابدأ برفع أول محاضرة الآن!
+        {displayedUnits.length === 0 && (
+          <div className="py-12 text-center text-slate-400 space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+            <Layers className="w-8 h-8 text-teal-600/40 mx-auto" />
+            <div className="text-sm font-bold text-slate-600 dark:text-slate-300">
+              لا توجد وحدات أو محاضرات منشورة في {getGradeDisplayName(selectedListGrade, siteForm, 'ar')} حتى الآن.
+            </div>
+            <p className="text-xs text-slate-400">
+              ابدأ بإنشاء أول وحدة أو اضغط «إضافة محاضرة جديدة».
+            </p>
           </div>
         )}
       </div>
-
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Sparkles, Video, FileText, Users, ShieldCheck, Plus, GraduationCap,
-  Palette, Trash2, RefreshCcw, Eye, Ticket, X, Bell
+  Palette, Trash2, RefreshCcw, Eye, Ticket, X, Bell, ShieldAlert
 } from 'lucide-react';
 import { Lecture, AttachmentFile, UserProfile } from '../../types';
 import { SiteConfig } from '../../types/siteConfig';
@@ -19,10 +19,12 @@ interface OverviewTabProps {
   remainingGB: number;
   usedPercentage: number;
   totalQuotaGB: number;
+  unresolvedAlertsCount?: number;
   onNavigateTab: (
     tab:
       | 'overview'
       | 'all-students'
+      | 'exam-alerts'
       | 'upload-lecture'
       | 'lectures-list'
       | 'quizzes-bank'
@@ -48,6 +50,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   remainingGB,
   usedPercentage,
   totalQuotaGB,
+  unresolvedAlertsCount = 0,
   onNavigateTab,
   onOpenResetModal,
 }) => {
@@ -299,6 +302,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">
               {isEn ? 'Post updates to students' : 'رسائل وتنبيهات للطلاب'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('exam-alerts')}
+            className={`p-4 rounded-2xl border hover-card-lift text-start group cursor-pointer ${
+              unresolvedAlertsCount > 0
+                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <ShieldAlert className="w-6 h-6 text-rose-600 group-hover:scale-110 transition-transform" />
+              {unresolvedAlertsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold tabular-nums">
+                  {unresolvedAlertsCount}
+                </span>
+              )}
+            </div>
+            <div className="text-xs font-bold text-slate-900 dark:text-white">
+              {isEn ? 'Exam Anti-Cheat Alerts' : 'تنبيهات الغش واللجان'}
+            </div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              {isEn ? 'Violations, retakes & blocks' : 'متابعة الغش والحظر والإعادة'}
             </div>
           </button>
 

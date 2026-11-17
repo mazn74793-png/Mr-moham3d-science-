@@ -74,6 +74,7 @@
         "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "gradeLabel": { "type": "string", "maxLength": 150 },
         "chapter": { "type": "string", "maxLength": 250 },
+        "unitId": { "type": "string", "maxLength": 128 },
         "duration": { "type": "string", "maxLength": 100 },
         "videoUrl": { "type": "string", "maxLength": 2000 },
         "thumbnailUrl": { "type": "string", "maxLength": 2000 },
@@ -122,6 +123,12 @@
         "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "chapter": { "type": "string", "maxLength": 250 },
         "durationMinutes": { "type": "number" },
+        "warningMinutes": { "type": "number" },
+        "passingScore": { "type": "number" },
+        "requireAgreement": { "type": "boolean" },
+        "examInstructions": { "type": "array", "description": "Up to 25 pre-exam rule lines" },
+        "proctoringEnabled": { "type": "boolean" },
+        "maxViolations": { "type": "number" },
         "lectureId": { "type": "string", "maxLength": 128 },
         "questions": { "type": "array", "description": "Up to 200 quiz questions" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -158,6 +165,10 @@
         "lastRedeemedCode": { "type": "string", "maxLength": 128 },
         "lastSpendTargetType": { "type": "string", "enum": ["lecture", "attachment", "reward"] },
         "lastSpendTargetId": { "type": "string", "maxLength": 128 },
+        "isBlocked": { "type": "boolean" },
+        "blockReason": { "type": "string", "maxLength": 500 },
+        "cancelledQuizIds": { "type": "array", "description": "Up to 200 quiz IDs terminated for exam violations" },
+        "quizViolations": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -228,11 +239,36 @@
         "authorName": { "type": "string", "maxLength": 150 },
         "dateAdded": { "type": "string", "maxLength": 50 },
         "ctaLabel": { "type": "string", "maxLength": 80 },
-        "ctaTab": { "type": "string", "enum": ["lectures", "quizzes", "files", "points", "study-hub"] },
+        "ctaTab": { "type": "string", "enum": ["lectures", "quizzes", "files", "points"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "title", "message", "category", "grade", "pinned", "active", "authorName", "dateAdded", "createdAt", "updatedAt"]
+    },
+    "ExamSecurityAlert": {
+      "title": "ExamSecurityAlert",
+      "description": "Real-time exam anti-cheat & proctoring incident alert submitted from student exam sessions and managed by admins.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 200 },
+        "studentPhone": { "type": "string", "maxLength": 50 },
+        "studentEmail": { "type": "string", "maxLength": 200 },
+        "grade": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "quizId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "quizTitle": { "type": "string", "maxLength": 300 },
+        "violationCount": { "type": "number" },
+        "maxViolations": { "type": "number" },
+        "reasons": { "type": "array", "description": "Up to 30 recorded security violations" },
+        "actionTaken": { "type": "string", "enum": ["warning", "cancelled"] },
+        "resolved": { "type": "boolean" },
+        "resolvedNote": { "type": "string", "maxLength": 500 },
+        "createdAtDate": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "studentUid", "studentName", "quizId", "quizTitle", "violationCount", "maxViolations", "reasons", "actionTaken", "resolved", "createdAtDate", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -275,6 +311,10 @@
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/Notification" },
       "description": "Platform announcements and notifications managed by verified admins."
+    },
+    "/examAlerts/{alertId}": {
+      "schema": { "$ref": "#/entities/ExamSecurityAlert" },
+      "description": "Exam anti-cheat violation alerts created during active exams and reviewed by admins."
     }
   }
 }

@@ -18,8 +18,9 @@ import {
   RedeemCode,
   PointReward,
   PlatformNotification,
+  ExamSecurityAlert,
 } from './types';
-import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
+import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT } from './types/siteConfig';
 import { LinkPasswordSetup } from './components/LinkPasswordSetup';
 import {
   auth,
@@ -40,6 +41,7 @@ import {
   deleteStudentFromCloud,
   getStudentFromCloud,
   fetchAdminConfigIfAuthorized,
+  clearAdminConfigCache,
   saveRedeemCodeToCloud,
   saveRedeemCodesBatchToCloud,
   toggleRedeemCodeActiveInCloud,
@@ -52,6 +54,9 @@ import {
   unlockLectureWithPoints,
   unlockAttachmentWithPoints,
   claimRewardWithPoints,
+  createExamSecurityAlertToCloud,
+  updateExamSecurityAlertInCloud,
+  deleteExamSecurityAlertFromCloud,
 } from './firebase';
 
 // Lazy-load heavy views and modals for ultra-fast initial landing page load
@@ -69,8 +74,8 @@ const StudentOnboardingModal = lazy(() =>
 );
 
 function sanitizeProfileImageUrl(url?: string): string {
-  if (!url) return '';
-  if (url.includes('teacher_mohamed_mostafa_1794141316649')) return '';
+  if (!url || !url.trim()) return DEFAULT_TEACHER_PORTRAIT;
+  if (url.includes('teacher_mohamed_mostafa_1794141316649')) return DEFAULT_TEACHER_PORTRAIT;
   return url;
 }
 
@@ -93,19 +98,6 @@ export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('mm_theme') === 'dark';
   });
-
-  // Purge legacy cross-tab sensitive keys from localStorage on boot so every session/tab stays isolated
-  useEffect(() => {
-    try {
-      localStorage.removeItem('mm_user');
-      localStorage.removeItem('mm_last_view');
-      localStorage.removeItem('mm_registered_students');
-      localStorage.removeItem('mm_redeem_codes');
-      localStorage.removeItem('mm_cloudinary');
-      localStorage.removeItem('mm_auth_redirect_pending');
-      localStorage.removeItem('mm_auth_redirect_ts');
-    } catch {}
-  }, []);
 
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('mm_site_config');
@@ -138,11 +130,11 @@ export default function App() {
   });
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    const saved = sessionStorage.getItem('mm_user');
+    const saved = localStorage.getItem('mm_user') || sessionStorage.getItem('mm_user');
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as UserProfile;
-        // Require a live Firebase Auth session for teacher/admin accounts — never trust stale local teacher state
+        // Require Firebase Auth confirmation before elevating to teacher role
         if (parsed?.role === 'teacher') return null;
         return parsed;
       } catch {
@@ -160,7 +152,17 @@ export default function App() {
   const [adminCloudError, setAdminCloudError] = useState<string | null>(null);
   const [lastCloudError, setLastCloudError] = useState<string | null>(null);
 
-  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const savedView = localStorage.getItem('mm_last_view');
+    const savedUser = localStorage.getItem('mm_user');
+    if (savedView === 'student' && savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser) as UserProfile;
+        if (parsed && parsed.role !== 'teacher') return 'student';
+      } catch {}
+    }
+    return 'landing';
+  });
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register'>('login');
   const [teacherInitialTab, setTeacherInitialTab] = useState<'overview' | 'site-customizer'>('overview');
 
@@ -216,6 +218,8 @@ export default function App() {
       return [];
     }
   });
+
+  const [examAlerts, setExamAlerts] = useState<ExamSecurityAlert[]>([]);
 
   const [passwordPromptDismissedUids, setPasswordPromptDismissedUids] = useState<string[]>(() => {
     try {
@@ -408,11 +412,12 @@ export default function App() {
         });
       }
 
-      // Restore portal view ONLY within the same isolated tab session
-      const savedLastView = sessionStorage.getItem('mm_last_view');
+      // Restore portal view persistently across reloads until explicit logout
+      const savedLastView =
+        localStorage.getItem('mm_last_view') || sessionStorage.getItem('mm_last_view');
       if (options?.fromRedirect && optimisticAdmin) {
         setCurrentView('teacher');
-        sessionStorage.setItem('mm_last_view', 'teacher');
+        localStorage.setItem('mm_last_view', 'teacher');
       } else if (!hasManualNavigatedRef.current && savedLastView) {
         if (savedLastView === 'teacher' && optimisticAdmin) {
           setCurrentView('teacher');
@@ -421,21 +426,25 @@ export default function App() {
         }
       }
 
-      // Avoid duplicate Firestore fetches if handleLoginSuccess already triggered them within 3s
+      // Avoid duplicate Firestore fetches if handleLoginSuccess already triggered them within 5s
       const now = Date.now();
-      const skipDuplicateViewSwap =
+      const recentlyHandledByLogin =
         lastLoginHydratedRef.current &&
         lastLoginHydratedRef.current.uid === fbUser.uid &&
-        now - lastLoginHydratedRef.current.ts < 3000;
+        now - lastLoginHydratedRef.current.ts < 5000;
+
+      if (recentlyHandledByLogin) {
+        return;
+      }
 
       const hasGoogle = Boolean(fbUser.providerData?.some((p) => p.providerId === 'google.com'));
 
-      // 2. Single deduplicated background Firestore verification & sync (up to 8s for cold connections)
+      // 2. Bounded deduplicated background Firestore verification & sync
       const [adminCfg, cloudStudent] = await Promise.all([
         fbUser.emailVerified || hasGoogle
-          ? fetchAdminConfigIfAuthorized(8000)
+          ? fetchAdminConfigIfAuthorized(3500)
           : Promise.resolve(null),
-        !optimisticAdmin ? getStudentFromCloud(fbUser.uid, 3500) : Promise.resolve(null),
+        !optimisticAdmin ? getStudentFromCloud(fbUser.uid, 2500) : Promise.resolve(null),
       ]);
 
       if (adminCfg) {
@@ -487,11 +496,11 @@ export default function App() {
           Boolean(options?.fromRedirect) ||
           currentViewRef.current === 'auth' ||
           Date.now() - justSignedInAuthRef.current < 12000 ||
-          (!skipDuplicateViewSwap && savedLastView === 'teacher');
+          savedLastView === 'teacher';
 
         if (shouldEnterTeacherView) {
           setCurrentView('teacher');
-          sessionStorage.setItem('mm_last_view', 'teacher');
+          localStorage.setItem('mm_last_view', 'teacher');
         }
 
         if (!adminBootstrappedRef.current) {
@@ -537,16 +546,38 @@ export default function App() {
     [isEmailAdmin]
   );
 
-  // 1. Unified Firebase Auth Listener + Unconditional Redirect & Tab-Return Recovery
+  // 1. Unified Firebase Auth Listener + Non-Blocking Redirect Recovery
   useEffect(() => {
     let mounted = true;
-    let redirectCheckDone = false;
+    const pendingRedirectAtBoot = hasPendingRedirectFlag();
+    let redirectCheckDone = !pendingRedirectAtBoot;
+
+    if (!pendingRedirectAtBoot) {
+      const hasSavedLogin = Boolean(
+        localStorage.getItem('mm_user') || localStorage.getItem('mm_last_view')
+      );
+      if (hasSavedLogin && typeof auth.authStateReady === 'function') {
+        Promise.race([
+          auth.authStateReady().catch(() => {}),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 1200)),
+        ]).then(() => {
+          if (mounted) setAuthReady(true);
+        });
+      } else {
+        setAuthReady(true);
+      }
+    }
 
     const handleRedirectCheck = async () => {
       const pendingBefore = hasPendingRedirectFlag();
       try {
-        // Always call getRedirectResult unconditionally so OAuth returns work even if sessionStorage was reset
-        const res = await getRedirectResult(auth);
+        const redirectPromise = getRedirectResult(auth);
+        const res = pendingBefore
+          ? await Promise.race([
+              redirectPromise,
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+            ])
+          : await redirectPromise;
         if (!mounted) return;
         if (res?.user) {
           clearRedirectFlags();
@@ -557,7 +588,10 @@ export default function App() {
           await hydrateFirebaseUser(res.user, { fromRedirect: true });
         } else if (pendingBefore) {
           if (typeof auth.authStateReady === 'function') {
-            await auth.authStateReady().catch(() => {});
+            await Promise.race([
+              auth.authStateReady().catch(() => {}),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+            ]);
           }
           if (!mounted) return;
           if (auth.currentUser) {
@@ -585,7 +619,7 @@ export default function App() {
               ? 'Could not reach sign-in servers. Check your connection and retry.'
               : 'تعذر الاتصال بخدمة تسجيل الدخول، تأكد من الاتصال ثم أعد المحاولة.'
           );
-        } else if (code) {
+        } else if (pendingBefore && code) {
           showNotice(
             'error',
             lang === 'en'
@@ -652,7 +686,7 @@ export default function App() {
     };
   }, [clearRedirectFlags, hasPendingRedirectFlag, hydrateFirebaseUser, showNotice]);
 
-  // 2. Public Real-Time Firestore Listeners
+  // 2A. Critical Landing Real-Time Firestore Listeners (Site Config, Lectures, Handouts)
   useEffect(() => {
     const unsubSite = onSnapshot(
       doc(db, 'publicConfig', 'site'),
@@ -703,6 +737,33 @@ export default function App() {
       }
     );
 
+    return () => {
+      unsubSite();
+      unsubLectures();
+      unsubAttachments();
+    };
+  }, []);
+
+  // 2B. Secondary Portal Listeners (Quizzes, Rewards, Notifications) — deferred slightly on landing boot
+  const [secondaryCollectionsReady, setSecondaryCollectionsReady] = useState<boolean>(
+    () => currentView !== 'landing'
+  );
+
+  useEffect(() => {
+    if (secondaryCollectionsReady) return;
+    if (currentView !== 'landing') {
+      setSecondaryCollectionsReady(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSecondaryCollectionsReady(true);
+    }, 850);
+    return () => window.clearTimeout(timer);
+  }, [currentView, secondaryCollectionsReady]);
+
+  useEffect(() => {
+    if (!secondaryCollectionsReady) return;
+
     const quizzesQuery = query(collection(db, 'quizzes'), where('grade', '!=', ''));
     const unsubQuizzes = onSnapshot(
       quizzesQuery,
@@ -745,14 +806,11 @@ export default function App() {
     );
 
     return () => {
-      unsubSite();
-      unsubLectures();
-      unsubAttachments();
       unsubQuizzes();
       unsubRewards();
       unsubNotifications();
     };
-  }, []);
+  }, [secondaryCollectionsReady]);
 
   // 3. Authenticated Real-Time Firestore Listeners
   useEffect(() => {
@@ -882,6 +940,24 @@ export default function App() {
             }
           )
         );
+
+        unsubscribers.push(
+          onSnapshot(
+            collection(db, 'examAlerts'),
+            (snap) => {
+              const list = snap.docs.map((d) => d.data() as ExamSecurityAlert);
+              list.sort(
+                (a, b) =>
+                  (b.createdAtDate || '').localeCompare(a.createdAtDate || '') ||
+                  (b.id || '').localeCompare(a.id || '')
+              );
+              setExamAlerts(list);
+            },
+            (error) => {
+              console.warn('ExamAlerts admin listener error:', error.message);
+            }
+          )
+        );
       };
 
       attachAdminListeners();
@@ -926,40 +1002,34 @@ export default function App() {
     };
   }, [firebaseUser, isEmailAdmin, currentUser?.role, lang]);
 
-  // Persist public non-sensitive cache in localStorage (never store adminEmails), keep session state in sessionStorage ONLY
+  // Persist non-sensitive public cache with debounced writes so rapid updates never block the main thread
   useEffect(() => {
-    const publicSiteCache: Partial<SiteConfig> = { ...siteConfig };
-    delete publicSiteCache.adminEmails;
-    localStorage.setItem('mm_site_config', JSON.stringify(publicSiteCache));
-  }, [siteConfig]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_lectures', JSON.stringify(lectures));
-  }, [lectures]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_attachments', JSON.stringify(attachments));
-  }, [attachments]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_quizzes', JSON.stringify(quizzes));
-  }, [quizzes]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_rewards', JSON.stringify(rewards));
-  }, [rewards]);
-
-  useEffect(() => {
-    localStorage.setItem('mm_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    const timer = window.setTimeout(() => {
+      try {
+        const publicSiteCache: Partial<SiteConfig> = { ...siteConfig };
+        delete publicSiteCache.adminEmails;
+        localStorage.setItem('mm_site_config', JSON.stringify(publicSiteCache));
+        localStorage.setItem('mm_lectures', JSON.stringify(lectures));
+        localStorage.setItem('mm_attachments', JSON.stringify(attachments));
+        localStorage.setItem('mm_quizzes', JSON.stringify(quizzes));
+        localStorage.setItem('mm_rewards', JSON.stringify(rewards));
+        localStorage.setItem('mm_notifications', JSON.stringify(notifications));
+      } catch {}
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [siteConfig, lectures, attachments, quizzes, rewards, notifications]);
 
   useEffect(() => {
     if (currentUser) {
-      sessionStorage.setItem('mm_user', JSON.stringify(currentUser));
-    } else if (authReady) {
-      sessionStorage.removeItem('mm_user');
+      try {
+        localStorage.setItem('mm_user', JSON.stringify(currentUser));
+      } catch {}
+    } else if (authReady && !auth.currentUser && !firebaseUser) {
+      try {
+        localStorage.removeItem('mm_user');
+      } catch {}
     }
-  }, [currentUser, authReady]);
+  }, [currentUser, authReady, firebaseUser]);
 
   const openAuthPage = useCallback((tab: 'login' | 'register' = 'login') => {
     hasManualNavigatedRef.current = true;
@@ -1002,7 +1072,8 @@ export default function App() {
       return;
     }
 
-    const adminCfg = await fetchAdminConfigIfAuthorized(8000);
+    clearAdminConfigCache();
+    const adminCfg = await fetchAdminConfigIfAuthorized(4500);
     if (adminCfg?.adminEmails?.length) {
       const merged = Array.from(
         new Set(
@@ -1193,7 +1264,7 @@ export default function App() {
           }));
         }
         setCurrentView('teacher');
-        sessionStorage.setItem('mm_last_view', 'teacher');
+        localStorage.setItem('mm_last_view', 'teacher');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
@@ -1212,7 +1283,7 @@ export default function App() {
         return;
       }
       setCurrentView('teacher');
-      sessionStorage.setItem('mm_last_view', 'teacher');
+      localStorage.setItem('mm_last_view', 'teacher');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -1222,7 +1293,7 @@ export default function App() {
         return;
       }
       setCurrentView('student');
-      sessionStorage.setItem('mm_last_view', 'student');
+      localStorage.setItem('mm_last_view', 'student');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -1231,7 +1302,7 @@ export default function App() {
       return;
     }
     if (view === 'landing') {
-      sessionStorage.setItem('mm_last_view', 'landing');
+      localStorage.setItem('mm_last_view', 'landing');
     }
     setCurrentView(view);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1259,7 +1330,7 @@ export default function App() {
       Boolean(verifiedEmail) &&
       (user.role === 'teacher' || isEmailAdmin(verifiedEmail));
 
-    // Fast path for verified admins: transition immediately with zero blocking wait
+    // Fast path for verified admins & co-admins already validated by AuthModals (zero blocking wait)
     if (isInstantVerifiedAdmin && fbUser) {
       if (verifiedEmail && !adminEmailsRef.current.includes(verifiedEmail)) {
         const nextEmails = Array.from(
@@ -1277,8 +1348,8 @@ export default function App() {
       };
       setCurrentUser(finalAdmin);
       setCurrentView('teacher');
-      sessionStorage.setItem('mm_last_view', 'teacher');
-      fetchAdminConfigIfAuthorized(8000)
+      localStorage.setItem('mm_last_view', 'teacher');
+      fetchAdminConfigIfAuthorized(3500)
         .then((adminCfg) => {
           if (adminCfg?.adminEmails?.length) {
             const merged = Array.from(
@@ -1296,41 +1367,7 @@ export default function App() {
       return;
     }
 
-    // For students or co-admins: verify against cloud adminConfig before deciding portal view
-    let isCloudAdmin = false;
-    if (fbUser && (fbUser.emailVerified || hasGoogle) && verifiedEmail) {
-      const adminCfg = await fetchAdminConfigIfAuthorized(8000);
-      if (adminCfg) {
-        const mergedEmails = Array.from(
-          new Set(
-            ['mizoo2y2@gmail.com', ...(adminCfg.adminEmails || [])]
-              .map((e) => e.toLowerCase().trim())
-              .filter(Boolean)
-          )
-        );
-        adminEmailsRef.current = mergedEmails;
-        setSiteConfig((prev) => ({
-          ...prev,
-          adminEmails: mergedEmails,
-        }));
-        isCloudAdmin = mergedEmails.includes(verifiedEmail);
-      }
-    }
-
-    if (isCloudAdmin && fbUser) {
-      const finalAdmin: UserProfile = {
-        ...user,
-        id: fbUser.uid,
-        email: fbUser.email || user.email,
-        role: 'teacher',
-        profileCompleted: true,
-      };
-      setCurrentUser(finalAdmin);
-      setCurrentView('teacher');
-      sessionStorage.setItem('mm_last_view', 'teacher');
-      return;
-    }
-
+    // Immediate non-blocking transition for students (AuthModals already verified admin status in parallel)
     const sanitizedStudentInput: UserProfile = {
       ...user,
       role: 'student',
@@ -1371,7 +1408,7 @@ export default function App() {
 
     setCurrentUser(finalUser);
     setCurrentView('student');
-    sessionStorage.setItem('mm_last_view', 'student');
+    localStorage.setItem('mm_last_view', 'student');
 
     if (finalUser.profileCompleted && fbUser) {
       saveStudentToCloud(finalUser, fbUser.uid).catch((err) =>
@@ -1405,6 +1442,7 @@ export default function App() {
       localStorage.removeItem('mm_cloudinary');
     } catch {}
     clearRedirectFlags();
+    clearAdminConfigCache();
     signOut(auth).catch((e) => console.warn('Sign out warning:', e));
     adminBootstrappedRef.current = false;
     adminEmailsRef.current = ['mizoo2y2@gmail.com'];
@@ -1415,6 +1453,7 @@ export default function App() {
     setCloudinaryConfig(INITIAL_CLOUDINARY_CONFIG);
     setStudents([]);
     setRedeemCodes([]);
+    setExamAlerts([]);
     setStudentsSyncError(null);
     setAdminCloudError(null);
     setLastCloudError(null);
@@ -1646,6 +1685,39 @@ export default function App() {
     return ok;
   };
 
+  // Exam Anti-Cheat Security Alert Handlers
+  const handleReportExamAlert = async (alert: ExamSecurityAlert): Promise<void> => {
+    setExamAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)]);
+    try {
+      await createExamSecurityAlertToCloud(alert);
+    } catch (err) {
+      console.warn('Exam alert cloud write warning:', err);
+    }
+  };
+
+  const handleResolveExamAlert = async (alert: ExamSecurityAlert): Promise<boolean> => {
+    const updated: ExamSecurityAlert = { ...alert, resolved: true };
+    const ok = await executeAdminCloudWrite(
+      () => updateExamSecurityAlertInCloud(updated),
+      lang === 'en' ? 'Alert marked as reviewed.' : 'تمت مراجعة وتأكيد التنبيه الأمني.'
+    );
+    if (ok) {
+      setExamAlerts((prev) => prev.map((a) => (a.id === alert.id ? updated : a)));
+    }
+    return ok;
+  };
+
+  const handleDeleteExamAlert = async (alertId: string): Promise<boolean> => {
+    const ok = await executeAdminCloudWrite(
+      () => deleteExamSecurityAlertFromCloud(alertId),
+      lang === 'en' ? 'Security alert deleted.' : 'تم حذف سجل المخالفة.'
+    );
+    if (ok) {
+      setExamAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    }
+    return ok;
+  };
+
   // Student Points & Unlocking Atomic Handlers
   const syncUpdatedStudentLocally = (updated: UserProfile) => {
     setCurrentUser((prev) => (prev ? { ...prev, ...updated, role: prev.role } : updated));
@@ -1809,6 +1881,7 @@ export default function App() {
         : 'تم حفظ إعدادات Cloudinary ومزامنتها في السحابة.'
     );
     if (ok) {
+      clearAdminConfigCache();
       setCloudinaryConfig(config);
     }
     return ok;
@@ -1825,6 +1898,7 @@ export default function App() {
         : 'تم حفظ صلاحيات المشرفين في السحابة بنجاح!'
     );
     if (ok && savedEmails.length > 0) {
+      clearAdminConfigCache();
       adminEmailsRef.current = savedEmails;
       setSiteConfig((prev) => ({
         ...prev,
@@ -2073,6 +2147,7 @@ export default function App() {
                 onUnlockLecture={handleStudentUnlockLecture}
                 onUnlockAttachment={handleStudentUnlockAttachment}
                 onClaimReward={handleStudentClaimReward}
+                onReportExamAlert={handleReportExamAlert}
               />
             </Suspense>
           )}
@@ -2126,6 +2201,9 @@ export default function App() {
               adminCloudError={adminCloudError}
               lastCloudError={lastCloudError}
               onRetryCloudSync={handleRetryAdminCloudSync}
+              examAlerts={examAlerts}
+              onResolveExamAlert={handleResolveExamAlert}
+              onDeleteExamAlert={handleDeleteExamAlert}
             />
           </Suspense>
         )}
