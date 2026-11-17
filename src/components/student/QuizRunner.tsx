@@ -21,6 +21,8 @@ import {
   EyeOff,
   FileCheck2,
   Ban,
+  XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { ExamSecurityAlert, Quiz, UserProfile } from '../../types';
 import { SiteConfig } from '../../types/siteConfig';
@@ -70,7 +72,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const [enlargedQuizImage, setEnlargedQuizImage] = useState<string | null>(null);
   const [visitedIds, setVisitedIds] = useState<Record<string, boolean>>({});
   const [mobilePaletteOpen, setMobilePaletteOpen] = useState(true);
-  const [reviewFilter, setReviewFilter] = useState<'all' | 'mistakes'>('all');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'mistakes' | 'correct'>('all');
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
   const autoSubmittedQuizIdRef = useRef<string | null>(null);
 
@@ -168,6 +170,14 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     document.addEventListener('fullscreenchange', syncFs);
     return () => document.removeEventListener('fullscreenchange', syncFs);
   }, []);
+
+  useEffect(() => {
+    if (!quizSubmitted) return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, [quizSubmitted]);
 
   useEffect(() => {
     if (!activeQuiz || quizSubmitted) {
@@ -880,8 +890,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   });
 
   const remainingUnanswered = activeQuiz.questions.length - answeredCount;
+  const correctCount = quizSubmitted ? score : 0;
   const mistakesCount = quizSubmitted
-    ? activeQuiz.questions.filter((q) => selectedAnswers[q.id] !== q.correctAnswer).length
+    ? Math.max(0, activeQuiz.questions.length - correctCount)
     : 0;
 
   const timerMinutes = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
@@ -896,6 +907,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const jumpToQuestion = (idx: number) => {
     setEnlargedQuizImage(null);
     onQuestionIndexChange(idx);
+    if (quizSubmitted) {
+      window.setTimeout(() => {
+        const el = document.getElementById(`exam-review-q-${idx}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 40);
+    }
   };
 
   const handleConfirmExitNow = () => {
@@ -1059,9 +1076,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   : `السؤال ${currentQuestionIndex + 1} من ${activeQuiz.questions.length}`}
               </span>
               <span aria-hidden="true">·</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                {isEn
-                  ? `Solved ${answeredCount}/${activeQuiz.questions.length}`
+              <span className="text-teal-700 dark:text-teal-300 font-bold">
+                {quizSubmitted
+                  ? isEn
+                    ? `Correct ${correctCount}/${activeQuiz.questions.length}`
+                    : `الدرجة ${correctCount}/${activeQuiz.questions.length}`
+                  : isEn
+                  ? `Answered ${answeredCount}/${activeQuiz.questions.length}`
                   : `تم حل ${answeredCount}/${activeQuiz.questions.length}`}
               </span>
               {isProctoringActive && !quizSubmitted && (
@@ -1224,9 +1245,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
         <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
           <div
-            className="h-full bg-emerald-500 rounded-full transition-all duration-200"
+            className={`h-full rounded-full transition-all duration-200 ${
+              quizSubmitted ? 'bg-emerald-500' : 'bg-teal-600'
+            }`}
             style={{
-              width: `${Math.round((answeredCount / totalQuestions) * 100)}%`,
+              width: `${Math.round(
+                ((quizSubmitted ? correctCount : answeredCount) / totalQuestions) * 100
+              )}%`,
             }}
           />
         </div>
@@ -1309,24 +1334,37 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </button>
           </div>
 
-          {/* 3-Color Status Legend */}
-          <div className="grid grid-cols-3 gap-1.5 text-[11px] font-bold tabular-nums">
-            <div className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-center">
-              <div>{isEn ? 'Unopened' : 'لم يُفتح'}</div>
-              <div className="font-mono text-xs">{unopenedCount}</div>
+          {/* Status Legend: neutral before submit, graded after submit */}
+          {quizSubmitted ? (
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold tabular-nums">
+              <div className="px-2 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 text-center">
+                <div>{isEn ? 'Correct' : 'إجابات صحيحة'}</div>
+                <div className="font-mono text-xs">{correctCount}</div>
+              </div>
+              <div className="px-2 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-center">
+                <div>{isEn ? 'Wrong / Missed' : 'أخطاء / غير محلولة'}</div>
+                <div className="font-mono text-xs">{mistakesCount}</div>
+              </div>
             </div>
-            <div className="px-2 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-center">
-              <div>{isEn ? 'Opened' : 'مفتوح بدون حل'}</div>
-              <div className="font-mono text-xs">{openedUnansweredCount}</div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1.5 text-[11px] font-bold tabular-nums">
+              <div className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-center">
+                <div>{isEn ? 'Unopened' : 'لم يُفتح'}</div>
+                <div className="font-mono text-xs">{unopenedCount}</div>
+              </div>
+              <div className="px-2 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-center">
+                <div>{isEn ? 'Opened' : 'مفتوح بدون حل'}</div>
+                <div className="font-mono text-xs">{openedUnansweredCount}</div>
+              </div>
+              <div className="px-2 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-200 text-center">
+                <div>{isEn ? 'Selected' : 'تم الحل'}</div>
+                <div className="font-mono text-xs">{answeredCount}</div>
+              </div>
             </div>
-            <div className="px-2 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 text-center">
-              <div>{isEn ? 'Solved' : 'تم حله'}</div>
-              <div className="font-mono text-xs">{answeredCount}</div>
-            </div>
-          </div>
+          )}
 
-          {/* Post-Submission Mistakes Filter */}
-          {quizSubmitted && mistakesCount > 0 && (
+          {/* Post-Submission Review Filter */}
+          {quizSubmitted && (
             <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-bold">
               <button
                 type="button"
@@ -1356,7 +1394,24 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     : 'text-rose-600 dark:text-rose-300'
                 }`}
               >
-                {isEn ? `Mistakes (${mistakesCount})` : `الأخطاء (${mistakesCount})`}
+                {isEn ? `Wrong (${mistakesCount})` : `الغلط (${mistakesCount})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewFilter('correct');
+                  const firstRightIdx = activeQuiz.questions.findIndex(
+                    (q) => selectedAnswers[q.id] === q.correctAnswer
+                  );
+                  if (firstRightIdx >= 0) jumpToQuestion(firstRightIdx);
+                }}
+                className={`flex-1 min-h-[36px] py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  reviewFilter === 'correct'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-700 dark:text-emerald-300'
+                }`}
+              >
+                {isEn ? `Right (${correctCount})` : `الصح (${correctCount})`}
               </button>
             </div>
           )}
@@ -1369,11 +1424,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           >
             <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-5 gap-2">
               {activeQuiz.questions.map((q, idx) => {
-                if (
-                  quizSubmitted &&
-                  reviewFilter === 'mistakes' &&
-                  selectedAnswers[q.id] === q.correctAnswer
-                ) {
+                const isCorrectAns = quizSubmitted && selectedAnswers[q.id] === q.correctAnswer;
+                if (quizSubmitted && reviewFilter === 'mistakes' && isCorrectAns) {
+                  return null;
+                }
+                if (quizSubmitted && reviewFilter === 'correct' && !isCorrectAns) {
                   return null;
                 }
                 const isCurrent = idx === currentQuestionIndex;
@@ -1384,27 +1439,24 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-teal-400';
                 let statusText = isEn ? 'Unopened' : 'لم يُفتح بعد';
 
-                if (isAnswered) {
-                  if (quizSubmitted) {
-                    const isCorrectAns = selectedAnswers[q.id] === q.correctAnswer;
-                    squareClasses = isCorrectAns
-                      ? 'bg-emerald-600 text-white border-emerald-700'
-                      : 'bg-rose-600 text-white border-rose-700';
-                    statusText = isCorrectAns
-                      ? isEn
-                        ? 'Correct'
-                        : 'إجابة صحيحة'
-                      : isEn
-                      ? 'Incorrect'
-                      : 'إجابة خاطئة';
-                  } else {
-                    squareClasses =
-                      'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700';
-                    statusText = isEn ? 'Answered' : 'اتفتح واتحل';
-                  }
+                if (quizSubmitted) {
+                  squareClasses = isCorrectAns
+                    ? 'bg-emerald-600 text-white border-emerald-700'
+                    : 'bg-rose-600 text-white border-rose-700';
+                  statusText = isCorrectAns
+                    ? isEn
+                      ? 'Correct'
+                      : 'إجابة صحيحة'
+                    : isEn
+                    ? 'Incorrect'
+                    : 'إجابة خاطئة';
+                } else if (isAnswered) {
+                  squareClasses =
+                    'bg-teal-600 hover:bg-teal-700 text-white border-teal-700';
+                  statusText = isEn ? 'Answer selected' : 'تم اختيار إجابة';
                 } else if (isOpened) {
-                  squareClasses = 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700';
-                  statusText = isEn ? 'Opened, unanswered' : 'اتفتح بس متحلش';
+                  squareClasses = 'bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-600';
+                  statusText = isEn ? 'Opened, unanswered' : 'مفتوح بدون حل';
                 }
 
                 return (
@@ -1423,7 +1475,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                         : `سؤال ${idx + 1}: ${statusText}`
                     }
                     className={`min-h-[44px] w-full rounded-xl border text-xs sm:text-sm font-mono font-extrabold tabular-nums flex items-center justify-center transition-transform cursor-pointer ${squareClasses} ${
-                      isCurrent
+                      isCurrent && !quizSubmitted
                         ? 'ring-2 ring-offset-2 ring-teal-500 dark:ring-offset-slate-900 scale-[1.03]'
                         : ''
                     }`}
@@ -1455,232 +1507,559 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           )}
         </aside>
 
-        {/* ACTIVE QUESTION WORKSPACE */}
-        {currentQuestion && (
-          <div className="lg:col-span-8 p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
-            {/* Redirect Prompt when student tries to submit with unanswered questions */}
-            {unansweredAlert && !quizSubmitted && (
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border-2 border-amber-300 dark:border-amber-700 space-y-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2 text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-100">
-                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <div>
-                      <div>
-                        {isEn
-                          ? `${unansweredAlert.count} unanswered question(s) remaining`
-                          : `يوجد ${unansweredAlert.count} سؤال لم تقم بحله بعد — تم توجيهك إليه`}
-                      </div>
-                      <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 mt-0.5 font-mono">
-                        {isEn
-                          ? `Questions: ${unansweredAlert.numbers.join(', ')}`
-                          : `أرقام الأسئلة غير المحلولة: ${unansweredAlert.numbers.join(' ، ')}`}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setUnansweredAlert(null)}
-                    aria-label={isEn ? 'Dismiss notice' : 'إغلاق التنبيه'}
-                    className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer shrink-0"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleJumpToNextUnanswered}
-                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer"
-                  >
-                    {isEn ? 'Go to Next Unanswered' : 'الانتقال للسؤال التالي غير المحلول'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUnansweredAlert(null);
-                      onSubmitQuiz();
-                    }}
-                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 hover:bg-amber-100 text-xs font-bold cursor-pointer"
-                  >
-                    {isEn ? 'Submit Anyway' : 'تسليم الامتحان على أي حال'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="text-xs font-extrabold font-mono tabular-nums text-teal-700 dark:text-teal-300">
-                {isEn
-                  ? `Question ${currentQuestionIndex + 1} / ${activeQuiz.questions.length}`
-                  : `سؤال رقم ${currentQuestionIndex + 1} / ${activeQuiz.questions.length}`}
-              </span>
-
-              <span
-                className={`inline-flex items-center gap-1 text-xs font-bold ${
-                  selectedAnswers[currentQuestion.id] !== undefined
-                    ? 'text-emerald-700 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {selectedAnswers[currentQuestion.id] !== undefined ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{isEn ? 'Answer selected' : 'تم اختيار إجابة'}</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{isEn ? 'Not answered yet' : 'لم يتم الحل بعد'}</span>
-                  </>
-                )}
-              </span>
-            </div>
-
-            {currentQuestion.imageUrl && (
-              <div className="space-y-2">
-                {enlargedQuizImage === currentQuestion.imageUrl ? (
-                  <div className="rounded-2xl border border-teal-500/40 bg-slate-50 dark:bg-slate-950 p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                        {isEn
-                          ? `Expanded Question Image ${currentQuestionIndex + 1}`
-                          : `تكبير صورة السؤال ${currentQuestionIndex + 1}`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setEnlargedQuizImage(null)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+        {/* RIGHT PANEL: EITHER ACTIVE QUESTION (NO GRADING SHOWN) OR COMPLETE POST-SUBMIT REVIEW */}
+        {quizSubmitted ? (
+          <div className="lg:col-span-8 space-y-5">
+            {/* Result Summary Banner */}
+            {(() => {
+              const percentage = Math.round((score / totalQuestions) * 100);
+              const passThreshold = activeQuiz.passingScore ?? 60;
+              const passed = percentage >= passThreshold;
+              return (
+                <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-extrabold ${
+                          passed
+                            ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300'
+                        }`}
                       >
-                        <X className="w-3.5 h-3.5" />
-                        <span>{isEn ? 'Close Zoom' : 'إغلاق التكبير'}</span>
-                      </button>
+                        {passed ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4" />
+                        )}
+                        <span>
+                          {passed
+                            ? isEn
+                              ? 'Passed Exam'
+                              : 'ناجح ومجتاز للاختبار'
+                            : isEn
+                            ? 'Below Passing Score'
+                            : `تحتاج ${passThreshold}% للنجاح`}
+                        </span>
+                      </span>
+                      <h3 className="text-lg sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+                        {isEn
+                          ? 'Full Exam Review (All Correct & Wrong Answers)'
+                          : 'المراجعة الشاملة لجميع أسئلة الامتحان (الصح والغلط)'}
+                      </h3>
                     </div>
-                    <img
-                      src={currentQuestion.imageUrl}
-                      alt={
-                        isEn
-                          ? `Question ${currentQuestionIndex + 1}`
-                          : `صورة السؤال ${currentQuestionIndex + 1}`
-                      }
-                      draggable={false}
-                      className="w-full max-h-[75vh] object-contain mx-auto rounded-xl"
-                    />
+
+                    <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center shrink-0">
+                      <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        {isEn ? 'Final Score' : 'النتيجة النهائية'}
+                      </div>
+                      <div
+                        className={`text-2xl sm:text-3xl font-extrabold font-mono tabular-nums ${
+                          passed
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {percentage}%
+                      </div>
+                      <div className="text-xs font-mono text-slate-600 dark:text-slate-300 tabular-nums">
+                        {score} / {activeQuiz.questions.length}
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEnlargedQuizImage(currentQuestion.imageUrl || null)}
-                    className="group relative w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden cursor-zoom-in block"
-                  >
-                    <img
-                      src={currentQuestion.imageUrl}
-                      alt={
-                        isEn
-                          ? `Question ${currentQuestionIndex + 1}`
-                          : `صورة السؤال ${currentQuestionIndex + 1}`
-                      }
-                      decoding="async"
-                      draggable={false}
-                      className="w-full max-h-[420px] object-contain mx-auto"
-                    />
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 text-white text-[11px] font-bold absolute bottom-2.5 left-2.5 group-hover:bg-teal-600 transition-colors">
-                      <ZoomIn className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Tap to enlarge' : 'اضغط لتكبير الصورة'}</span>
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
 
-            {currentQuestion.question?.trim() && (
-              <h4 className={`${questionHeadingSize} font-bold text-slate-900 dark:text-white transition-all`}>
-                {currentQuestion.question}
-              </h4>
-            )}
+                  {/* Quick Stats + Filter Pills + Actions */}
+                  <div className="grid grid-cols-3 gap-2 text-center tabular-nums text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setReviewFilter('all')}
+                      className={`p-2.5 rounded-xl border font-bold cursor-pointer transition-colors ${
+                        reviewFilter === 'all'
+                          ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white'
+                          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                      }`}
+                    >
+                      {isEn
+                        ? `All Questions (${activeQuiz.questions.length})`
+                        : `كل الأسئلة (${activeQuiz.questions.length})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewFilter('correct')}
+                      className={`p-2.5 rounded-xl border font-bold cursor-pointer transition-colors ${
+                        reviewFilter === 'correct'
+                          ? 'bg-emerald-600 text-white border-emerald-700'
+                          : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      {isEn ? `Right (${correctCount})` : `الصح (${correctCount})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewFilter('mistakes')}
+                      className={`p-2.5 rounded-xl border font-bold cursor-pointer transition-colors ${
+                        reviewFilter === 'mistakes'
+                          ? 'bg-rose-600 text-white border-rose-700'
+                          : 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {isEn ? `Wrong (${mistakesCount})` : `الغلط (${mistakesCount})`}
+                    </button>
+                  </div>
 
-            {!quizSubmitted && currentQuestion.formula?.trim() && (
-              <div
-                dir="ltr"
-                className={`p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 ${formulaTextSize} font-mono text-teal-800 dark:text-teal-300 text-center font-bold`}
-              >
-                {currentQuestion.formula}
-              </div>
-            )}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => onStartQuiz(activeQuiz)}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>{isEn ? 'Retake Quiz' : 'إعادة الامتحان'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onExitQuiz}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold cursor-pointer"
+                    >
+                      {isEn ? 'All Quizzes' : 'قائمة الامتحانات'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEnlargedQuizImage(null);
+                        onGoToLectures();
+                      }}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer"
+                    >
+                      {isEn ? 'Go to Lectures' : 'الذهاب للحصص'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
-            <div className="space-y-2.5">
-              {currentQuestion.options.map((opt, oIdx) => {
-                const qId = currentQuestion.id;
-                const isSelected = selectedAnswers[qId] === oIdx;
-                const isCorrect = currentQuestion.correctAnswer === oIdx;
+            {/* Complete Question-by-Question Review List (Right & Wrong) */}
+            {(() => {
+              const itemsToRender = activeQuiz.questions
+                .map((q, idx) => ({ q, idx }))
+                .filter(({ q }) => {
+                  const isCorrectAns = selectedAnswers[q.id] === q.correctAnswer;
+                  if (reviewFilter === 'mistakes') return !isCorrectAns;
+                  if (reviewFilter === 'correct') return isCorrectAns;
+                  return true;
+                });
 
-                let optionStyle =
-                  'border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 hover:border-teal-400';
-                if (quizSubmitted) {
-                  if (isCorrect) {
-                    optionStyle =
-                      'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold';
-                  } else if (isSelected && !isCorrect) {
-                    optionStyle =
-                      'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200';
-                  }
-                } else if (isSelected) {
-                  optionStyle =
-                    'border-teal-600 bg-teal-50 dark:bg-teal-950/60 text-teal-950 dark:text-teal-100 font-bold';
-                }
+              if (itemsToRender.length === 0) {
+                return (
+                  <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                    <div className="text-sm font-bold text-slate-800 dark:text-white">
+                      {reviewFilter === 'mistakes'
+                        ? isEn
+                          ? 'No wrong answers — great job!'
+                          : 'لا توجد أي أخطاء — ممتاز جداً!'
+                        : isEn
+                        ? 'No matching questions in this filter.'
+                        : 'لا توجد أسئلة مطابقة لهذا الفلتر.'}
+                    </div>
+                  </div>
+                );
+              }
+
+              return itemsToRender.map(({ q, idx }) => {
+                const studentChoice = selectedAnswers[q.id];
+                const isAnswered = studentChoice !== undefined;
+                const isCorrectAns = studentChoice === q.correctAnswer;
 
                 return (
-                  <button
-                    key={oIdx}
-                    type="button"
-                    onClick={() => onSelectAnswer(qId, oIdx)}
-                    className={`w-full min-h-[52px] text-start p-3.5 rounded-xl border transition-colors flex items-center justify-between gap-3 cursor-pointer ${optionStyle}`}
-                  >
-                    <span className={optionTextSize}>{opt}</span>
-                    <span className="w-7 h-7 rounded-lg border border-slate-300 dark:border-slate-600 flex items-center justify-center text-xs shrink-0 font-mono">
-                      {String.fromCharCode(65 + oIdx)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {quizSubmitted && (
-              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1.5 text-start">
-                <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                  <HelpCircle className="w-4 h-4 shrink-0" />
-                  <span>{isEn ? 'Scientific Explanation:' : 'التفسير العلمي:'}</span>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {currentQuestion.explanation ||
-                    (isEn
-                      ? 'Model answer recorded for this question.'
-                      : 'تم تسجيل الإجابة النموذجية لهذا السؤال.')}
-                </p>
-                {currentQuestion.formula && (
                   <div
-                    dir="ltr"
-                    className="pt-1 text-xs font-mono text-amber-900 dark:text-amber-200 font-bold"
+                    key={q.id || idx}
+                    id={`exam-review-q-${idx}`}
+                    className={`p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border-2 space-y-4 ${
+                      isCorrectAns
+                        ? 'border-emerald-300/90 dark:border-emerald-800'
+                        : 'border-rose-300/90 dark:border-rose-800'
+                    }`}
                   >
-                    {currentQuestion.formula}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-extrabold font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                        {isEn
+                          ? `Question ${idx + 1} / ${activeQuiz.questions.length}`
+                          : `سؤال رقم ${idx + 1} من ${activeQuiz.questions.length}`}
+                      </span>
+
+                      {isCorrectAns ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 text-xs font-extrabold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'Correct Answer' : 'إجابة صحيحة'}</span>
+                        </span>
+                      ) : isAnswered ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 text-xs font-extrabold">
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'Wrong Answer' : 'إجابة خاطئة'}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 text-xs font-extrabold">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'Not Answered' : 'لم يتم اختيار إجابة'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {q.imageUrl && (
+                      <div>
+                        {enlargedQuizImage === q.imageUrl ? (
+                          <div className="rounded-2xl border border-teal-500/40 bg-slate-50 dark:bg-slate-950 p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                {isEn ? `Question Image ${idx + 1}` : `صورة السؤال ${idx + 1}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setEnlargedQuizImage(null)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>{isEn ? 'Close' : 'إغلاق'}</span>
+                              </button>
+                            </div>
+                            <img
+                              src={q.imageUrl}
+                              alt={`Question ${idx + 1}`}
+                              className="w-full max-h-[70vh] object-contain mx-auto rounded-xl"
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEnlargedQuizImage(q.imageUrl || null)}
+                            className="group relative w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden cursor-zoom-in block"
+                          >
+                            <img
+                              src={q.imageUrl}
+                              alt={`Question ${idx + 1}`}
+                              decoding="async"
+                              className="w-full max-h-[340px] object-contain mx-auto"
+                            />
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/80 text-white text-[11px] font-bold absolute bottom-2 left-2">
+                              <ZoomIn className="w-3 h-3" />
+                              <span>{isEn ? 'Enlarge' : 'تكبير'}</span>
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {q.question?.trim() && (
+                      <h4 className={`${questionHeadingSize} font-bold text-slate-900 dark:text-white`}>
+                        {q.question}
+                      </h4>
+                    )}
+
+                    {q.formula?.trim() && (
+                      <div
+                        dir="ltr"
+                        className={`p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 ${formulaTextSize} font-mono text-teal-800 dark:text-teal-300 text-center font-bold`}
+                      >
+                        {q.formula}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {q.options.map((opt, oIdx) => {
+                        const isRightOpt = q.correctAnswer === oIdx;
+                        const isStudentOpt = studentChoice === oIdx;
+
+                        let optClass =
+                          'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400';
+                        let tagLabel: string | null = null;
+                        let tagClass = '';
+
+                        if (isRightOpt && isStudentOpt) {
+                          optClass =
+                            'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-950 dark:text-emerald-100 font-bold';
+                          tagLabel = isEn ? 'Your Correct Answer' : 'إجابتك الصحيحة ✓';
+                          tagClass =
+                            'bg-emerald-600 text-white';
+                        } else if (isRightOpt) {
+                          optClass =
+                            'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-950 dark:text-emerald-100 font-bold';
+                          tagLabel = isEn ? 'Correct Answer' : 'الإجابة الصحيحة ✓';
+                          tagClass =
+                            'bg-emerald-600 text-white';
+                        } else if (isStudentOpt) {
+                          optClass =
+                            'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-950 dark:text-rose-100 font-bold';
+                          tagLabel = isEn ? 'Your Choice' : 'إجابتك الخاطئة ✗';
+                          tagClass =
+                            'bg-rose-600 text-white';
+                        }
+
+                        return (
+                          <div
+                            key={oIdx}
+                            className={`w-full p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 ${optClass}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-7 h-7 rounded-lg border border-current/25 flex items-center justify-center text-xs shrink-0 font-mono font-bold">
+                                {String.fromCharCode(65 + oIdx)}
+                              </span>
+                              <span className={optionTextSize}>{opt}</span>
+                            </div>
+
+                            {tagLabel && (
+                              <span className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold shrink-0 ${tagClass}`}>
+                                {tagLabel}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Side-by-side summary when wrong or skipped */}
+                    {!isCorrectAns && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 font-bold">
+                          <span className="opacity-80">{isEn ? 'Your answer: ' : 'إجابتك: '}</span>
+                          <span>
+                            {isAnswered
+                              ? q.options[studentChoice] || '—'
+                              : isEn
+                              ? 'Not answered'
+                              : 'لم يتم الحل'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 font-bold">
+                          <span className="opacity-80">{isEn ? 'Correct answer: ' : 'الإجابة الصحيحة: '}</span>
+                          <span>{q.options[q.correctAnswer] || '—'}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scientific Explanation */}
+                    {(q.explanation?.trim() || !isCorrectAns) && (
+                      <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1 text-start">
+                        <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                          <HelpCircle className="w-4 h-4 shrink-0" />
+                          <span>{isEn ? 'Scientific Explanation:' : 'التفسير العلمي:'}</span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                          {q.explanation?.trim() ||
+                            (isEn
+                              ? 'Review the model answer highlighted in green above.'
+                              : 'راجع الإجابة النموذجية الموضحة باللون الأخضر أعلاه.')}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
+                );
+              });
+            })()}
+          </div>
+        ) : (
+          currentQuestion && (
+            <div className="lg:col-span-8 p-4 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
+              {/* Redirect Prompt when student tries to submit with unanswered questions */}
+              {unansweredAlert && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border-2 border-amber-300 dark:border-amber-700 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-100">
+                      <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div>
+                          {isEn
+                            ? `${unansweredAlert.count} unanswered question(s) remaining`
+                            : `يوجد ${unansweredAlert.count} سؤال لم تقم بحله بعد — تم توجيهك إليه`}
+                        </div>
+                        <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 mt-0.5 font-mono">
+                          {isEn
+                            ? `Questions: ${unansweredAlert.numbers.join(', ')}`
+                            : `أرقام الأسئلة غير المحلولة: ${unansweredAlert.numbers.join(' ، ')}`}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUnansweredAlert(null)}
+                      aria-label={isEn ? 'Dismiss notice' : 'إغلاق التنبيه'}
+                      className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleJumpToNextUnanswered}
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold cursor-pointer"
+                    >
+                      {isEn ? 'Go to Next Unanswered' : 'الانتقال للسؤال التالي غير المحلول'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnansweredAlert(null);
+                        onSubmitQuiz();
+                      }}
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 hover:bg-amber-100 text-xs font-bold cursor-pointer"
+                    >
+                      {isEn ? 'Submit Anyway' : 'تسليم الامتحان على أي حال'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-extrabold font-mono tabular-nums text-teal-700 dark:text-teal-300">
+                  {isEn
+                    ? `Question ${currentQuestionIndex + 1} / ${activeQuiz.questions.length}`
+                    : `سؤال رقم ${currentQuestionIndex + 1} / ${activeQuiz.questions.length}`}
+                </span>
+
+                <span
+                  className={`inline-flex items-center gap-1 text-xs font-bold ${
+                    selectedAnswers[currentQuestion.id] !== undefined
+                      ? 'text-teal-700 dark:text-teal-300'
+                      : 'text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  {selectedAnswers[currentQuestion.id] !== undefined ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{isEn ? 'Choice saved (editable until submit)' : 'تم حفظ اختيارك (التصحيح بعد التسليم)'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>{isEn ? 'Not answered yet' : 'لم يتم الحل بعد'}</span>
+                    </>
+                  )}
+                </span>
               </div>
-            )}
 
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => jumpToQuestion(Math.max(0, currentQuestionIndex - 1))}
-                disabled={currentQuestionIndex === 0}
-                className="min-h-[44px] px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 disabled:opacity-40 cursor-pointer flex items-center gap-1"
-              >
-                <PrevChevron className="w-4 h-4" />
-                <span>{isEn ? 'Previous' : 'السابق'}</span>
-              </button>
+              {currentQuestion.imageUrl && (
+                <div className="space-y-2">
+                  {enlargedQuizImage === currentQuestion.imageUrl ? (
+                    <div className="rounded-2xl border border-teal-500/40 bg-slate-50 dark:bg-slate-950 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                          {isEn
+                            ? `Expanded Question Image ${currentQuestionIndex + 1}`
+                            : `تكبير صورة السؤال ${currentQuestionIndex + 1}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEnlargedQuizImage(null)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'Close Zoom' : 'إغلاق التكبير'}</span>
+                        </button>
+                      </div>
+                      <img
+                        src={currentQuestion.imageUrl}
+                        alt={
+                          isEn
+                            ? `Question ${currentQuestionIndex + 1}`
+                            : `صورة السؤال ${currentQuestionIndex + 1}`
+                        }
+                        draggable={false}
+                        className="w-full max-h-[75vh] object-contain mx-auto rounded-xl"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEnlargedQuizImage(currentQuestion.imageUrl || null)}
+                      className="group relative w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden cursor-zoom-in block"
+                    >
+                      <img
+                        src={currentQuestion.imageUrl}
+                        alt={
+                          isEn
+                            ? `Question ${currentQuestionIndex + 1}`
+                            : `صورة السؤال ${currentQuestionIndex + 1}`
+                        }
+                        decoding="async"
+                        draggable={false}
+                        className="w-full max-h-[420px] object-contain mx-auto"
+                      />
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 text-white text-[11px] font-bold absolute bottom-2.5 left-2.5 group-hover:bg-teal-600 transition-colors">
+                        <ZoomIn className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Tap to enlarge' : 'اضغط لتكبير الصورة'}</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
 
-              {!quizSubmitted ? (
-                currentQuestionIndex === activeQuiz.questions.length - 1 ? (
+              {currentQuestion.question?.trim() && (
+                <h4 className={`${questionHeadingSize} font-bold text-slate-900 dark:text-white transition-all`}>
+                  {currentQuestion.question}
+                </h4>
+              )}
+
+              {currentQuestion.formula?.trim() && (
+                <div
+                  dir="ltr"
+                  className={`p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 ${formulaTextSize} font-mono text-teal-800 dark:text-teal-300 text-center font-bold`}
+                >
+                  {currentQuestion.formula}
+                </div>
+              )}
+
+              {/* Answer Options — strictly neutral selection state during active exam (no right/wrong hint) */}
+              <div className="space-y-2.5">
+                {currentQuestion.options.map((opt, oIdx) => {
+                  const qId = currentQuestion.id;
+                  const isSelected = selectedAnswers[qId] === oIdx;
+
+                  const optionStyle = isSelected
+                    ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/60 text-teal-950 dark:text-teal-100 font-bold ring-1 ring-teal-500/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 hover:border-teal-400';
+
+                  return (
+                    <button
+                      key={oIdx}
+                      type="button"
+                      onClick={() => onSelectAnswer(qId, oIdx)}
+                      className={`w-full min-h-[52px] text-start p-3.5 rounded-xl border transition-colors flex items-center justify-between gap-3 cursor-pointer ${optionStyle}`}
+                    >
+                      <span className={optionTextSize}>{opt}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isSelected && (
+                          <span className="px-2 py-0.5 rounded-md bg-teal-600 text-white text-[10px] font-extrabold">
+                            {isEn ? 'Selected' : 'اختيارك'}
+                          </span>
+                        )}
+                        <span
+                          className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-mono font-bold ${
+                            isSelected
+                              ? 'border-teal-600 bg-teal-600 text-white'
+                              : 'border-slate-300 dark:border-slate-600'
+                          }`}
+                        >
+                          {String.fromCharCode(65 + oIdx)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => jumpToQuestion(Math.max(0, currentQuestionIndex - 1))}
+                  disabled={currentQuestionIndex === 0}
+                  className="min-h-[44px] px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 disabled:opacity-40 cursor-pointer flex items-center gap-1"
+                >
+                  <PrevChevron className="w-4 h-4" />
+                  <span>{isEn ? 'Previous' : 'السابق'}</span>
+                </button>
+
+                {currentQuestionIndex === activeQuiz.questions.length - 1 ? (
                   <button
                     type="button"
                     onClick={handleAttemptSubmit}
@@ -1689,10 +2068,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     {remainingUnanswered > 0
                       ? isEn
                         ? `Submit (${remainingUnanswered} unanswered)`
-                        : `اعتماد النتيجة (متبقي ${remainingUnanswered})`
+                        : `تسليم الامتحان (متبقي ${remainingUnanswered})`
                       : isEn
-                      ? 'Submit & Grade'
-                      : 'تصحيح واعتماد النتيجة'}
+                      ? 'Submit & View Review'
+                      : 'تسليم الامتحان وعرض المراجعة'}
                   </button>
                 ) : (
                   <button
@@ -1707,27 +2086,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     <span>{isEn ? 'Next' : 'التالي'}</span>
                     <NextChevron className="w-4 h-4" />
                   </button>
-                )
-              ) : (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono tabular-nums">
-                    {score} / {activeQuiz.questions.length} (
-                    {Math.round((score / totalQuestions) * 100)}%)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEnlargedQuizImage(null);
-                      onGoToLectures();
-                    }}
-                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 text-white cursor-pointer"
-                  >
-                    {isEn ? 'To Lectures' : 'للحصص'}
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </div>
