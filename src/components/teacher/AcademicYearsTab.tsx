@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GraduationCap, Check, Plus, X, Sparkles, Trash2 } from 'lucide-react';
 import { GradeItem, SiteConfig } from '../../types/siteConfig';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface AcademicYearsTabProps {
   resolvedGrades: GradeItem[];
@@ -96,7 +97,8 @@ export const AcademicYearsTab: React.FC<AcademicYearsTabProps> = ({
       if (saved === false) {
         setGradeFormNotice({
           type: 'error',
-          message: 'تعذر حفظ السنة الجديدة في قاعدة البيانات السحابية.',
+          message:
+            getLastCloudWriteError() || 'تعذر حفظ السنة الجديدة في قاعدة البيانات السحابية.',
         });
         return;
       }
@@ -136,7 +138,7 @@ export const AcademicYearsTab: React.FC<AcademicYearsTabProps> = ({
     if (saved === false) {
       setGradeFormNotice({
         type: 'error',
-        message: 'تعذر حذف السنة من قاعدة البيانات السحابية.',
+        message: getLastCloudWriteError() || 'تعذر حذف السنة من قاعدة البيانات السحابية.',
       });
       return;
     }
@@ -155,7 +157,7 @@ export const AcademicYearsTab: React.FC<AcademicYearsTabProps> = ({
       if (saved === false) {
         setGradeFormNotice({
           type: 'error',
-          message: 'تعذر حفظ التعديلات على السحابة.',
+          message: getLastCloudWriteError() || 'تعذر حفظ التعديلات على السحابة.',
         });
         return;
       }

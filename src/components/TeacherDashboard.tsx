@@ -820,7 +820,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
-          {(adminCloudError || studentsSyncError || (auth.currentUser && !auth.currentUser.emailVerified)) && (
+          {(adminCloudError || studentsSyncError || lastCloudError || (auth.currentUser && !auth.currentUser.emailVerified)) && (
             <div className="w-full rounded-2xl border-2 border-rose-300 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/50 p-4 sm:p-5 space-y-3 shadow-xs">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex items-start gap-3">
@@ -831,10 +831,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <h3 className="text-xs sm:text-sm font-extrabold font-kufi text-rose-900 dark:text-rose-200">
                       {isEn
                         ? 'Cloud Permissions / Session Sync Alert'
-                        : 'تنبيه مزامنة الصلاحيات مع السحابة'}
+                        : 'تنبيه مزامنة الصلاحيات والحفظ مع السحابة'}
                     </h3>
                     <p className="text-xs text-rose-800 dark:text-rose-300 leading-relaxed font-sans">
-                      {adminCloudError ||
+                      {lastCloudError ||
+                        adminCloudError ||
                         studentsSyncError ||
                         (isEn
                           ? `Your email (${auth.currentUser?.email}) is not verified yet. Cloud security rules require a verified email before loading students or editing admins.`

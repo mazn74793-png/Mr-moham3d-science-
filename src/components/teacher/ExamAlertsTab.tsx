@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ExamSecurityAlert, UserProfile } from '../../types';
 import { GradeItem, getGradeDisplayName } from '../../types/siteConfig';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface ExamAlertsTabProps {
   alerts: ExamSecurityAlert[];
@@ -234,7 +235,11 @@ export const ExamAlertsTab: React.FC<ExamAlertsTabProps> = ({
                               `تم السماح للطالب (${alert.studentName}) بإعادة امتحان «${alert.quizTitle}».`
                             );
                           } else {
-                            showStatus('error', 'تعذر تحديث صلاحية إعادة الامتحان في السحابة.');
+                            showStatus(
+                              'error',
+                              getLastCloudWriteError() ||
+                                'تعذر تحديث صلاحية إعادة الامتحان في السحابة.'
+                            );
                           }
                         } finally {
                           setBusyId(null);
@@ -270,7 +275,10 @@ export const ExamAlertsTab: React.FC<ExamAlertsTabProps> = ({
                                 : `تم فك الحظر عن حساب الطالب (${matchedStudent.name}).`
                             );
                           } else {
-                            showStatus('error', 'تعذر تحديث حالة الحظر في السحابة.');
+                            showStatus(
+                              'error',
+                              getLastCloudWriteError() || 'تعذر تحديث حالة الحظر في السحابة.'
+                            );
                           }
                         } finally {
                           setBusyId(null);
@@ -294,11 +302,17 @@ export const ExamAlertsTab: React.FC<ExamAlertsTabProps> = ({
                       onClick={async () => {
                         setBusyId(alert.id);
                         try {
-                          await onResolveAlert({
+                          const ok = await onResolveAlert({
                             ...alert,
                             resolved: true,
                             resolvedNote: 'تمت مراجعة التنبيه من لوحة المعلم',
                           });
+                          if (ok === false) {
+                            showStatus(
+                              'error',
+                              getLastCloudWriteError() || 'تعذر تحديث حالة التنبيه في السحابة.'
+                            );
+                          }
                         } finally {
                           setBusyId(null);
                         }
@@ -317,7 +331,13 @@ export const ExamAlertsTab: React.FC<ExamAlertsTabProps> = ({
                       onClick={async () => {
                         setBusyId(alert.id);
                         try {
-                          await onDeleteAlert(alert.id);
+                          const ok = await onDeleteAlert(alert.id);
+                          if (ok === false) {
+                            showStatus(
+                              'error',
+                              getLastCloudWriteError() || 'تعذر حذف التنبيه من السحابة.'
+                            );
+                          }
                         } finally {
                           setBusyId(null);
                         }

@@ -26,6 +26,7 @@ import {
   getResolvedFeatureFlags,
 } from '../../types/siteConfig';
 import { useLanguage } from '../../context/LanguageContext';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface FeatureControlsTabProps {
   siteConfig: SiteConfig;
@@ -272,9 +273,11 @@ export const FeatureControlsTab: React.FC<FeatureControlsTabProps> = ({
         setSiteForm(previousConfig);
         setNotice({
           type: 'error',
-          text: isEn
-            ? 'Could not save toggle to cloud. Check permissions and internet connection.'
-            : 'تعذر حفظ التغيير في السحابة. تأكد من صلاحيات الجلسة والإنترنت.',
+          text:
+            getLastCloudWriteError() ||
+            (isEn
+              ? 'Could not save toggle to cloud. Check permissions and internet connection.'
+              : 'تعذر حفظ التغيير في السحابة. تأكد من صلاحيات الجلسة والإنترنت.'),
         });
         return;
       }

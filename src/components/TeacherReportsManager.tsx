@@ -10,6 +10,7 @@ import { UserProfile, GradeLevel, Lecture, Quiz, AttachmentFile } from '../types
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 import { isStudentApproved, normalizeWhatsAppDigits } from '../utils/whatsapp';
 import { StudentListSkeleton } from './teacher/DashboardSkeleton';
+import { getLastCloudWriteError } from '../firebase';
 
 const DEFAULT_ROW_HEIGHT = 74;
 const DEFAULT_EXPANDED_DRAWER_HEIGHT = 420;
@@ -118,7 +119,10 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
           : '',
       });
       if (ok === false) {
-        showFeedback('تعذر حفظ حالة حظر الطالب في السحابة.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر حفظ حالة حظر الطالب في السحابة.',
+          'error'
+        );
         return;
       }
       showFeedback(
@@ -154,7 +158,7 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
         score: nextAvg,
       });
       if (ok === false) {
-        showFeedback('تعذر إعادة فتح الامتحان للطالب.', 'error');
+        showFeedback(getLastCloudWriteError() || 'تعذر إعادة فتح الامتحان للطالب.', 'error');
         return;
       }
       showFeedback(`تم فتح الامتحان مجدداً للطالب (${std.name}) ومسح أي حظر سابق عليه.`, 'success');
@@ -172,7 +176,10 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     try {
       const ok = await onUpdateStudent({ ...std, unlockedLectureIds: next });
       if (ok === false) {
-        showFeedback('تعذر تعديل صلاحية المحاضرة في السحابة.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر تعديل صلاحية المحاضرة في السحابة.',
+          'error'
+        );
         return;
       }
       showFeedback(
@@ -193,7 +200,10 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     try {
       const ok = await onUpdateStudent({ ...std, unlockedAttachmentIds: next });
       if (ok === false) {
-        showFeedback('تعذر تعديل صلاحية المذكرة في السحابة.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر تعديل صلاحية المذكرة في السحابة.',
+          'error'
+        );
         return;
       }
       showFeedback(
@@ -212,7 +222,7 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     try {
       const ok = await onUpdateStudent({ ...std, points: nextPts });
       if (ok === false) {
-        showFeedback('تعذر تعديل نقاط الطالب في السحابة.', 'error');
+        showFeedback(getLastCloudWriteError() || 'تعذر تعديل نقاط الطالب في السحابة.', 'error');
         return;
       }
       showFeedback(`أصبح رصيد (${std.name}) الآن ${nextPts} نقطة.`, 'success');
@@ -233,7 +243,10 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
         approvalStatus: status,
       });
       if (ok === false) {
-        showFeedback('تعذر تحديث حالة موافقة الطالب في السحابة.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر تحديث حالة موافقة الطالب في السحابة.',
+          'error'
+        );
         return;
       }
       const msg =
@@ -525,7 +538,10 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
     try {
       const ok = await onUpdateStudent(updated);
       if (ok === false) {
-        showFeedback('تعذر حفظ إعادة الضبط في السحابة — يرجى التحقق من الصلاحيات.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر حفظ إعادة الضبط في السحابة — يرجى التحقق من الصلاحيات.',
+          'error'
+        );
         return;
       }
       showFeedback(`تمت إعادة ضبط محاولات الطالب (${student.name}) بنجاح.`, 'success');
@@ -542,7 +558,10 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
     try {
       const ok = await onUpdateStudent(editingStudent);
       if (ok === false) {
-        showFeedback('تعذر حفظ تعديلات الطالب في السحابة — راجع صلاحيات الجلسة.', 'error');
+        showFeedback(
+          getLastCloudWriteError() || 'تعذر حفظ تعديلات الطالب في السحابة — راجع صلاحيات الجلسة.',
+          'error'
+        );
         return;
       }
       const savedName = editingStudent.name;
@@ -583,7 +602,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
       try {
         const ok = await onAddStudent(created);
         if (ok === false) {
-          showFeedback('تعذر إضافة الطالب في السحابة — تحقق من تأكيد الحساب والصلاحيات.', 'error');
+          showFeedback(
+            getLastCloudWriteError() ||
+              'تعذر إضافة الطالب في السحابة — تحقق من تأكيد الحساب والصلاحيات.',
+            'error'
+          );
           return;
         }
       } finally {
@@ -1489,7 +1512,11 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                                   try {
                                     const ok = await onDeleteStudent(std.id);
                                     if (ok === false) {
-                                      showFeedback('تعذر حذف الطالب من السحابة — تحقق من الصلاحيات.', 'error');
+                                      showFeedback(
+                                        getLastCloudWriteError() ||
+                                          'تعذر حذف الطالب من السحابة — تحقق من الصلاحيات.',
+                                        'error'
+                                      );
                                       return;
                                     }
                                     setDeleteConfirmId(null);

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AttachmentFile, Lecture, PointReward, RedeemCode } from '../../types';
 import { GradeItem, getGradeDisplayName } from '../../types/siteConfig';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface PointsCodesTabProps {
   redeemCodes: RedeemCode[];
@@ -119,6 +120,8 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
           showToast('success', `تم إنشاء كود (${clean}) بقيمة ${pointsVal} نقطة!`);
           setCustomCode(generateRandomCode('CHEM'));
           setCodeLabel('');
+        } else {
+          showToast('error', getLastCloudWriteError() || 'تعذر حفظ الكود في السحابة، تحقق من الصلاحيات.');
         }
       } else {
         const count = Math.max(1, Math.min(50, Math.round(Number(batchCount) || 5)));
@@ -147,6 +150,8 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
         if (ok) {
           showToast('success', `تم توليد وحفظ ${list.length} أكواد جديدة بقيمة ${pointsVal} نقطة لكل كود!`);
           setCodeLabel('');
+        } else {
+          showToast('error', getLastCloudWriteError() || 'تعذر حفظ دفعة الأكواد في السحابة.');
         }
       }
     } finally {
@@ -217,6 +222,8 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
             : `تمت إضافة مكافأة "${reward.title}" لمتجر الطلاب!`
         );
         resetRewardForm();
+      } else {
+        showToast('error', getLastCloudWriteError() || 'تعذر حفظ المكافأة في السحابة.');
       }
     } finally {
       setSavingReward(false);
@@ -241,6 +248,8 @@ export const PointsCodesTab: React.FC<PointsCodesTabProps> = ({
       if (ok) {
         showToast('success', `تم تحديث كود (${updated.code}) بنجاح!`);
         setEditingCode(null);
+      } else {
+        showToast('error', getLastCloudWriteError() || 'تعذر تحديث الكود في السحابة.');
       }
     } finally {
       setSavingEditedCode(false);

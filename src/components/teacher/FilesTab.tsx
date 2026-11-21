@@ -7,6 +7,7 @@ import { GradeItem, SiteConfig, getGradeDisplayName } from '../../types/siteConf
 import { uploadMediaFile, UploadProgressInfo } from '../../utils/uploader';
 import { UploadProgressBar } from '../UploadProgressBar';
 import { InlineMediaPreview, MediaPreviewModal, MediaKind } from '../MediaPreview';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface FilesTabProps {
   attachments: AttachmentFile[];
@@ -176,7 +177,10 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     try {
       const saved = await onAddAttachment(newFile);
       if (saved === false) {
-        setFileFormError('تعذر نشر المذكرة في السحابة. يرجى التحقق من جلسة المشرف وصلاحيات الحساب.');
+        setFileFormError(
+          getLastCloudWriteError() ||
+            'تعذر نشر المذكرة في السحابة. يرجى التحقق من جلسة المشرف وصلاحيات الحساب.'
+        );
         return;
       }
       setFileFormSuccess('تمت إضافة المذكرة بنجاح إلى مكتبة ملفات الطلاب وتم تحديث مساحة التخزين فورياً! 📚');
@@ -251,7 +255,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       const updater = onUpdateAttachment || onAddAttachment;
       const saved = await updater(updated);
       if (saved === false) {
-        setFileFormError('تعذر حفظ تعديلات المذكرة في السحابة.');
+        setFileFormError(
+          getLastCloudWriteError() || 'تعذر حفظ تعديلات المذكرة في السحابة.'
+        );
         return;
       }
       setFileFormSuccess(`تم تحديث المذكرة "${updated.title}" بنجاح!`);

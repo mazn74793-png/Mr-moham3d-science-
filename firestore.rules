@@ -57,6 +57,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/publicConfig/site).data.featureFlags.requireStudentApproval == false;
     }
 
+    function isValidCreatedAtOnUpdate() {
+      return ('createdAt' in existing() && incoming().createdAt == existing().createdAt) ||
+        (!('createdAt' in existing()) && incoming().createdAt == request.time);
+    }
+
     // ==========================================
     // ENTITY VALIDATION HELPERS
     // ==========================================
@@ -359,7 +364,7 @@ service cloud.firestore {
       allow get: if isValidId(lectureId);
       allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(lectureId) && isValidLecture(incoming()) && incoming().id == lectureId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isAdmin() && isValidId(lectureId) && isValidLecture(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(lectureId) && isValidLecture(incoming()) && incoming().id == existing().id && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(lectureId);
     }
 
@@ -368,7 +373,7 @@ service cloud.firestore {
       allow get: if isValidId(attachmentId);
       allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(attachmentId) && isValidAttachment(incoming()) && incoming().id == attachmentId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isAdmin() && isValidId(attachmentId) && isValidAttachment(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(attachmentId) && isValidAttachment(incoming()) && incoming().id == existing().id && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(attachmentId);
     }
 
@@ -377,7 +382,7 @@ service cloud.firestore {
       allow get: if isValidId(quizId);
       allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == quizId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(quizId) && isValidQuiz(incoming()) && incoming().id == existing().id && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(quizId);
     }
 
@@ -386,7 +391,7 @@ service cloud.firestore {
       allow get: if isValidId(rewardId);
       allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == rewardId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(rewardId) && isValidPointReward(incoming()) && incoming().id == existing().id && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(rewardId);
     }
 
@@ -395,7 +400,7 @@ service cloud.firestore {
       allow get: if isValidId(notificationId);
       allow list: if resource.data.grade != '';
       allow create: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming()) && incoming().id == notificationId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming()) && incoming().id == existing().id && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(notificationId);
     }
 
@@ -404,7 +409,7 @@ service cloud.firestore {
       allow get: if isSignedIn() && isValidId(codeId);
       allow list: if isAdmin();
       allow create: if isAdmin() && isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == codeId && incoming().code == codeId && incoming().usedCount == 0 && incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == existing().id && incoming().code == existing().code && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time && (
+      allow update: if isValidId(codeId) && isValidRedeemCode(incoming()) && incoming().id == existing().id && incoming().code == existing().code && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time && (
         isAdmin() ||
         (
           isSignedIn() &&
@@ -553,7 +558,7 @@ service cloud.firestore {
             )
           )
         )
-      ) && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      ) && isValidCreatedAtOnUpdate() && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(studentId);
     }
 
@@ -574,7 +579,7 @@ service cloud.firestore {
         isValidExamAlert(incoming()) &&
         incoming().id == existing().id &&
         incoming().studentUid == existing().studentUid &&
-        incoming().createdAt == existing().createdAt &&
+        isValidCreatedAtOnUpdate() &&
         incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(alertId);
     }

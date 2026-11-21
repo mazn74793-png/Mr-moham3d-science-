@@ -24,6 +24,7 @@ import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 import { uploadMediaFile, UploadProgressInfo } from '../utils/uploader';
 import { UploadProgressBar } from './UploadProgressBar';
 import { InlineMediaPreview } from './MediaPreview';
+import { getLastCloudWriteError } from '../firebase';
 
 interface TeacherQuizManagerProps {
   quizzes: Quiz[];
@@ -357,7 +358,10 @@ export const TeacherQuizManager: React.FC<TeacherQuizManagerProps> = ({
           : await onAddQuiz(payloadQuiz);
 
       if (saved === false) {
-        setQuizError('تعذر حفظ الامتحان في قاعدة البيانات. تحقق من الاتصال وصلاحيات المشرف.');
+        setQuizError(
+          getLastCloudWriteError() ||
+            'تعذر حفظ الامتحان في قاعدة البيانات. تحقق من الاتصال وصلاحيات المشرف.'
+        );
         return;
       }
 

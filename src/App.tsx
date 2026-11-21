@@ -66,6 +66,7 @@ import {
   createExamSecurityAlertToCloud,
   updateExamSecurityAlertInCloud,
   deleteExamSecurityAlertFromCloud,
+  setLastCloudWriteError,
 } from './firebase';
 
 // Lazy-load heavy views and modals for ultra-fast initial landing page load
@@ -1164,6 +1165,7 @@ export default function App() {
       setStudents(list);
       setStudentsSyncError(null);
       setLastCloudError(null);
+      setLastCloudWriteError(null);
       showNotice(
         'success',
         lang === 'en'
@@ -1178,6 +1180,7 @@ export default function App() {
           : 'السحابة رفضت صلاحية القراءة لهذا الحساب. تأكد أن البريد مؤكد ومضاف في قائمة المشرفين من المالك الرئيسي (mizoo2y2@gmail.com).'
         : details.rawMessage;
       setStudentsSyncError(errMsg);
+      setLastCloudWriteError(errMsg);
       showNotice('error', errMsg);
     }
   };
@@ -1188,38 +1191,51 @@ export default function App() {
     successMsg?: string
   ): Promise<boolean> => {
     setLastCloudError(null);
+    setLastCloudWriteError(null);
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const msg =
         lang === 'en'
           ? 'No internet connection — check your network to save changes.'
           : 'لا يوجد اتصال بالإنترنت — تأكد من الشبكة لحفظ التغييرات.';
+      setLastCloudWriteError(msg);
       setLastCloudError(msg);
       showNotice('error', msg);
       return false;
     }
 
-    if (!auth.currentUser) {
+    if (!auth.currentUser && typeof auth.authStateReady === 'function') {
+      await Promise.race([
+        auth.authStateReady().catch(() => {}),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+      ]);
+    }
+
+    const activeUser = auth.currentUser;
+    if (!activeUser) {
       openAuthPage('login');
       const msg =
         lang === 'en'
           ? 'Admin session expired. Please sign in to continue.'
           : 'انتهت جلسة المشرف، يرجى تسجيل الدخول للمتابعة.';
+      setLastCloudWriteError(msg);
       setLastCloudError(msg);
       showNotice('error', msg);
       return false;
     }
 
-    if (!auth.currentUser.emailVerified) {
+    if (!activeUser.emailVerified) {
       try {
-        await reload(auth.currentUser);
-        await auth.currentUser.getIdToken(true);
+        await reload(activeUser);
+        await activeUser.getIdToken(true);
       } catch {}
-      if (!auth.currentUser.emailVerified) {
+      const refreshedUser = auth.currentUser || activeUser;
+      if (!refreshedUser.emailVerified) {
         const msg =
           lang === 'en'
-            ? `Cannot save to cloud because (${auth.currentUser.email}) is not email-verified yet. Click the verification link in your email or sign in once with Google.`
-            : `لا يمكن الحفظ في السحابة لأن بريد هذا الحساب (${auth.currentUser.email}) غير مؤكد بعد. قم بتأكيد البريد من رسالتك أو سجل الدخول بحساب Google مرة واحدة.`;
+            ? `Cannot save to cloud because (${refreshedUser.email}) is not email-verified yet. Click the verification link in your email or sign in once with Google.`
+            : `لا يمكن الحفظ في السحابة لأن بريد هذا الحساب (${refreshedUser.email}) غير مؤكد بعد. قم بتأكيد البريد من رسالتك أو سجل الدخول بحساب Google مرة واحدة.`;
+        setLastCloudWriteError(msg);
         setLastCloudError(msg);
         setAdminCloudError(msg);
         showNotice('error', msg);
@@ -1227,7 +1243,8 @@ export default function App() {
       }
     }
 
-    let authorized = isEmailAdmin(auth.currentUser.email);
+    const currentUserEmail = (auth.currentUser || activeUser).email;
+    let authorized = isEmailAdmin(currentUserEmail);
     if (!authorized) {
       const adminCfg = await fetchAdminConfigIfAuthorized();
       if (adminCfg) {
@@ -1246,16 +1263,18 @@ export default function App() {
     if (!authorized) {
       const msg =
         lang === 'en'
-          ? `Account (${auth.currentUser.email}) is not enabled as an admin in the cloud database.`
-          : `حساب (${auth.currentUser.email}) غير مفعل كمشرف في قاعدة البيانات السحابية. يجب إضافته أولاً من المالك الرئيسي (mizoo2y2@gmail.com).`;
+          ? `Account (${currentUserEmail}) is not enabled as an admin in the cloud database.`
+          : `حساب (${currentUserEmail}) غير مفعل كمشرف في قاعدة البيانات السحابية. يجب إضافته أولاً من المالك الرئيسي (mizoo2y2@gmail.com).`;
+      setLastCloudWriteError(msg);
       setLastCloudError(msg);
       showNotice('error', msg);
       return false;
     }
 
     try {
-      await auth.currentUser.getIdToken().catch(() => '');
+      await (auth.currentUser || activeUser).getIdToken().catch(() => '');
       await action();
+      setLastCloudWriteError(null);
       setLastCloudError(null);
       if (successMsg) {
         showNotice('success', successMsg);
@@ -1268,6 +1287,7 @@ export default function App() {
           await reload(auth.currentUser);
           await auth.currentUser.getIdToken(true);
           await action();
+          setLastCloudWriteError(null);
           setLastCloudError(null);
           if (successMsg) {
             showNotice('success', successMsg);
@@ -1276,13 +1296,15 @@ export default function App() {
         } catch (retryErr) {
           const retryDetails = extractFirestoreErrorDetails(retryErr);
           console.error('Cloud write error after token refresh:', retryErr);
+          const pathHint = retryDetails.path ? ` (${retryDetails.path})` : '';
           const msg = retryDetails.isPermissionDenied
             ? lang === 'en'
-              ? `Cloud rejected write permissions for (${auth.currentUser.email}). Verify this email is confirmed and listed in Co-Admins.`
-              : `رفضت قواعد الأمان السحابية التعديل لحساب (${auth.currentUser.email}). تأكد أن الحساب مؤكد البريد ومدرج في قائمة المشرفين بالسحابة.`
+              ? `Cloud rejected write${pathHint} for (${auth.currentUser?.email}): ${retryDetails.rawMessage}`
+              : `رفضت السحابة الحفظ${pathHint} لحساب (${auth.currentUser?.email}): تأكد من تأكيد البريد، وصلاحية المشرف، وصحة الحقول (${retryDetails.rawMessage}).`
             : lang === 'en'
-            ? `Cloud save failed: ${retryDetails.rawMessage}`
-            : `تعذر الحفظ في السحابة: ${retryDetails.rawMessage}`;
+            ? `Cloud save failed${pathHint}: ${retryDetails.rawMessage}`
+            : `تعذر الحفظ في السحابة${pathHint}: ${retryDetails.rawMessage}`;
+          setLastCloudWriteError(msg);
           setLastCloudError(msg);
           showNotice('error', msg);
           return false;
@@ -1290,13 +1312,15 @@ export default function App() {
       }
 
       console.error('Cloud write error:', err);
+      const pathHint = details.path ? ` (${details.path})` : '';
       const msg = details.isNetworkError
         ? lang === 'en'
           ? 'Network error connecting to cloud database. Please check your internet connection.'
           : 'تعذر الاتصال بقاعدة البيانات السحابية، تأكد من جودة الإنترنت وحاول مرة أخرى.'
         : lang === 'en'
-        ? `Failed to save changes to cloud: ${details.rawMessage}`
-        : `حدث خطأ أثناء الحفظ في قاعدة البيانات: ${details.rawMessage}`;
+        ? `Failed to save changes to cloud${pathHint}: ${details.rawMessage}`
+        : `حدث خطأ أثناء الحفظ في قاعدة البيانات${pathHint}: ${details.rawMessage}`;
+      setLastCloudWriteError(msg);
       setLastCloudError(msg);
       showNotice('error', msg);
       return false;

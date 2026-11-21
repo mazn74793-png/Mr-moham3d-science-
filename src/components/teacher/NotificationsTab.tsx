@@ -27,6 +27,7 @@ import {
 } from '../../types';
 import { GradeItem } from '../../types/siteConfig';
 import { useLanguage } from '../../context/LanguageContext';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface NotificationsTabProps {
   notifications: PlatformNotification[];
@@ -231,9 +232,11 @@ export const NotificationsTab: React.FC<NotificationsTabProps> = ({
       } else {
         setNotice({
           type: 'error',
-          text: isEn
-            ? 'Could not publish notification. Check your permissions and connection.'
-            : 'تعذر حفظ الإشعار في السحابة، تأكد من الاتصال والصلاحيات.',
+          text:
+            getLastCloudWriteError() ||
+            (isEn
+              ? 'Could not publish notification. Check your permissions and connection.'
+              : 'تعذر حفظ الإشعار في السحابة، تأكد من الاتصال والصلاحيات.'),
         });
       }
     } finally {
@@ -245,10 +248,20 @@ export const NotificationsTab: React.FC<NotificationsTabProps> = ({
     item: PlatformNotification,
     patch: Partial<Pick<PlatformNotification, 'active' | 'pinned'>>
   ) => {
-    await onSaveNotification({
+    const ok = await onSaveNotification({
       ...item,
       ...patch,
     });
+    if (!ok) {
+      setNotice({
+        type: 'error',
+        text:
+          getLastCloudWriteError() ||
+          (isEn
+            ? 'Could not update notification in cloud.'
+            : 'تعذر تحديث الإشعار في السحابة، تأكد من الاتصال والصلاحيات.'),
+      });
+    }
   };
 
   const getGradeLabel = (gradeId: string) => {

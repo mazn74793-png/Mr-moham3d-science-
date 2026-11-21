@@ -26,6 +26,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   setDoc,
   updateDoc,
@@ -48,7 +49,14 @@ import {
   PlatformNotification,
   ExamSecurityAlert,
 } from './types';
-import { SiteConfig, DEFAULT_SITE_CONFIG } from './types/siteConfig';
+import {
+  SiteConfig,
+  DEFAULT_SITE_CONFIG,
+  DEFAULT_TEACHER_PORTRAIT,
+  DEFAULT_GRADES,
+  DEFAULT_FEATURE_FLAGS,
+  PlatformFeatureFlags,
+} from './types/siteConfig';
 
 const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
 const useSameOriginAuthDomain = currentHost === 'moham3d-mostafa.vercel.app';
@@ -67,6 +75,28 @@ export const db = initializeFirestore(
   },
   firebaseConfig.firestoreDatabaseId
 );
+
+let lastCloudWriteError: string | null = null;
+
+export function getLastCloudWriteError(): string | null {
+  return lastCloudWriteError;
+}
+
+export function setLastCloudWriteError(msg: string | null): void {
+  lastCloudWriteError = msg;
+}
+
+async function testConnection(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration (client offline).');
+    }
+  }
+}
+testConnection();
 
 function createPersistentAuth(): Auth {
   try {
@@ -248,32 +278,53 @@ export function handleFirestoreError(
 
 export function extractFirestoreErrorDetails(err: unknown): {
   rawMessage: string;
+  code: string;
+  path: string | null;
+  operationType: string | null;
   isPermissionDenied: boolean;
   isUnauthenticated: boolean;
   isNetworkError: boolean;
 } {
-  const code = (err as any)?.code || '';
+  let code = String((err as any)?.code || '');
   let rawMessage = err instanceof Error ? err.message : String(err || '');
+  let path: string | null = null;
+  let operationType: string | null = null;
   try {
     const parsed = JSON.parse(rawMessage);
     if (parsed && typeof parsed.error === 'string') {
       rawMessage = parsed.error;
     }
+    if (parsed && typeof parsed.path === 'string') {
+      path = parsed.path;
+    }
+    if (parsed && typeof parsed.operationType === 'string') {
+      operationType = parsed.operationType;
+    }
   } catch {}
   const lower = `${code} ${rawMessage}`.toLowerCase();
+  const isPermissionDenied =
+    code === 'permission-denied' ||
+    lower.includes('permission-denied') ||
+    lower.includes('missing or insufficient permissions');
+  const isUnauthenticated =
+    code === 'unauthenticated' || lower.includes('unauthenticated');
+  const isNetworkError =
+    code === 'unavailable' ||
+    lower.includes('unavailable') ||
+    lower.includes('network') ||
+    lower.includes('offline');
+  if (!code && isPermissionDenied) code = 'permission-denied';
+  else if (!code && isUnauthenticated) code = 'unauthenticated';
+  else if (!code && isNetworkError) code = 'unavailable';
+
   return {
     rawMessage,
-    isPermissionDenied:
-      code === 'permission-denied' ||
-      lower.includes('permission-denied') ||
-      lower.includes('missing or insufficient permissions'),
-    isUnauthenticated:
-      code === 'unauthenticated' || lower.includes('unauthenticated'),
-    isNetworkError:
-      code === 'unavailable' ||
-      lower.includes('unavailable') ||
-      lower.includes('network') ||
-      lower.includes('offline'),
+    code,
+    path,
+    operationType,
+    isPermissionDenied,
+    isUnauthenticated,
+    isNetworkError,
   };
 }
 
@@ -325,24 +376,112 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   });
 }
 
-// Strip undefined properties recursively (including nested arrays and maps) so Firestore never rejects payloads
+// Strip undefined, null, and non-finite numbers recursively while preserving Firestore FieldValue sentinels
+function isPlainObject(val: unknown): val is Record<string, any> {
+  if (val === null || typeof val !== 'object' || Array.isArray(val)) return false;
+  const proto = Object.getPrototypeOf(val);
+  return proto === Object.prototype || proto === null;
+}
+
 function stripUndefinedDeep<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return undefined as unknown as T;
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    return undefined as unknown as T;
+  }
   if (Array.isArray(value)) {
     return value
-      .filter((item) => item !== undefined)
-      .map((item) => stripUndefinedDeep(item)) as unknown as T;
+      .map((item) => stripUndefinedDeep(item))
+      .filter((item) => item !== undefined) as unknown as T;
   }
-  if (value !== null && typeof value === 'object') {
+  if (isPlainObject(value)) {
     const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(value as Record<string, any>)) {
-      if (v !== undefined) {
-        out[k] = stripUndefinedDeep(v);
+    for (const [k, v] of Object.entries(value)) {
+      const cleaned = stripUndefinedDeep(v);
+      if (cleaned !== undefined) {
+        out[k] = cleaned;
       }
     }
     return out as T;
   }
   return value;
 }
+
+function sanitizeDocId(raw: string | undefined, fallbackPrefix: string, maxLen = 128): string {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+    .slice(0, maxLen);
+  if (cleaned.length > 0) return cleaned;
+  return `${fallbackPrefix}_${Date.now()}`.slice(0, maxLen);
+}
+
+function sanitizeGradeId(raw: string | undefined, fallback = 'third'): string {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+    .slice(0, 64);
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+const ALLOWED_CALLIGRAPHY_FONTS = ['Reem Kufi', 'Aref Ruqaa', 'Amiri', 'Cairo'] as const;
+const ALLOWED_BODY_FONTS = ['Cairo', 'Tajawal', 'Almarai'] as const;
+const ALLOWED_FEATURE_FLAG_KEYS: (keyof PlatformFeatureFlags)[] = [
+  'requireStudentApproval',
+  'allowPublicRegistration',
+  'allowGoogleAuth',
+  'allowManualEmailAuth',
+  'enableQuizzes',
+  'enableExamAntiCheat',
+  'enableHandouts',
+  'enablePointsSystem',
+  'enableNotifications',
+  'enableWhatsAppSupport',
+  'maintenanceMode',
+];
+
+const SITE_CONFIG_STRING_LIMITS: Partial<Record<keyof SiteConfig, number>> = {
+  teacherName: 150,
+  teacherTitle: 150,
+  tagline: 300,
+  heroDescription: 2000,
+  heroBadge: 200,
+  profileImageUrl: 2000,
+  primaryColor: 30,
+  googleClientId: 300,
+  phone1: 50,
+  phone2: 50,
+  whatsappNumber: 50,
+  facebookUrl: 500,
+  youtubeUrl: 500,
+  telegramUrl: 500,
+  centerBranches: 1000,
+  developerName: 150,
+  developerHandle: 150,
+  developerUrl: 500,
+  footerBio: 2000,
+  gradeFirstTitleAr: 200,
+  gradeFirstTitleEn: 200,
+  gradeFirstBadgeAr: 150,
+  gradeFirstDescAr: 1000,
+  gradeSecondTitleAr: 200,
+  gradeSecondTitleEn: 200,
+  gradeSecondBadgeAr: 150,
+  gradeSecondDescAr: 1000,
+  gradeThirdTitleAr: 200,
+  gradeThirdTitleEn: 200,
+  gradeThirdBadgeAr: 150,
+  gradeThirdDescAr: 1000,
+  feature1Title: 200,
+  feature1Desc: 1000,
+  feature2Title: 200,
+  feature2Desc: 1000,
+  feature3Title: 200,
+  feature3Desc: 1000,
+  feature4Title: 200,
+  feature4Desc: 1000,
+};
 
 const ALLOWED_SITE_CONFIG_KEYS: (keyof SiteConfig)[] = [
   'teacherName', 'teacherTitle', 'tagline', 'heroDescription', 'heroBadge',
@@ -477,20 +616,102 @@ export async function fetchAdminConfigIfAuthorized(
 export async function savePublicSiteConfigToCloud(config: SiteConfig): Promise<void> {
   const path = 'publicConfig/site';
   try {
+    const mergedSource: SiteConfig = {
+      ...DEFAULT_SITE_CONFIG,
+      ...config,
+    };
+
     const cleanPayload: Record<string, any> = {};
     for (const key of ALLOWED_SITE_CONFIG_KEYS) {
-      const val = config[key];
-      if (val !== undefined) {
-        cleanPayload[key] = stripUndefinedDeep(val);
+      const rawVal = mergedSource[key];
+      if (rawVal === undefined || rawVal === null) continue;
+
+      if (key in SITE_CONFIG_STRING_LIMITS) {
+        const limit = SITE_CONFIG_STRING_LIMITS[key]!;
+        let strVal = String(rawVal).slice(0, limit);
+        if (key === 'profileImageUrl') {
+          if (strVal.startsWith('data:') && strVal.length > 1800) {
+            strVal = DEFAULT_TEACHER_PORTRAIT;
+          } else if (strVal.length > 2000) {
+            strVal = DEFAULT_TEACHER_PORTRAIT;
+          }
+        }
+        cleanPayload[key] = strVal;
+        continue;
+      }
+
+      if (key === 'calligraphyFont') {
+        const candidate = String(rawVal) as SiteConfig['calligraphyFont'];
+        cleanPayload.calligraphyFont = ALLOWED_CALLIGRAPHY_FONTS.includes(candidate)
+          ? candidate
+          : DEFAULT_SITE_CONFIG.calligraphyFont;
+        continue;
+      }
+
+      if (key === 'bodyFont') {
+        const candidate = String(rawVal) as SiteConfig['bodyFont'];
+        cleanPayload.bodyFont = ALLOWED_BODY_FONTS.includes(candidate)
+          ? candidate
+          : DEFAULT_SITE_CONFIG.bodyFont;
+        continue;
+      }
+
+      if (key === 'grades') {
+        const rawGrades = Array.isArray(rawVal) ? rawVal : [];
+        const sanitizedGrades = rawGrades
+          .map((g) => stripUndefinedDeep(g))
+          .filter((g): g is NonNullable<typeof g> => isPlainObject(g) && typeof g.id === 'string' && g.id.trim().length > 0)
+          .slice(0, 20);
+        cleanPayload.grades = sanitizedGrades.length > 0 ? sanitizedGrades : DEFAULT_GRADES;
+        continue;
+      }
+
+      if (key === 'footerQuickLinks') {
+        const rawLinks = (Array.isArray(rawVal) ? rawVal : []) as unknown[];
+        cleanPayload.footerQuickLinks = rawLinks
+          .filter((l): l is Record<string, unknown> => isPlainObject(l))
+          .map((l, idx) => ({
+            id: String(l.id || `link-${idx + 1}`).slice(0, 80),
+            title: String(l.title || '').trim().slice(0, 150),
+            url: String(l.url || '#').trim().slice(0, 500),
+          }))
+          .filter((l) => l.title.length > 0)
+          .slice(0, 20);
+        continue;
+      }
+
+      if (key === 'featureFlags') {
+        const rawFlags = (isPlainObject(rawVal) ? rawVal : {}) as Record<string, any>;
+        const cleanFlags: Partial<PlatformFeatureFlags> = {};
+        for (const fk of ALLOWED_FEATURE_FLAG_KEYS) {
+          const fv = rawFlags[fk];
+          if (typeof fv === 'boolean') {
+            cleanFlags[fk] = fv;
+          } else {
+            cleanFlags[fk] = DEFAULT_FEATURE_FLAGS[fk];
+          }
+        }
+        cleanPayload.featureFlags = cleanFlags;
+        continue;
       }
     }
-    if (!cleanPayload.teacherName) cleanPayload.teacherName = DEFAULT_SITE_CONFIG.teacherName;
-    if (!cleanPayload.teacherTitle) cleanPayload.teacherTitle = DEFAULT_SITE_CONFIG.teacherTitle;
-    if (cleanPayload.profileImageUrl === undefined) cleanPayload.profileImageUrl = '';
 
-    await setDoc(doc(db, 'publicConfig', 'site'), {
-      ...cleanPayload,
-      updatedAt: serverTimestamp(),
+    cleanPayload.teacherName =
+      String(cleanPayload.teacherName || '').trim().slice(0, 150) || DEFAULT_SITE_CONFIG.teacherName;
+    cleanPayload.teacherTitle =
+      String(cleanPayload.teacherTitle || '').trim().slice(0, 150) || DEFAULT_SITE_CONFIG.teacherTitle;
+    if (typeof cleanPayload.profileImageUrl !== 'string') {
+      cleanPayload.profileImageUrl = '';
+    }
+    if (!Array.isArray(cleanPayload.grades) || cleanPayload.grades.length === 0) {
+      cleanPayload.grades = DEFAULT_GRADES;
+    }
+
+    await runWithAdminTokenRetry(async () => {
+      await setDoc(doc(db, 'publicConfig', 'site'), {
+        ...cleanPayload,
+        updatedAt: serverTimestamp(),
+      });
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -614,164 +835,214 @@ export async function fetchAllStudentsAsAdmin(): Promise<UserProfile[]> {
 }
 
 export async function saveLectureToCloud(lecture: Lecture): Promise<void> {
-  const path = `lectures/${lecture.id}`;
+  const safeId = sanitizeDocId(lecture.id, 'lec');
+  const path = `lectures/${safeId}`;
   try {
-    const ref = doc(db, 'lectures', lecture.id);
-    const cleanUnitId = lecture.unitId ? String(lecture.unitId).trim().slice(0, 128) : undefined;
-    const clean = stripUndefinedDeep({
-      id: lecture.id,
-      title: lecture.title,
-      grade: lecture.grade,
-      gradeLabel: lecture.gradeLabel || lecture.grade,
-      unitId: cleanUnitId,
-      chapter: lecture.chapter || '',
-      duration: lecture.duration || '45 دقيقة',
-      videoUrl: lecture.videoUrl || '',
-      thumbnailUrl: lecture.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg',
-      pdfUrl: lecture.pdfUrl || undefined,
-      pdfTitle: lecture.pdfTitle || undefined,
-      description: lecture.description || '',
-      isFreePreview: Boolean(lecture.isFreePreview),
-      viewsCount: Number(lecture.viewsCount) || 0,
-      dateAdded: lecture.dateAdded || new Date().toISOString().split('T')[0],
-      sessionOrder: lecture.sessionOrder !== undefined ? Number(lecture.sessionOrder) : undefined,
-      quizId: lecture.quizId || undefined,
-      pointsCost: Math.max(0, Math.min(100000, Math.round(Number(lecture.pointsCost) || 0))),
-    });
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'lectures', safeId);
+      const cleanUnitId =
+        typeof lecture.unitId === 'string' && lecture.unitId.trim()
+          ? lecture.unitId.trim().slice(0, 128)
+          : undefined;
+      const cleanGrade = sanitizeGradeId(lecture.grade, 'third');
+      const cleanPdfUrl =
+        typeof lecture.pdfUrl === 'string' && lecture.pdfUrl.trim()
+          ? lecture.pdfUrl.trim().slice(0, 2000)
+          : undefined;
+      const cleanPdfTitle =
+        typeof lecture.pdfTitle === 'string' && lecture.pdfTitle.trim()
+          ? lecture.pdfTitle.trim().slice(0, 300)
+          : undefined;
+      const cleanQuizId =
+        typeof lecture.quizId === 'string' && lecture.quizId.trim()
+          ? sanitizeDocId(lecture.quizId, 'quiz', 128)
+          : undefined;
+      const cleanSessionOrder =
+        lecture.sessionOrder !== undefined &&
+        lecture.sessionOrder !== null &&
+        Number.isFinite(Number(lecture.sessionOrder))
+          ? Math.round(Number(lecture.sessionOrder))
+          : undefined;
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        title: String(lecture.title || 'محاضرة جديدة').trim().slice(0, 300) || 'محاضرة جديدة',
+        grade: cleanGrade,
+        gradeLabel:
+          String(lecture.gradeLabel || cleanGrade).trim().slice(0, 150) || cleanGrade,
+        unitId: cleanUnitId,
+        chapter: String(lecture.chapter || '').trim().slice(0, 250),
+        duration: String(lecture.duration || '45 دقيقة').trim().slice(0, 100) || '45 دقيقة',
+        videoUrl: String(lecture.videoUrl || '').trim().slice(0, 2000),
+        thumbnailUrl:
+          String(lecture.thumbnailUrl || '/images/chemistry_lab_visual_1794141316456.jpg')
+            .trim()
+            .slice(0, 2000) || '/images/chemistry_lab_visual_1794141316456.jpg',
+        pdfUrl: cleanPdfUrl,
+        pdfTitle: cleanPdfTitle,
+        description: String(lecture.description || '').trim().slice(0, 3000),
+        isFreePreview: Boolean(lecture.isFreePreview),
+        viewsCount: Math.max(0, Math.round(Number(lecture.viewsCount) || 0)),
+        dateAdded:
+          String(lecture.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
+        sessionOrder: cleanSessionOrder,
+        quizId: cleanQuizId,
+        pointsCost: Math.max(0, Math.min(100000, Math.round(Number(lecture.pointsCost) || 0))),
+      });
+
+      const snap = await getDoc(ref);
+      const existingCreatedAt = snap.exists() ? snap.data()?.createdAt : undefined;
       await setDoc(ref, {
         ...clean,
-        createdAt: serverTimestamp(),
+        createdAt: existingCreatedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        unitId: cleanUnitId ? cleanUnitId : deleteField(),
-        pdfUrl: lecture.pdfUrl ? lecture.pdfUrl : deleteField(),
-        pdfTitle: lecture.pdfTitle ? lecture.pdfTitle : deleteField(),
-        sessionOrder: lecture.sessionOrder !== undefined ? Number(lecture.sessionOrder) : deleteField(),
-        quizId: lecture.quizId ? lecture.quizId : deleteField(),
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deleteLectureFromCloud(id: string): Promise<void> {
-  const path = `lectures/${id}`;
+  const safeId = sanitizeDocId(id, 'lec');
+  const path = `lectures/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'lectures', id));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'lectures', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function saveAttachmentToCloud(file: AttachmentFile): Promise<void> {
-  const path = `attachments/${file.id}`;
+  const safeId = sanitizeDocId(file.id, 'att');
+  const path = `attachments/${safeId}`;
   try {
-    const ref = doc(db, 'attachments', file.id);
-    const clean = stripUndefinedDeep({
-      id: file.id,
-      title: file.title,
-      grade: file.grade,
-      gradeLabel: file.gradeLabel || file.grade,
-      chapter: file.chapter || '',
-      fileSize: file.fileSize || '1.0 MB',
-      fileType: file.fileType || 'pdf',
-      downloadUrl: file.downloadUrl,
-      pageCount: file.pageCount !== undefined ? Number(file.pageCount) : undefined,
-      dateAdded: file.dateAdded || new Date().toISOString().split('T')[0],
-      pointsCost: Math.max(0, Math.min(100000, Math.round(Number(file.pointsCost) || 0))),
-    });
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'attachments', safeId);
+      const cleanGrade = sanitizeGradeId(file.grade, 'third');
+      const cleanFileType =
+        file.fileType === 'doc' || file.fileType === 'image' ? file.fileType : 'pdf';
+      const cleanPageCount =
+        file.pageCount !== undefined &&
+        file.pageCount !== null &&
+        Number.isFinite(Number(file.pageCount))
+          ? Math.max(0, Math.round(Number(file.pageCount)))
+          : undefined;
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        title: String(file.title || 'ملف جديد').trim().slice(0, 300) || 'ملف جديد',
+        grade: cleanGrade,
+        gradeLabel: String(file.gradeLabel || cleanGrade).trim().slice(0, 150) || cleanGrade,
+        chapter: String(file.chapter || '').trim().slice(0, 250),
+        fileSize: String(file.fileSize || '1.0 MB').trim().slice(0, 50) || '1.0 MB',
+        fileType: cleanFileType,
+        downloadUrl: String(file.downloadUrl || '#').trim().slice(0, 2000) || '#',
+        pageCount: cleanPageCount,
+        dateAdded: String(file.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
+        pointsCost: Math.max(0, Math.min(100000, Math.round(Number(file.pointsCost) || 0))),
+      });
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const snap = await getDoc(ref);
+      const existingCreatedAt = snap.exists() ? snap.data()?.createdAt : undefined;
       await setDoc(ref, {
         ...clean,
-        createdAt: serverTimestamp(),
+        createdAt: existingCreatedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deleteAttachmentFromCloud(id: string): Promise<void> {
-  const path = `attachments/${id}`;
+  const safeId = sanitizeDocId(id, 'att');
+  const path = `attachments/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'attachments', id));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'attachments', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function saveQuizToCloud(quiz: Quiz): Promise<void> {
-  const path = `quizzes/${quiz.id}`;
+  const safeId = sanitizeDocId(quiz.id, 'quiz');
+  const path = `quizzes/${safeId}`;
   try {
-    const ref = doc(db, 'quizzes', quiz.id);
-    const cleanInstructions = Array.isArray(quiz.examInstructions)
-      ? quiz.examInstructions.map((s) => String(s).trim()).filter(Boolean).slice(0, 25)
-      : undefined;
-    const clean = stripUndefinedDeep({
-      id: quiz.id,
-      title: quiz.title,
-      grade: quiz.grade,
-      chapter: quiz.chapter || '',
-      durationMinutes: Math.max(1, Math.min(600, Number(quiz.durationMinutes) || 15)),
-      warningMinutes:
-        quiz.warningMinutes !== undefined
-          ? Math.max(0, Math.min(120, Math.round(Number(quiz.warningMinutes) || 0)))
-          : undefined,
-      passingScore:
-        quiz.passingScore !== undefined
-          ? Math.max(0, Math.min(100, Math.round(Number(quiz.passingScore) || 60)))
-          : undefined,
-      requireAgreement: quiz.requireAgreement !== undefined ? Boolean(quiz.requireAgreement) : undefined,
-      examInstructions: cleanInstructions,
-      proctoringEnabled:
-        quiz.proctoringEnabled !== undefined ? Boolean(quiz.proctoringEnabled) : undefined,
-      maxViolations:
-        quiz.maxViolations !== undefined
-          ? Math.max(1, Math.min(20, Math.round(Number(quiz.maxViolations) || 3)))
-          : undefined,
-      lectureId: quiz.lectureId || undefined,
-      questions: Array.isArray(quiz.questions) ? quiz.questions.slice(0, 200) : [],
-    });
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'quizzes', safeId);
+      const cleanInstructions = Array.isArray(quiz.examInstructions)
+        ? quiz.examInstructions
+            .map((s) => String(s ?? '').trim().slice(0, 500))
+            .filter(Boolean)
+            .slice(0, 25)
+        : undefined;
+      const cleanQuestions = Array.isArray(quiz.questions)
+        ? quiz.questions
+            .map((q) => stripUndefinedDeep(q))
+            .filter((q) => isPlainObject(q))
+            .slice(0, 200)
+        : [];
+      const cleanLectureId =
+        typeof quiz.lectureId === 'string' && quiz.lectureId.trim()
+          ? sanitizeDocId(quiz.lectureId, 'lec', 128)
+          : undefined;
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        title: String(quiz.title || 'اختبار جديد').trim().slice(0, 300) || 'اختبار جديد',
+        grade: sanitizeGradeId(quiz.grade, 'third'),
+        chapter: String(quiz.chapter || '').trim().slice(0, 250),
+        durationMinutes: Math.max(1, Math.min(600, Math.round(Number(quiz.durationMinutes) || 15))),
+        warningMinutes:
+          quiz.warningMinutes !== undefined && quiz.warningMinutes !== null
+            ? Math.max(0, Math.min(120, Math.round(Number(quiz.warningMinutes) || 0)))
+            : undefined,
+        passingScore:
+          quiz.passingScore !== undefined && quiz.passingScore !== null
+            ? Math.max(0, Math.min(100, Math.round(Number(quiz.passingScore) || 60)))
+            : undefined,
+        requireAgreement:
+          quiz.requireAgreement !== undefined && quiz.requireAgreement !== null
+            ? Boolean(quiz.requireAgreement)
+            : undefined,
+        examInstructions: cleanInstructions,
+        proctoringEnabled:
+          quiz.proctoringEnabled !== undefined && quiz.proctoringEnabled !== null
+            ? Boolean(quiz.proctoringEnabled)
+            : undefined,
+        maxViolations:
+          quiz.maxViolations !== undefined && quiz.maxViolations !== null
+            ? Math.max(1, Math.min(20, Math.round(Number(quiz.maxViolations) || 3)))
+            : undefined,
+        lectureId: cleanLectureId,
+        questions: cleanQuestions,
+      });
+
+      const snap = await getDoc(ref);
+      const existingCreatedAt = snap.exists() ? snap.data()?.createdAt : undefined;
       await setDoc(ref, {
         ...clean,
-        createdAt: serverTimestamp(),
+        createdAt: existingCreatedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        lectureId: quiz.lectureId ? quiz.lectureId : deleteField(),
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deleteQuizFromCloud(id: string): Promise<void> {
-  const path = `quizzes/${id}`;
+  const safeId = sanitizeDocId(id, 'quiz');
+  const path = `quizzes/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'quizzes', id));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'quizzes', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -782,113 +1053,173 @@ export async function saveStudentToCloud(
   authUid?: string,
   allowPointsOverride = false
 ): Promise<void> {
-  const docId = student.id;
+  const docId = sanitizeDocId(student.id, 'std');
   const path = `students/${docId}`;
   try {
-    const ref = doc(db, 'students', docId);
-    const uid = authUid || auth.currentUser?.uid || docId;
-    const cleanGrade =
-      (student.grade || 'third').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'third';
-    const baseClean = stripUndefinedDeep({
-      id: docId,
-      uid,
-      name: (student.name || '').trim().slice(0, 200) || 'طالب منصة',
-      email: (student.email || '').trim().slice(0, 200),
-      role: student.role === 'teacher' ? 'teacher' : 'student',
-      grade: cleanGrade,
-      phone: (student.phone || '').trim().slice(0, 50),
-      parentPhone: (student.parentPhone || '').trim().slice(0, 50),
-      governorate: (student.governorate || 'القاهرة').trim().slice(0, 150),
-      avatarUrl: (student.avatarUrl || '').slice(0, 2000),
-      score: Number(student.score) || 0,
-      profileCompleted: Boolean(student.profileCompleted),
-      watchedLectureIds: Array.isArray(student.watchedLectureIds)
-        ? student.watchedLectureIds.slice(0, 500)
-        : [],
-      passedQuizIds: Array.isArray(student.passedQuizIds)
-        ? student.passedQuizIds.slice(0, 500)
-        : [],
-      quizScores: student.quizScores || {},
-      cancelledQuizIds: Array.isArray(student.cancelledQuizIds)
-        ? student.cancelledQuizIds.slice(0, 200)
-        : undefined,
-      quizViolations: student.quizViolations || undefined,
-      joinedAt: (student.joinedAt || new Date().toISOString().split('T')[0]).slice(0, 50),
-    });
+    const executeWrite = async () => {
+      const ref = doc(db, 'students', docId);
+      const snap = await getDoc(ref);
+      const existingData = snap.exists() ? (snap.data() as Record<string, any>) : null;
+      const uid =
+        String(existingData?.uid || (student as { uid?: string }).uid || authUid || auth.currentUser?.uid || docId)
+          .trim()
+          .slice(0, 128) || docId;
+      const cleanGrade = sanitizeGradeId(student.grade, 'third');
+      const cleanCancelledQuizIds = Array.isArray(student.cancelledQuizIds)
+        ? student.cancelledQuizIds.map((x) => String(x)).filter(Boolean).slice(0, 200)
+        : undefined;
+      const cleanQuizScores = isPlainObject(student.quizScores)
+        ? stripUndefinedDeep(student.quizScores)
+        : {};
+      const cleanQuizViolations = isPlainObject(student.quizViolations)
+        ? stripUndefinedDeep(student.quizViolations)
+        : undefined;
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      const initialAdminPayload = allowPointsOverride
-        ? stripUndefinedDeep({
-            points: Math.max(0, Math.round(Number(student.points) || 0)),
-            unlockedLectureIds: Array.isArray(student.unlockedLectureIds)
-              ? student.unlockedLectureIds.slice(0, 500)
-              : [],
-            unlockedAttachmentIds: Array.isArray(student.unlockedAttachmentIds)
-              ? student.unlockedAttachmentIds.slice(0, 500)
-              : [],
-            claimedRewardIds: Array.isArray(student.claimedRewardIds)
-              ? student.claimedRewardIds.slice(0, 500)
-              : [],
-            pointsHistory: Array.isArray(student.pointsHistory)
-              ? student.pointsHistory.slice(0, 50)
-              : [],
-            isBlocked: Boolean(student.isBlocked),
-            blockReason: student.blockReason ? student.blockReason.trim().slice(0, 500) : undefined,
-            approvalStatus: student.approvalStatus || 'approved',
-          })
-        : {
-            points: 0,
-            unlockedLectureIds: [],
-            unlockedAttachmentIds: [],
-            claimedRewardIds: [],
-            pointsHistory: [],
-            approvalStatus:
-              student.role === 'teacher' || student.approvalStatus === 'approved'
-                ? 'approved'
-                : 'pending',
-          };
-
-      await setDoc(ref, {
-        ...baseClean,
-        ...initialAdminPayload,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const baseClean = stripUndefinedDeep({
+        id: docId,
+        uid,
+        name: String(student.name || '').trim().slice(0, 200) || 'طالب منصة',
+        email: String(student.email || '').trim().slice(0, 200),
+        role: student.role === 'teacher' ? 'teacher' : 'student',
+        grade: cleanGrade,
+        phone: String(student.phone || '').trim().slice(0, 50),
+        parentPhone: String(student.parentPhone || '').trim().slice(0, 50),
+        governorate: String(student.governorate || 'القاهرة').trim().slice(0, 150),
+        avatarUrl: String(student.avatarUrl || '').slice(0, 2000),
+        score: Number.isFinite(Number(student.score)) ? Number(student.score) : 0,
+        profileCompleted: Boolean(student.profileCompleted),
+        watchedLectureIds: Array.isArray(student.watchedLectureIds)
+          ? student.watchedLectureIds.map((x) => String(x)).filter(Boolean).slice(0, 500)
+          : [],
+        passedQuizIds: Array.isArray(student.passedQuizIds)
+          ? student.passedQuizIds.map((x) => String(x)).filter(Boolean).slice(0, 500)
+          : [],
+        quizScores: cleanQuizScores,
+        cancelledQuizIds: cleanCancelledQuizIds,
+        quizViolations: cleanQuizViolations,
+        joinedAt: String(
+          student.joinedAt || existingData?.joinedAt || new Date().toISOString().split('T')[0]
+        ).slice(0, 50),
       });
-    } else {
-      const updatePayload: Record<string, any> = {
-        ...baseClean,
-        updatedAt: serverTimestamp(),
-      };
-      // Only admin updates should include wallet, approval, or block status fields on profile save;
-      // student updates omit them so Zero-Trust Action 1 affectedKeys rule passes.
+
+      const validApproval =
+        student.approvalStatus === 'pending' ||
+        student.approvalStatus === 'approved' ||
+        student.approvalStatus === 'rejected'
+          ? student.approvalStatus
+          : existingData?.approvalStatus === 'pending' ||
+              existingData?.approvalStatus === 'approved' ||
+              existingData?.approvalStatus === 'rejected'
+            ? existingData.approvalStatus
+            : 'approved';
+
+      const cleanBlockReason =
+        typeof student.blockReason === 'string' && student.blockReason.trim()
+          ? student.blockReason.trim().slice(0, 500)
+          : undefined;
+
       if (allowPointsOverride) {
-        updatePayload.points = Math.max(0, Math.round(Number(student.points) || 0));
-        if (Array.isArray(student.unlockedLectureIds)) {
-          updatePayload.unlockedLectureIds = student.unlockedLectureIds.slice(0, 500);
-        }
-        if (Array.isArray(student.unlockedAttachmentIds)) {
-          updatePayload.unlockedAttachmentIds = student.unlockedAttachmentIds.slice(0, 500);
-        }
-        if (Array.isArray(student.claimedRewardIds)) {
-          updatePayload.claimedRewardIds = student.claimedRewardIds.slice(0, 500);
-        }
-        if (Array.isArray(student.pointsHistory)) {
-          updatePayload.pointsHistory = stripUndefinedDeep(student.pointsHistory.slice(0, 50));
-        }
-        if (student.isBlocked !== undefined) {
-          updatePayload.isBlocked = Boolean(student.isBlocked);
-        }
-        if (student.blockReason !== undefined) {
-          updatePayload.blockReason = student.blockReason.trim()
-            ? student.blockReason.trim().slice(0, 500)
-            : deleteField();
-        }
-        if (student.approvalStatus !== undefined) {
-          updatePayload.approvalStatus = student.approvalStatus;
-        }
+        // Full whitelisted write for Admin saves so legacy null/extra fields are scrubbed cleanly
+        const resolvedUnlockedLectures = Array.isArray(student.unlockedLectureIds)
+          ? student.unlockedLectureIds
+          : Array.isArray(existingData?.unlockedLectureIds)
+            ? existingData.unlockedLectureIds
+            : [];
+        const resolvedUnlockedAttachments = Array.isArray(student.unlockedAttachmentIds)
+          ? student.unlockedAttachmentIds
+          : Array.isArray(existingData?.unlockedAttachmentIds)
+            ? existingData.unlockedAttachmentIds
+            : [];
+        const resolvedClaimedRewards = Array.isArray(student.claimedRewardIds)
+          ? student.claimedRewardIds
+          : Array.isArray(existingData?.claimedRewardIds)
+            ? existingData.claimedRewardIds
+            : [];
+        const resolvedPointsHistory = Array.isArray(student.pointsHistory)
+          ? student.pointsHistory
+          : Array.isArray(existingData?.pointsHistory)
+            ? existingData.pointsHistory
+            : [];
+
+        const rawSpendType = existingData?.lastSpendTargetType;
+        const validSpendType =
+          rawSpendType === 'lecture' || rawSpendType === 'attachment' || rawSpendType === 'reward'
+            ? rawSpendType
+            : undefined;
+        const validSpendTargetId =
+          typeof existingData?.lastSpendTargetId === 'string' && existingData.lastSpendTargetId.trim()
+            ? existingData.lastSpendTargetId.trim().slice(0, 128)
+            : undefined;
+        const validRedeemedCode =
+          typeof existingData?.lastRedeemedCode === 'string' && existingData.lastRedeemedCode.trim()
+            ? existingData.lastRedeemedCode.trim().slice(0, 128)
+            : undefined;
+
+        const adminPayload = stripUndefinedDeep({
+          ...baseClean,
+          points: Math.max(0, Math.min(10000000, Math.round(Number(student.points ?? existingData?.points) || 0))),
+          unlockedLectureIds: resolvedUnlockedLectures
+            .map((x: any) => String(x))
+            .filter(Boolean)
+            .slice(0, 500),
+          unlockedAttachmentIds: resolvedUnlockedAttachments
+            .map((x: any) => String(x))
+            .filter(Boolean)
+            .slice(0, 500),
+          claimedRewardIds: resolvedClaimedRewards
+            .map((x: any) => String(x))
+            .filter(Boolean)
+            .slice(0, 500),
+          pointsHistory: resolvedPointsHistory
+            .map((entry: any) => stripUndefinedDeep(entry))
+            .filter((entry: any) => isPlainObject(entry))
+            .slice(0, 50),
+          lastRedeemedCode: validRedeemedCode,
+          lastSpendTargetType: validSpendType,
+          lastSpendTargetId: validSpendTargetId,
+          isBlocked:
+            student.isBlocked !== undefined
+              ? Boolean(student.isBlocked)
+              : Boolean(existingData?.isBlocked),
+          blockReason: cleanBlockReason,
+          approvalStatus: validApproval,
+        });
+
+        await setDoc(ref, {
+          ...adminPayload,
+          createdAt: existingData?.createdAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        return;
       }
-      await updateDoc(ref, updatePayload);
+
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          ...baseClean,
+          points: 0,
+          unlockedLectureIds: [],
+          unlockedAttachmentIds: [],
+          claimedRewardIds: [],
+          pointsHistory: [],
+          approvalStatus:
+            student.role === 'teacher' || student.approvalStatus === 'approved'
+              ? 'approved'
+              : 'pending',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await updateDoc(ref, {
+          ...baseClean,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    };
+
+    if (allowPointsOverride) {
+      await runWithAdminTokenRetry(executeWrite);
+    } else {
+      await executeWrite();
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -896,9 +1227,12 @@ export async function saveStudentToCloud(
 }
 
 export async function deleteStudentFromCloud(studentId: string): Promise<void> {
-  const path = `students/${studentId}`;
+  const safeId = sanitizeDocId(studentId, 'std');
+  const path = `students/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'students', studentId));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'students', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -961,35 +1295,40 @@ export async function saveRedeemCodeToCloud(item: RedeemCode): Promise<void> {
   const cleanCode = normalizeRedeemCodeInput(item.code || item.id);
   const path = `redeemCodes/${cleanCode}`;
   try {
-    const ref = doc(db, 'redeemCodes', cleanCode);
-    const clean = stripUndefinedDeep({
-      id: cleanCode,
-      code: cleanCode,
-      points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
-      maxUses: Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1))),
-      usedCount: Math.max(0, Math.round(Number(item.usedCount) || 0)),
-      active: Boolean(item.active),
-      label: item.label?.trim() ? item.label.trim().slice(0, 150) : undefined,
-      createdBy: item.createdBy?.trim()
-        ? item.createdBy.trim().slice(0, 150)
-        : auth.currentUser?.email || 'admin',
-      createdAtDate: item.createdAtDate || new Date().toISOString().split('T')[0],
-    });
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'redeemCodes', cleanCode);
+      const snap = await getDoc(ref);
+      const existingData = snap.exists() ? (snap.data() as Record<string, any>) : null;
+      const resolvedMaxUses = Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1)));
+      const rawUsed = snap.exists() ? Number(item.usedCount ?? existingData?.usedCount ?? 0) : 0;
+      const resolvedUsed = Math.max(0, Math.min(resolvedMaxUses, Math.round(rawUsed || 0)));
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const clean = stripUndefinedDeep({
+        id: cleanCode,
+        code: cleanCode,
+        points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
+        maxUses: resolvedMaxUses,
+        usedCount: resolvedUsed,
+        active: Boolean(item.active),
+        label:
+          typeof item.label === 'string' && item.label.trim()
+            ? item.label.trim().slice(0, 150)
+            : undefined,
+        createdBy:
+          typeof item.createdBy === 'string' && item.createdBy.trim()
+            ? item.createdBy.trim().slice(0, 150)
+            : String(existingData?.createdBy || auth.currentUser?.email || 'admin').slice(0, 150),
+        createdAtDate: String(
+          item.createdAtDate || existingData?.createdAtDate || new Date().toISOString().split('T')[0]
+        ).slice(0, 50),
+      });
+
       await setDoc(ref, {
         ...clean,
-        usedCount: 0,
-        createdAt: serverTimestamp(),
+        createdAt: existingData?.createdAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -998,29 +1337,36 @@ export async function saveRedeemCodeToCloud(item: RedeemCode): Promise<void> {
 export async function saveRedeemCodesBatchToCloud(items: RedeemCode[]): Promise<void> {
   if (items.length === 0) return;
   try {
-    const batch = writeBatch(db);
-    for (const item of items) {
-      const cleanCode = normalizeRedeemCodeInput(item.code || item.id);
-      if (!cleanCode) continue;
-      const ref = doc(db, 'redeemCodes', cleanCode);
-      const clean = stripUndefinedDeep({
-        id: cleanCode,
-        code: cleanCode,
-        points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
-        maxUses: Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1))),
-        usedCount: 0,
-        active: Boolean(item.active),
-        label: item.label?.trim() ? item.label.trim().slice(0, 150) : undefined,
-        createdBy: auth.currentUser?.email || 'admin',
-        createdAtDate: item.createdAtDate || new Date().toISOString().split('T')[0],
-      });
-      batch.set(ref, {
-        ...clean,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    await batch.commit();
+    await runWithAdminTokenRetry(async () => {
+      const batch = writeBatch(db);
+      for (const item of items) {
+        const cleanCode = normalizeRedeemCodeInput(item.code || item.id);
+        if (!cleanCode) continue;
+        const ref = doc(db, 'redeemCodes', cleanCode);
+        const clean = stripUndefinedDeep({
+          id: cleanCode,
+          code: cleanCode,
+          points: Math.max(1, Math.min(100000, Math.round(Number(item.points) || 10))),
+          maxUses: Math.max(1, Math.min(100000, Math.round(Number(item.maxUses) || 1))),
+          usedCount: 0,
+          active: Boolean(item.active),
+          label:
+            typeof item.label === 'string' && item.label.trim()
+              ? item.label.trim().slice(0, 150)
+              : undefined,
+          createdBy: String(auth.currentUser?.email || 'admin').slice(0, 150),
+          createdAtDate: String(
+            item.createdAtDate || new Date().toISOString().split('T')[0]
+          ).slice(0, 50),
+        });
+        batch.set(ref, {
+          ...clean,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'redeemCodes/batch');
   }
@@ -1033,9 +1379,41 @@ export async function toggleRedeemCodeActiveInCloud(
   const cleanCode = normalizeRedeemCodeInput(codeId);
   const path = `redeemCodes/${cleanCode}`;
   try {
-    await updateDoc(doc(db, 'redeemCodes', cleanCode), {
-      active: Boolean(active),
-      updatedAt: serverTimestamp(),
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'redeemCodes', cleanCode);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const d = snap.data() as Record<string, any>;
+        const maxUses = Math.max(1, Math.min(100000, Math.round(Number(d.maxUses) || 1)));
+        const usedCount = Math.max(0, Math.min(maxUses, Math.round(Number(d.usedCount) || 0)));
+        const clean = stripUndefinedDeep({
+          id: cleanCode,
+          code: cleanCode,
+          points: Math.max(1, Math.min(100000, Math.round(Number(d.points) || 10))),
+          maxUses,
+          usedCount,
+          active: Boolean(active),
+          label:
+            typeof d.label === 'string' && d.label.trim()
+              ? d.label.trim().slice(0, 150)
+              : undefined,
+          createdBy:
+            typeof d.createdBy === 'string' && d.createdBy.trim()
+              ? d.createdBy.trim().slice(0, 150)
+              : String(auth.currentUser?.email || 'admin').slice(0, 150),
+          createdAtDate: String(d.createdAtDate || new Date().toISOString().split('T')[0]).slice(0, 50),
+        });
+        await setDoc(ref, {
+          ...clean,
+          createdAt: d.createdAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await updateDoc(ref, {
+          active: Boolean(active),
+          updatedAt: serverTimestamp(),
+        });
+      }
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -1046,49 +1424,53 @@ export async function deleteRedeemCodeFromCloud(codeId: string): Promise<void> {
   const cleanCode = normalizeRedeemCodeInput(codeId);
   const path = `redeemCodes/${cleanCode}`;
   try {
-    await deleteDoc(doc(db, 'redeemCodes', cleanCode));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'redeemCodes', cleanCode));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function savePointRewardToCloud(reward: PointReward): Promise<void> {
-  const path = `rewards/${reward.id}`;
+  const safeId = sanitizeDocId(reward.id, 'rew');
+  const path = `rewards/${safeId}`;
   try {
-    const ref = doc(db, 'rewards', reward.id);
-    const clean = stripUndefinedDeep({
-      id: reward.id,
-      title: reward.title.trim().slice(0, 300),
-      description: (reward.description || '').trim().slice(0, 1500),
-      pointsCost: Math.max(1, Math.min(100000, Math.round(Number(reward.pointsCost) || 50))),
-      category: reward.category || 'perk',
-      grade: reward.grade || 'all',
-      active: Boolean(reward.active),
-      dateAdded: reward.dateAdded || new Date().toISOString().split('T')[0],
-    });
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'rewards', safeId);
+      const validCategories = ['perk', 'badge', 'discount', 'material'];
+      const cleanCategory = validCategories.includes(reward.category) ? reward.category : 'perk';
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        title: String(reward.title || 'مكافأة جديدة').trim().slice(0, 300) || 'مكافأة جديدة',
+        description: String(reward.description || '').trim().slice(0, 1500),
+        pointsCost: Math.max(1, Math.min(100000, Math.round(Number(reward.pointsCost) || 50))),
+        category: cleanCategory,
+        grade: sanitizeGradeId(reward.grade, 'all'),
+        active: Boolean(reward.active),
+        dateAdded: String(reward.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
+      });
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const snap = await getDoc(ref);
+      const existingCreatedAt = snap.exists() ? snap.data()?.createdAt : undefined;
       await setDoc(ref, {
         ...clean,
-        createdAt: serverTimestamp(),
+        createdAt: existingCreatedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deletePointRewardFromCloud(rewardId: string): Promise<void> {
-  const path = `rewards/${rewardId}`;
+  const safeId = sanitizeDocId(rewardId, 'rew');
+  const path = `rewards/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'rewards', rewardId));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'rewards', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -1397,57 +1779,57 @@ export async function claimRewardWithPoints(
 // ==========================================
 
 export async function saveNotificationToCloud(notif: PlatformNotification): Promise<void> {
-  const safeId = (notif.id || `notif_${Date.now()}`).replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const safeId = sanitizeDocId(notif.id, 'notif');
   const path = `notifications/${safeId}`;
   try {
-    const ref = doc(db, 'notifications', safeId);
-    const validCategories = ['announcement', 'exam', 'lecture', 'urgent', 'congrats'];
-    const validTabs = ['lectures', 'quizzes', 'files', 'points'];
+    await runWithAdminTokenRetry(async () => {
+      const ref = doc(db, 'notifications', safeId);
+      const validCategories = ['announcement', 'exam', 'lecture', 'urgent', 'congrats'];
+      const validTabs = ['lectures', 'quizzes', 'files', 'points', 'study-hub'];
 
-    const cleanGrade = (notif.grade || 'all').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'all';
-    const cleanCtaLabel = notif.ctaLabel?.trim() ? notif.ctaLabel.trim().slice(0, 80) : undefined;
-    const cleanCtaTab =
-      notif.ctaTab && validTabs.includes(notif.ctaTab) ? notif.ctaTab : undefined;
+      const cleanGrade = sanitizeGradeId(notif.grade, 'all');
+      const cleanCtaLabel =
+        typeof notif.ctaLabel === 'string' && notif.ctaLabel.trim()
+          ? notif.ctaLabel.trim().slice(0, 80)
+          : undefined;
+      const cleanCtaTab =
+        notif.ctaTab && validTabs.includes(notif.ctaTab) ? notif.ctaTab : undefined;
 
-    const clean = stripUndefinedDeep({
-      id: safeId,
-      title: (notif.title || 'إعلان جديد').trim().slice(0, 200),
-      message: (notif.message || '').trim().slice(0, 3000),
-      category: validCategories.includes(notif.category) ? notif.category : 'announcement',
-      grade: cleanGrade,
-      pinned: Boolean(notif.pinned),
-      active: Boolean(notif.active),
-      authorName: (notif.authorName || 'أ/ محمد مصطفى').trim().slice(0, 150),
-      dateAdded: (notif.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
-      ctaLabel: cleanCtaLabel,
-      ctaTab: cleanCtaTab,
-    });
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        title: String(notif.title || 'إعلان جديد').trim().slice(0, 200) || 'إعلان جديد',
+        message: String(notif.message || 'تنويه هام للطلاب').trim().slice(0, 3000) || 'تنويه هام للطلاب',
+        category: validCategories.includes(notif.category) ? notif.category : 'announcement',
+        grade: cleanGrade,
+        pinned: Boolean(notif.pinned),
+        active: Boolean(notif.active),
+        authorName:
+          String(notif.authorName || 'أ/ محمد مصطفى').trim().slice(0, 150) || 'أ/ محمد مصطفى',
+        dateAdded: String(notif.dateAdded || new Date().toISOString().split('T')[0]).slice(0, 50),
+        ctaLabel: cleanCtaLabel,
+        ctaTab: cleanCtaTab,
+      });
 
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
+      const snap = await getDoc(ref);
+      const existingCreatedAt = snap.exists() ? snap.data()?.createdAt : undefined;
       await setDoc(ref, {
         ...clean,
-        createdAt: serverTimestamp(),
+        createdAt: existingCreatedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } else {
-      await updateDoc(ref, {
-        ...clean,
-        ctaLabel: cleanCtaLabel ? cleanCtaLabel : deleteField(),
-        ctaTab: cleanCtaTab ? cleanCtaTab : deleteField(),
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deleteNotificationFromCloud(id: string): Promise<void> {
-  const safeId = id.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const safeId = sanitizeDocId(id, 'notif');
   const path = `notifications/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'notifications', safeId));
+    await runWithAdminTokenRetry(async () => {
+      await deleteDoc(doc(db, 'notifications', safeId));
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -1462,34 +1844,37 @@ export async function createExamSecurityAlertToCloud(
 ): Promise<void> {
   const fbUser = auth.currentUser;
   if (!fbUser) return;
-  const safeId = (alert.id || `alert_${Date.now()}`)
-    .replace(/[^a-zA-Z0-9_\-]/g, '_')
-    .slice(0, 128);
-  const path = `examAlerts/${safeId}`;
+  const safeId = sanitizeDocId(alert.id, 'alert');
   try {
     const clean = stripUndefinedDeep({
       id: safeId,
       studentUid: fbUser.uid,
-      studentName: (alert.studentName || 'طالب').trim().slice(0, 200) || 'طالب',
-      studentPhone: alert.studentPhone ? alert.studentPhone.trim().slice(0, 50) : undefined,
-      studentEmail: alert.studentEmail ? alert.studentEmail.trim().slice(0, 200) : undefined,
-      grade: alert.grade
-        ? alert.grade.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'third'
-        : undefined,
-      quizId: alert.quizId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128),
-      quizTitle: (alert.quizTitle || 'اختبار').trim().slice(0, 300) || 'اختبار',
+      studentName: String(alert.studentName || 'طالب').trim().slice(0, 200) || 'طالب',
+      studentPhone:
+        typeof alert.studentPhone === 'string' && alert.studentPhone.trim()
+          ? alert.studentPhone.trim().slice(0, 50)
+          : undefined,
+      studentEmail:
+        typeof alert.studentEmail === 'string' && alert.studentEmail.trim()
+          ? alert.studentEmail.trim().slice(0, 200)
+          : undefined,
+      grade: alert.grade ? sanitizeGradeId(alert.grade, 'third') : undefined,
+      quizId: sanitizeDocId(alert.quizId, 'quiz'),
+      quizTitle: String(alert.quizTitle || 'اختبار').trim().slice(0, 300) || 'اختبار',
       violationCount: Math.max(1, Math.min(100, Math.round(Number(alert.violationCount) || 1))),
       maxViolations: Math.max(1, Math.min(20, Math.round(Number(alert.maxViolations) || 3))),
       reasons: (Array.isArray(alert.reasons) && alert.reasons.length > 0
         ? alert.reasons
         : ['مخالفة لائحة اللجنة']
       )
-        .map((r) => String(r).trim().slice(0, 200))
+        .map((r) => String(r ?? '').trim().slice(0, 200))
         .filter(Boolean)
         .slice(0, 30),
       actionTaken: alert.actionTaken === 'cancelled' ? 'cancelled' : 'warning',
       resolved: false,
-      createdAtDate: alert.createdAtDate || new Date().toISOString().split('T')[0],
+      createdAtDate: String(
+        alert.createdAtDate || new Date().toISOString().split('T')[0]
+      ).slice(0, 50),
     });
     await setDoc(doc(db, 'examAlerts', safeId), {
       ...clean,
@@ -1504,13 +1889,55 @@ export async function createExamSecurityAlertToCloud(
 export async function updateExamSecurityAlertInCloud(
   alert: ExamSecurityAlert
 ): Promise<void> {
-  const safeId = alert.id.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const safeId = sanitizeDocId(alert.id, 'alert');
   const path = `examAlerts/${safeId}`;
   try {
     await runWithAdminTokenRetry(async () => {
-      await updateDoc(doc(db, 'examAlerts', safeId), {
+      const ref = doc(db, 'examAlerts', safeId);
+      const snap = await getDoc(ref);
+      const d = snap.exists() ? (snap.data() as Record<string, any>) : null;
+      const source = { ...(d || {}), ...alert };
+      const resolvedReasons = (
+        Array.isArray(source.reasons) && source.reasons.length > 0
+          ? source.reasons
+          : ['مخالفة لائحة اللجنة']
+      )
+        .map((r: any) => String(r ?? '').trim().slice(0, 200))
+        .filter(Boolean)
+        .slice(0, 30);
+
+      const clean = stripUndefinedDeep({
+        id: safeId,
+        studentUid: String(source.studentUid || d?.studentUid || 'unknown').slice(0, 128),
+        studentName: String(source.studentName || 'طالب').trim().slice(0, 200) || 'طالب',
+        studentPhone:
+          typeof source.studentPhone === 'string' && source.studentPhone.trim()
+            ? source.studentPhone.trim().slice(0, 50)
+            : undefined,
+        studentEmail:
+          typeof source.studentEmail === 'string' && source.studentEmail.trim()
+            ? source.studentEmail.trim().slice(0, 200)
+            : undefined,
+        grade: source.grade ? sanitizeGradeId(source.grade, 'third') : undefined,
+        quizId: sanitizeDocId(source.quizId, 'quiz'),
+        quizTitle: String(source.quizTitle || 'اختبار').trim().slice(0, 300) || 'اختبار',
+        violationCount: Math.max(1, Math.min(100, Math.round(Number(source.violationCount) || 1))),
+        maxViolations: Math.max(1, Math.min(20, Math.round(Number(source.maxViolations) || 3))),
+        reasons: resolvedReasons.length > 0 ? resolvedReasons : ['مخالفة لائحة اللجنة'],
+        actionTaken: source.actionTaken === 'cancelled' ? 'cancelled' : 'warning',
         resolved: Boolean(alert.resolved),
-        resolvedNote: alert.resolvedNote ? alert.resolvedNote.trim().slice(0, 500) : deleteField(),
+        resolvedNote:
+          typeof alert.resolvedNote === 'string' && alert.resolvedNote.trim()
+            ? alert.resolvedNote.trim().slice(0, 500)
+            : undefined,
+        createdAtDate: String(
+          source.createdAtDate || new Date().toISOString().split('T')[0]
+        ).slice(0, 50),
+      });
+
+      await setDoc(ref, {
+        ...clean,
+        createdAt: d?.createdAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     });
@@ -1520,7 +1947,7 @@ export async function updateExamSecurityAlertInCloud(
 }
 
 export async function deleteExamSecurityAlertFromCloud(alertId: string): Promise<void> {
-  const safeId = alertId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+  const safeId = sanitizeDocId(alertId, 'alert');
   const path = `examAlerts/${safeId}`;
   try {
     await runWithAdminTokenRetry(async () => {

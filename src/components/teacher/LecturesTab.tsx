@@ -30,6 +30,7 @@ import {
   getUnitForLecture,
   slugifyUnitId,
 } from '../../utils/units';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface LecturesTabProps {
   mode: 'upload' | 'list';
@@ -257,7 +258,9 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
         setTimeout(() => setLectureFormSuccess(null), 3500);
         return true;
       }
-      setLectureFormError('تعذر حفظ الوحدة في السحابة، حاول مرة أخرى.');
+      setLectureFormError(
+        getLastCloudWriteError() || 'تعذر حفظ الوحدة في السحابة، حاول مرة أخرى.'
+      );
       return false;
     } finally {
       setSavingUnit(false);
@@ -482,7 +485,7 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     try {
       const saved = await onAddLecture(newLec);
       if (saved === false) {
-        setLectureFormError('تعذر نشر الفيديو في السحابة.');
+        setLectureFormError(getLastCloudWriteError() || 'تعذر نشر الفيديو في السحابة.');
         return;
       }
       setInlineAddUnitId(null);
@@ -726,7 +729,9 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     try {
       const saved = await onAddLecture(newLec);
       if (saved === false) {
-        setLectureFormError('تعذر نشر المحاضرة في السحابة، يرجى المحاولة مرة أخرى.');
+        setLectureFormError(
+          getLastCloudWriteError() || 'تعذر نشر المحاضرة في السحابة، يرجى المحاولة مرة أخرى.'
+        );
         return;
       }
       setLectureFormSuccess('تم نشر المحاضرة بنجاح داخل الوحدة المحددة وأصبحت متاحة للطلاب!');
@@ -763,7 +768,9 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
     try {
       const saved = await onUpdateLecture(editingLecture);
       if (saved === false) {
-        setLectureFormError('تعذر حفظ تعديلات المحاضرة في السحابة.');
+        setLectureFormError(
+          getLastCloudWriteError() || 'تعذر حفظ تعديلات المحاضرة في السحابة.'
+        );
         return;
       }
       setLectureFormSuccess('تم تحديث وتعديل المحاضرة بنجاح!');

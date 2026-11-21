@@ -8,6 +8,7 @@ import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT } from '../..
 import { uploadMediaFile, UploadProgressInfo } from '../../utils/uploader';
 import { UploadProgressBar } from '../UploadProgressBar';
 import { InlineMediaPreview } from '../MediaPreview';
+import { getLastCloudWriteError } from '../../firebase';
 
 interface SiteCustomizerTabProps {
   siteConfig: SiteConfig;
@@ -56,7 +57,9 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
         setSiteSaveSuccess(false);
         setNotice({
           type: 'error',
-          message: 'تعذر حفظ التعديلات على السحابة. يرجى التحقق من اتصال الحساب وصلاحيات الإدارة.',
+          message:
+            getLastCloudWriteError() ||
+            'تعذر حفظ التعديلات على السحابة. يرجى التحقق من اتصال الحساب وصلاحيات الإدارة.',
         });
         return;
       }
@@ -106,7 +109,10 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
       const updatedConfig: SiteConfig = { ...siteConfig, ...siteForm, profileImageUrl: result.url };
       const saved = await onSaveSiteConfig(updatedConfig);
       if (saved === false) {
-        setNotice({ type: 'error', message: 'تم رفع الصورة ولكن تعذر حفظ التعديل في السحابة.' });
+        setNotice({
+          type: 'error',
+          message: getLastCloudWriteError() || 'تم رفع الصورة ولكن تعذر حفظ التعديل في السحابة.',
+        });
       } else {
         setSiteForm(updatedConfig);
         setNotice({
@@ -136,11 +142,16 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
       footerQuickLinks: [...currentLinks, newLink],
     };
     const saved = await onSaveSiteConfig(updatedConfig);
-    if (saved !== false) {
-      setSiteForm(updatedConfig);
-      setNewQuickLinkTitle('');
-      setNewQuickLinkUrl('');
+    if (saved === false) {
+      setNotice({
+        type: 'error',
+        message: getLastCloudWriteError() || 'تعذر حفظ الرابط في السحابة.',
+      });
+      return;
     }
+    setSiteForm(updatedConfig);
+    setNewQuickLinkTitle('');
+    setNewQuickLinkUrl('');
   };
 
   const handleRemoveQuickLink = async (idToRemove: string) => {
@@ -381,7 +392,9 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
                     if (saved === false) {
                       setNotice({
                         type: 'error',
-                        message: 'تعذر حفظ رابط الصورة في السحابة، يرجى التحقق من الاتصال والصلاحيات.',
+                        message:
+                          getLastCloudWriteError() ||
+                          'تعذر حفظ رابط الصورة في السحابة، يرجى التحقق من الاتصال والصلاحيات.',
                       });
                     } else {
                       setNotice({
@@ -405,7 +418,11 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
                         ...nextCfg,
                       });
                       if (saved === false) {
-                        setNotice({ type: 'error', message: 'تعذر استعادة الصورة الأساسية في السحابة.' });
+                        setNotice({
+                          type: 'error',
+                          message:
+                            getLastCloudWriteError() || 'تعذر استعادة الصورة الأساسية في السحابة.',
+                        });
                       } else {
                         setSiteForm(nextCfg);
                         setNotice({
@@ -430,7 +447,10 @@ export const SiteCustomizerTab: React.FC<SiteCustomizerTabProps> = ({
                         ...nextCfg,
                       });
                       if (saved === false) {
-                        setNotice({ type: 'error', message: 'تعذر مسح الصورة من السحابة.' });
+                        setNotice({
+                          type: 'error',
+                          message: getLastCloudWriteError() || 'تعذر مسح الصورة من السحابة.',
+                        });
                       } else {
                         setSiteForm(nextCfg);
                         setNotice({

@@ -241,7 +241,7 @@
         "authorName": { "type": "string", "maxLength": 150 },
         "dateAdded": { "type": "string", "maxLength": 50 },
         "ctaLabel": { "type": "string", "maxLength": 80 },
-        "ctaTab": { "type": "string", "enum": ["lectures", "quizzes", "files", "points"] },
+        "ctaTab": { "type": "string", "enum": ["lectures", "quizzes", "files", "points", "study-hub"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, CheckCircle, AlertCircle, Plus, Trash2, RefreshCw, MailCheck } from 'lucide-react';
 import { SiteConfig } from '../../types/siteConfig';
-import { auth, resendVerificationEmail } from '../../firebase';
+import { auth, resendVerificationEmail, getLastCloudWriteError } from '../../firebase';
 import { LinkPasswordSetup } from '../LinkPasswordSetup';
 
 interface CoAdminsTabProps {
@@ -96,6 +96,7 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
         setAdminNotice({
           type: 'error',
           message:
+            getLastCloudWriteError() ||
             lastCloudError ||
             adminCloudError ||
             'تعذر حفظ صلاحيات المشرف في السحابة، يرجى التحقق من الاتصال والصلاحيات.',
@@ -128,6 +129,7 @@ export const CoAdminsTab: React.FC<CoAdminsTabProps> = ({
       setAdminNotice({
         type: 'error',
         message:
+          getLastCloudWriteError() ||
           lastCloudError ||
           adminCloudError ||
           'تعذر تحديث قائمة المشرفين في قاعدة البيانات.',
