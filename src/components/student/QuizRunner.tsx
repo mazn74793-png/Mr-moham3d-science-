@@ -25,7 +25,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { ExamSecurityAlert, Quiz, UserProfile } from '../../types';
-import { SiteConfig } from '../../types/siteConfig';
+import { SiteConfig, getResolvedFeatureFlags } from '../../types/siteConfig';
 
 interface QuizRunnerProps {
   lang: string;
@@ -119,11 +119,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const PrevChevron = isEn ? ChevronLeft : ChevronRight;
   const NextChevron = isEn ? ChevronRight : ChevronLeft;
 
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
   const isQuizPreCancelled = Boolean(
     activeQuiz && currentUser.cancelledQuizIds?.includes(activeQuiz.id)
   );
   const isQuizCancelled = isQuizPreCancelled || cancelledByCheat;
-  const isProctoringActive = activeQuiz?.proctoringEnabled !== false;
+  const isProctoringActive =
+    activeQuiz?.proctoringEnabled !== false && featureFlags.enableExamAntiCheat;
   const maxAllowedViolations = Math.max(1, Number(activeQuiz?.maxViolations) || 3);
   const warningThresholdSeconds = Math.max(0, Number(activeQuiz?.warningMinutes ?? 5)) * 60;
   const examActivelyRunning = Boolean(
@@ -256,7 +258,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const registerViolation = useCallback(
     (reasonAr: string, reasonEn: string, showCurtain = true) => {
       if (!activeQuiz || !examConfirmed || quizSubmitted || cancelledRef.current) return;
-      if (activeQuiz.proctoringEnabled === false) return;
+      if (!isProctoringActive) return;
 
       const now = Date.now();
       if (now - lastViolationAtRef.current < 1200) {
@@ -316,6 +318,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       activeQuiz,
       examConfirmed,
       quizSubmitted,
+      isProctoringActive,
       isEn,
       maxAllowedViolations,
       currentUser,
@@ -732,7 +735,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     };
     setExamConfirmed(true);
     if (
-      activeQuiz.proctoringEnabled !== false &&
+      isProctoringActive &&
       typeof document.documentElement?.requestFullscreen === 'function'
     ) {
       document.documentElement
@@ -812,7 +815,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                       <span>
                         {isEn ? `Pass: ${passThreshold}%` : `النجاح من ${passThreshold}%`}
                       </span>
-                      {quiz.proctoringEnabled !== false && (
+                      {quiz.proctoringEnabled !== false && featureFlags.enableExamAntiCheat && (
                         <>
                           <span aria-hidden="true">·</span>
                           <span className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300 font-bold">

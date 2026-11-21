@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { onAuthStateChanged, signOut, getRedirectResult, reload, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { Clock3, XCircle, MessageCircle, LogOut, ShieldCheck } from 'lucide-react';
+import { Clock3, XCircle, MessageCircle, LogOut, ShieldCheck, Wrench } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { FeaturesSection } from './components/FeaturesSection';
@@ -22,7 +22,13 @@ import {
   PlatformNotification,
   ExamSecurityAlert,
 } from './types';
-import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT, getGradeDisplayName } from './types/siteConfig';
+import {
+  SiteConfig,
+  DEFAULT_SITE_CONFIG,
+  DEFAULT_TEACHER_PORTRAIT,
+  getGradeDisplayName,
+  getResolvedFeatureFlags,
+} from './types/siteConfig';
 import { LinkPasswordSetup } from './components/LinkPasswordSetup';
 import { DashboardLayoutSkeleton } from './components/teacher/DashboardSkeleton';
 import {
@@ -1463,6 +1469,10 @@ export default function App() {
           localStorage.getItem(`mm_profile_done_${sanitizedStudentInput.id}`) === 'true'
       );
 
+    const resolvedLoginFlags = getResolvedFeatureFlags(siteConfigRef.current);
+    const defaultApprovalStatus =
+      matched?.profileCompleted || !resolvedLoginFlags.requireStudentApproval ? 'approved' : 'pending';
+
     const finalUser: UserProfile = {
       ...sanitizedStudentInput,
       ...matched,
@@ -1471,9 +1481,9 @@ export default function App() {
       role: 'student',
       profileCompleted: isMarkedDone,
       approvalStatus:
-        matched?.approvalStatus ??
-        sanitizedStudentInput.approvalStatus ??
-        (matched?.profileCompleted ? 'approved' : 'pending'),
+        matched?.approvalStatus === 'rejected'
+          ? 'rejected'
+          : matched?.approvalStatus ?? sanitizedStudentInput.approvalStatus ?? defaultApprovalStatus,
     };
 
     setCurrentUser(finalUser);
@@ -2040,8 +2050,20 @@ export default function App() {
     setCurrentView('student');
   };
 
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
+
+  const isStudentMaintenanceBlocked = Boolean(
+    currentView === 'student' &&
+      currentUser &&
+      !isUserAdmin(currentUser) &&
+      featureFlags.maintenanceMode
+  );
+
   const shouldShowOnboarding = Boolean(
-    currentUser && currentUser.role !== 'teacher' && !currentUser.profileCompleted
+    currentUser &&
+      currentUser.role !== 'teacher' &&
+      !currentUser.profileCompleted &&
+      !isStudentMaintenanceBlocked
   );
 
   const isPendingOrRejectedStudent = Boolean(
@@ -2049,11 +2071,13 @@ export default function App() {
       currentUser.role !== 'teacher' &&
       !isEmailAdmin(firebaseUser?.email || currentUser.email) &&
       currentUser.profileCompleted &&
-      !isStudentApproved(currentUser)
+      !isStudentApproved(currentUser, siteConfig)
   );
 
   const shouldPromptPasswordLink = Boolean(
     (currentView === 'student' || currentView === 'onboarding') &&
+      !isStudentMaintenanceBlocked &&
+      featureFlags.allowManualEmailAuth &&
       firebaseUser &&
       !isEmailAdmin(firebaseUser.email) &&
       isGoogleUserWithoutPassword(firebaseUser) &&
@@ -2062,6 +2086,7 @@ export default function App() {
 
   const hideChromeForExam =
     currentView === 'student' &&
+    !isStudentMaintenanceBlocked &&
     inExamFocusMode &&
     !shouldShowOnboarding &&
     !isPendingOrRejectedStudent &&
@@ -2214,7 +2239,76 @@ export default function App() {
             </Suspense>
           )}
 
-        {!shouldPromptPasswordLink &&
+        {isStudentMaintenanceBlocked && currentUser && (
+          <section className="min-h-[75vh] flex flex-col items-center justify-center p-4 sm:p-8 font-cairo">
+            <div className="max-w-lg w-full rounded-3xl bg-white dark:bg-slate-900 border-2 border-amber-300/80 dark:border-amber-700/70 shadow-lg p-6 sm:p-9 text-center space-y-5">
+              <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center justify-center mx-auto">
+                <Wrench className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200">
+                  <Wrench className="w-3.5 h-3.5" />
+                  {lang === 'en' ? 'Scheduled Maintenance' : 'وضع الصيانة المؤقت'}
+                </span>
+
+                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+                  {lang === 'en'
+                    ? 'Student Portal Temporarily Under Maintenance'
+                    : 'المنصة قيد التحديث والصيانة حالياً'}
+                </h2>
+
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {lang === 'en'
+                    ? 'The teacher/admin team is currently performing updates on lectures and exams. Access will resume automatically once maintenance ends.'
+                    : 'تقوم الإدارة حالياً بتحديث المحاضرات والاختبارات لتحسين تجربتك. ستفتح بوابة الطالب تلقائياً فور انتهاء الصيانة.'}
+                </p>
+              </div>
+
+              {featureFlags.enableWhatsAppSupport && (
+                <a
+                  href={buildWhatsAppSupportUrl(
+                    siteConfig,
+                    lang === 'en'
+                      ? `Hello Support Team, I am student ${currentUser.name} checking on platform maintenance.`
+                      : `السلام عليكم فريق الدعم، أنا الطالب ${currentUser.name} وأستفسر عن موعد عودة المنصة بعد الصيانة.`
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full min-h-[48px] px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                >
+                  <MessageCircle className="w-5 h-5 shrink-0" />
+                  <span>
+                    {lang === 'en'
+                      ? 'Contact Support Team on WhatsApp'
+                      : 'تواصل مع فريق الدعم على واتساب'}
+                  </span>
+                </a>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('landing')}
+                  className="w-full sm:flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                >
+                  {lang === 'en' ? 'Back to Home' : 'العودة للرئيسية'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full sm:flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 hover:bg-rose-100 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{lang === 'en' ? 'Sign Out' : 'تسجيل الخروج'}</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!isStudentMaintenanceBlocked &&
+          !shouldPromptPasswordLink &&
           currentView === 'student' &&
           currentUser &&
           !shouldShowOnboarding &&
@@ -2281,24 +2375,26 @@ export default function App() {
                   </div>
                 </div>
 
-                <a
-                  href={buildWhatsAppSupportUrl(
-                    siteConfig,
-                    lang === 'en'
-                      ? `Hello Support Team, please approve my student account:\nName: ${currentUser.name}\nEmail: ${currentUser.email || '-'}\nPhone: ${currentUser.phone || '-'}\nGrade: ${getGradeDisplayName(currentUser.grade, siteConfig, 'en')}`
-                      : `السلام عليكم فريق الدعم، أرجو تفعيل حسابي على منصة أ/ محمد مصطفى:\nالاسم: ${currentUser.name}\nالبريد: ${currentUser.email || '-'}\nالهاتف: ${currentUser.phone || '-'}\nالصف: ${getGradeDisplayName(currentUser.grade, siteConfig, 'ar')}`
-                  )}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full min-h-[48px] px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
-                >
-                  <MessageCircle className="w-5 h-5 shrink-0" />
-                  <span>
-                    {lang === 'en'
-                      ? 'Contact Support Team on WhatsApp'
-                      : 'تواصل مع فريق الدعم على واتساب'}
-                  </span>
-                </a>
+                {featureFlags.enableWhatsAppSupport && (
+                  <a
+                    href={buildWhatsAppSupportUrl(
+                      siteConfig,
+                      lang === 'en'
+                        ? `Hello Support Team, please approve my student account:\nName: ${currentUser.name}\nEmail: ${currentUser.email || '-'}\nPhone: ${currentUser.phone || '-'}\nGrade: ${getGradeDisplayName(currentUser.grade, siteConfig, 'en')}`
+                        : `السلام عليكم فريق الدعم، أرجو تفعيل حسابي على منصة أ/ محمد مصطفى:\nالاسم: ${currentUser.name}\nالبريد: ${currentUser.email || '-'}\nالهاتف: ${currentUser.phone || '-'}\nالصف: ${getGradeDisplayName(currentUser.grade, siteConfig, 'ar')}`
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full min-h-[48px] px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5 shrink-0" />
+                    <span>
+                      {lang === 'en'
+                        ? 'Contact Support Team on WhatsApp'
+                        : 'تواصل مع فريق الدعم على واتساب'}
+                    </span>
+                  </a>
+                )}
 
                 <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
                   <button
@@ -2321,7 +2417,8 @@ export default function App() {
             </section>
           )}
 
-        {!shouldPromptPasswordLink &&
+        {!isStudentMaintenanceBlocked &&
+          !shouldPromptPasswordLink &&
           currentView === 'student' &&
           currentUser &&
           !shouldShowOnboarding &&

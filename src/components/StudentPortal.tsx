@@ -32,6 +32,7 @@ import {
   Layers,
   ShieldAlert,
   MessageCircle,
+  Wrench,
 } from 'lucide-react';
 import {
   Lecture,
@@ -44,7 +45,12 @@ import {
   PlatformNotification,
   ExamSecurityAlert,
 } from '../types';
-import { SiteConfig, getResolvedGrades, getGradeDisplayName } from '../types/siteConfig';
+import {
+  SiteConfig,
+  getResolvedGrades,
+  getGradeDisplayName,
+  getResolvedFeatureFlags,
+} from '../types/siteConfig';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { useLanguage } from '../context/LanguageContext';
 import { detectMediaKind } from './MediaPreview';
@@ -111,6 +117,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onExamFocusModeChange,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
   const resolvedGrades = getResolvedGrades(siteConfig);
   const adminEmailList = (siteConfig?.adminEmails || ['mizoo2y2@gmail.com']).map((e) =>
     e.toLowerCase().trim()
@@ -137,6 +144,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const lastTabBeforeProfileRef = React.useRef<
     'lectures' | 'quizzes' | 'files' | 'points' | 'notifications'
   >('lectures');
+
+  useEffect(() => {
+    if (!featureFlags.enableQuizzes && activeTab === 'quizzes') {
+      setActiveTab('lectures');
+    } else if (!featureFlags.enableHandouts && activeTab === 'files') {
+      setActiveTab('lectures');
+    } else if (!featureFlags.enablePointsSystem && activeTab === 'points') {
+      setActiveTab('lectures');
+    } else if (!featureFlags.enableNotifications && activeTab === 'notifications') {
+      setActiveTab('lectures');
+    }
+  }, [
+    activeTab,
+    featureFlags.enableQuizzes,
+    featureFlags.enableHandouts,
+    featureFlags.enablePointsSystem,
+    featureFlags.enableNotifications,
+  ]);
 
   const openProfilePage = () => {
     if (activeTab !== 'profile') {
@@ -294,6 +319,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [lecturePdfPreviewOpen, setLecturePdfPreviewOpen] = useState(false);
 
   useEffect(() => {
+    if (!featureFlags.enableQuizzes && activeQuiz) {
+      setActiveQuiz(null);
+    }
+  }, [featureFlags.enableQuizzes, activeQuiz]);
+
+  useEffect(() => {
     onExamFocusModeChange?.(Boolean(activeQuiz));
     return () => {
       onExamFocusModeChange?.(false);
@@ -399,6 +430,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   };
 
   const handleStartQuiz = (quiz: Quiz) => {
+    if (!featureFlags.enableQuizzes) return;
     setActiveQuiz(quiz);
     setCurrentQuestionIndex(0);
     setSelectedAnswers({});
@@ -575,20 +607,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
           )}
           <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
-            <a
-              href={buildWhatsAppSupportUrl(
-                siteConfig,
-                isRtl
-                  ? `السلام عليكم فريق الدعم، تم تقييد حسابي (${currentUser.name} - ${currentUser.phone || currentUser.email}) وأرجو مراجعة الحالة.`
-                  : `Hello Support Team, my account (${currentUser.name} - ${currentUser.phone || currentUser.email}) is restricted. Please review.`
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 transition-colors"
-            >
-              <MessageCircle className="w-4 h-4 shrink-0" />
-              <span>{isRtl ? 'التواصل مع فريق الدعم (واتساب)' : 'WhatsApp Support Team'}</span>
-            </a>
+            {featureFlags.enableWhatsAppSupport && (
+              <a
+                href={buildWhatsAppSupportUrl(
+                  siteConfig,
+                  isRtl
+                    ? `السلام عليكم فريق الدعم، تم تقييد حسابي (${currentUser.name} - ${currentUser.phone || currentUser.email}) وأرجو مراجعة الحالة.`
+                    : `Hello Support Team, my account (${currentUser.name} - ${currentUser.phone || currentUser.email}) is restricted. Please review.`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                <span>{isRtl ? 'التواصل مع فريق الدعم (واتساب)' : 'WhatsApp Support Team'}</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={onBackToHome}
@@ -677,26 +711,28 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('notifications');
-                  setActiveQuiz(null);
-                }}
-                aria-label={lang === 'en' ? 'Notifications' : 'الإشعارات والتنبيهات'}
-                className={`relative min-h-[40px] min-w-[40px] px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                  activeTab === 'notifications'
-                    ? 'bg-teal-600 text-white border-teal-600'
-                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                }`}
-              >
-                <Bell className={`w-4 h-4 ${activeTab === 'notifications' ? 'text-white' : 'text-teal-600 dark:text-teal-400'}`} />
-                {unreadNotifCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold tabular-nums leading-none">
-                    {unreadNotifCount}
-                  </span>
-                )}
-              </button>
+              {featureFlags.enableNotifications && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('notifications');
+                    setActiveQuiz(null);
+                  }}
+                  aria-label={lang === 'en' ? 'Notifications' : 'الإشعارات والتنبيهات'}
+                  className={`relative min-h-[40px] min-w-[40px] px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeTab === 'notifications'
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  <Bell className={`w-4 h-4 ${activeTab === 'notifications' ? 'text-white' : 'text-teal-600 dark:text-teal-400'}`} />
+                  {unreadNotifCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold tabular-nums leading-none">
+                      {unreadNotifCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -715,36 +751,40 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('points');
-                  setActiveQuiz(null);
-                }}
-                className="min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 transition-colors flex items-center gap-1.5 cursor-pointer tabular-nums"
-              >
-                <Ticket className="w-4 h-4 text-amber-500" />
-                <span className="font-mono font-extrabold">{currentUser?.points ?? 0}</span>
-                <span className="hidden sm:inline">{lang === 'en' ? 'Pts' : 'نقطة'}</span>
-              </button>
+              {featureFlags.enablePointsSystem && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('points');
+                    setActiveQuiz(null);
+                  }}
+                  className="min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 transition-colors flex items-center gap-1.5 cursor-pointer tabular-nums"
+                >
+                  <Ticket className="w-4 h-4 text-amber-500" />
+                  <span className="font-mono font-extrabold">{currentUser?.points ?? 0}</span>
+                  <span className="hidden sm:inline">{lang === 'en' ? 'Pts' : 'نقطة'}</span>
+                </button>
+              )}
 
-              <a
-                href={buildWhatsAppSupportUrl(
-                  siteConfig,
-                  lang === 'en'
-                    ? `Hello Support Team, I am student ${currentUser.name} (${getGradeTitle(selectedGrade)}) and need support.`
-                    : `السلام عليكم فريق الدعم، أنا الطالب ${currentUser.name} (${getGradeTitle(selectedGrade)}) وأحتاج مساعدة.`
-                )}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={lang === 'en' ? 'WhatsApp Support Team' : 'تواصل مع فريق الدعم على واتساب'}
-                className="min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs"
-              >
-                <MessageCircle className="w-4 h-4 shrink-0" />
-                <span className="hidden md:inline">
-                  {lang === 'en' ? 'Support' : 'فريق الدعم'}
-                </span>
-              </a>
+              {featureFlags.enableWhatsAppSupport && (
+                <a
+                  href={buildWhatsAppSupportUrl(
+                    siteConfig,
+                    lang === 'en'
+                      ? `Hello Support Team, I am student ${currentUser.name} (${getGradeTitle(selectedGrade)}) and need support.`
+                      : `السلام عليكم فريق الدعم، أنا الطالب ${currentUser.name} (${getGradeTitle(selectedGrade)}) وأحتاج مساعدة.`
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={lang === 'en' ? 'WhatsApp Support Team' : 'تواصل مع فريق الدعم على واتساب'}
+                  className="min-h-[40px] px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs"
+                >
+                  <MessageCircle className="w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">
+                    {lang === 'en' ? 'Support' : 'فريق الدعم'}
+                  </span>
+                </a>
+              )}
 
               {isTeacher && (
                 <button
@@ -779,6 +819,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         }`}
       >
 
+        {isTeacher && !activeQuiz && featureFlags.maintenanceMode && (
+          <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Wrench className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                {lang === 'en'
+                  ? 'Maintenance Mode is ON — students cannot access the portal right now (Teacher preview active).'
+                  : 'وضع الصيانة مُفعّل حالياً — بوابة الطلاب مغلقة أمام الطلاب الآن (أنت تشاهدها بصلاحية المعلم).'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Desktop Segmented Navigation & Teacher Grade Switcher (hidden in distraction-free exam mode) */}
         {!activeQuiz && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -804,90 +857,100 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('quizzes')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'quizzes' || activeQuiz
-                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Award className="w-4 h-4" />
-              <span>
-                {lang === 'en'
-                  ? `Quizzes (${filteredQuizzes.length})`
-                  : `الامتحانات (${filteredQuizzes.length})`}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('files');
-                setActiveQuiz(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'files'
-                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>
-                {lang === 'en'
-                  ? `Handouts (${filteredAttachments.length})`
-                  : `المذكرات (${filteredAttachments.length})`}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('points');
-                setActiveQuiz(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'points'
-                  ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Ticket className="w-4 h-4 text-amber-500" />
-              <span>{lang === 'en' ? 'Points & Codes' : 'النقاط والأكواد'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('notifications');
-                setActiveQuiz(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                activeTab === 'notifications'
-                  ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Bell className="w-4 h-4" />
-              <span>{lang === 'en' ? 'Notifications' : 'الإشعارات'}</span>
-              {unreadNotifCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono tabular-nums leading-none">
-                  {unreadNotifCount}
+            {featureFlags.enableQuizzes && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('quizzes')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'quizzes' || activeQuiz
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Award className="w-4 h-4" />
+                <span>
+                  {lang === 'en'
+                    ? `Quizzes (${filteredQuizzes.length})`
+                    : `الامتحانات (${filteredQuizzes.length})`}
                 </span>
-              )}
-            </button>
+              </button>
+            )}
+
+            {featureFlags.enableHandouts && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('files');
+                  setActiveQuiz(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'files'
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>
+                  {lang === 'en'
+                    ? `Handouts (${filteredAttachments.length})`
+                    : `المذكرات (${filteredAttachments.length})`}
+                </span>
+              </button>
+            )}
+
+            {featureFlags.enablePointsSystem && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('points');
+                  setActiveQuiz(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'points'
+                    ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Ticket className="w-4 h-4 text-amber-500" />
+                <span>{lang === 'en' ? 'Points & Codes' : 'النقاط والأكواد'}</span>
+              </button>
+            )}
+
+            {featureFlags.enableNotifications && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('notifications');
+                  setActiveQuiz(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'notifications'
+                    ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Bell className="w-4 h-4" />
+                <span>{lang === 'en' ? 'Notifications' : 'الإشعارات'}</span>
+                {unreadNotifCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono tabular-nums leading-none">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* Mobile / Tablet Quick Scrollable Strip */}
           <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
             {[
-              { id: 'lectures' as const, label: lang === 'en' ? 'Lectures' : `المحاضرات (${filteredLectures.length})`, icon: Video },
-              { id: 'quizzes' as const, label: lang === 'en' ? 'Quizzes' : `الامتحانات (${filteredQuizzes.length})`, icon: Award },
-              { id: 'files' as const, label: lang === 'en' ? 'Handouts' : `الملازم (${filteredAttachments.length})`, icon: FileText },
-              { id: 'points' as const, label: lang === 'en' ? 'Points' : 'النقاط والأكواد', icon: Ticket },
-              { id: 'notifications' as const, label: lang === 'en' ? `Notices (${visibleNotifications.length})` : `الإشعارات (${visibleNotifications.length})`, icon: Bell },
-            ].map((item) => {
+              { id: 'lectures' as const, visible: true, label: lang === 'en' ? 'Lectures' : `المحاضرات (${filteredLectures.length})`, icon: Video },
+              { id: 'quizzes' as const, visible: featureFlags.enableQuizzes, label: lang === 'en' ? 'Quizzes' : `الامتحانات (${filteredQuizzes.length})`, icon: Award },
+              { id: 'files' as const, visible: featureFlags.enableHandouts, label: lang === 'en' ? 'Handouts' : `الملازم (${filteredAttachments.length})`, icon: FileText },
+              { id: 'points' as const, visible: featureFlags.enablePointsSystem, label: lang === 'en' ? 'Points' : 'النقاط والأكواد', icon: Ticket },
+              { id: 'notifications' as const, visible: featureFlags.enableNotifications, label: lang === 'en' ? `Notices (${visibleNotifications.length})` : `الإشعارات (${visibleNotifications.length})`, icon: Bell },
+            ]
+              .filter((item) => item.visible)
+              .map((item) => {
               const IconComp = item.icon;
               const isSelected =
                 item.id === 'quizzes' ? activeTab === 'quizzes' || Boolean(activeQuiz) : activeTab === item.id && !activeQuiz;
@@ -935,9 +998,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         )}
 
         <div className="flex flex-col gap-6">
-          {/* Compact 4-Metric Quick Strip (hidden on active quiz or full-page profile view) */}
-          {!activeQuiz && activeTab !== 'profile' && (
-            <div className="order-2 lg:order-1 grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in-up">
+          {/* Compact Metric Quick Strip (hidden on active quiz or full-page profile view) */}
+          {!activeQuiz && activeTab !== 'profile' && (() => {
+            const metricCount =
+              1 +
+              (featureFlags.enableQuizzes ? 1 : 0) +
+              (featureFlags.enableHandouts ? 1 : 0) +
+              (featureFlags.enablePointsSystem ? 1 : 0);
+            const metricGridClass =
+              metricCount === 4
+                ? 'grid-cols-2 lg:grid-cols-4'
+                : metricCount === 3
+                ? 'grid-cols-2 lg:grid-cols-3'
+                : metricCount === 2
+                ? 'grid-cols-2'
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
+            return (
+            <div className={`order-2 lg:order-1 grid ${metricGridClass} gap-3 animate-fade-in-up`}>
               <button
                 type="button"
                 onClick={() => {
@@ -958,58 +1035,65 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </div>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (nextTargetQuiz) {
-                    handleStartQuiz(nextTargetQuiz);
-                  } else {
-                    setActiveTab('quizzes');
-                  }
-                }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
-              >
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>{lang === 'en' ? 'Quizzes Passed' : 'الاختبارات المجتازة'}</span>
-                  <Award className="w-4 h-4 text-amber-500 shrink-0" />
-                </div>
-                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-                  {passedQuizzesCount} / {filteredQuizzes.length}
-                </div>
-              </button>
+              {featureFlags.enableQuizzes && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (nextTargetQuiz) {
+                      handleStartQuiz(nextTargetQuiz);
+                    } else {
+                      setActiveTab('quizzes');
+                    }
+                  }}
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>{lang === 'en' ? 'Quizzes Passed' : 'الاختبارات المجتازة'}</span>
+                    <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                    {passedQuizzesCount} / {filteredQuizzes.length}
+                  </div>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('files')}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
-              >
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>{lang === 'en' ? 'PDF Handouts' : 'المذكرات المتاحة'}</span>
-                  <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-                </div>
-                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-                  {filteredAttachments.length} {lang === 'en' ? 'Files' : 'ملفات'}
-                </div>
-              </button>
+              {featureFlags.enableHandouts && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('files')}
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-teal-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>{lang === 'en' ? 'PDF Handouts' : 'المذكرات المتاحة'}</span>
+                    <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                    {filteredAttachments.length} {lang === 'en' ? 'Files' : 'ملفات'}
+                  </div>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('points');
-                  setActiveQuiz(null);
-                }}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
-              >
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>{lang === 'en' ? 'Points Wallet' : 'رصيد النقاط والأكواد'}</span>
-                  <Ticket className="w-4 h-4 text-amber-500 shrink-0" />
-                </div>
-                <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">
-                  {currentUser?.points ?? 0} {lang === 'en' ? 'Pts' : 'نقطة'}
-                </div>
-              </button>
+              {featureFlags.enablePointsSystem && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('points');
+                    setActiveQuiz(null);
+                  }}
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-400 hover-card-lift text-start flex flex-col justify-between gap-2 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>{lang === 'en' ? 'Points Wallet' : 'رصيد النقاط والأكواد'}</span>
+                    <Ticket className="w-4 h-4 text-amber-500 shrink-0" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                    {currentUser?.points ?? 0} {lang === 'en' ? 'Pts' : 'نقطة'}
+                  </div>
+                </button>
+              )}
             </div>
-          )}
+            );
+          })()}
 
           {/* PRIMARY WORKSPACE */}
           <div className="order-1 lg:order-2">
@@ -1144,11 +1228,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             onRegisterTimeGetter={(fn) => {
                               videoTimeGetterRef.current = fn;
                             }}
-                            onTakeQuiz={(quizId) => {
-                              const targetQuiz =
-                                quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
-                              if (targetQuiz) handleStartQuiz(targetQuiz);
-                            }}
+                            onTakeQuiz={
+                              featureFlags.enableQuizzes
+                                ? (quizId) => {
+                                    const targetQuiz =
+                                      quizzes.find((q) => q.id === quizId) || filteredQuizzes[0];
+                                    if (targetQuiz) handleStartQuiz(targetQuiz);
+                                  }
+                                : undefined
+                            }
                           />
 
                           <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 space-y-4">
@@ -1224,7 +1312,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           </div>
 
                           {/* Attached PDF Handout Row */}
-                          {activeLecture.pdfTitle && (
+                          {featureFlags.enableHandouts && activeLecture.pdfTitle && (
                             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div className="flex items-center gap-3 min-w-0">
@@ -1420,139 +1508,151 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
                             {activeLecture.title}
                           </h3>
-                          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed tabular-nums">
-                            {lang === 'en' ? 'Current balance:' : 'رصيدك الحالي:'}{' '}
-                            <span className="font-mono font-bold text-slate-900 dark:text-white">
-                              {currentUser?.points ?? 0} {lang === 'en' ? 'Pts' : 'نقطة'}
-                            </span>{' '}
-                            · {lang === 'en' ? 'Unlock cost:' : 'تكلفة الفتح:'}{' '}
-                            <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-                              {activeLecture.pointsCost} {lang === 'en' ? 'Pts' : 'نقطة'}
-                            </span>
-                          </p>
+                          {featureFlags.enablePointsSystem ? (
+                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed tabular-nums">
+                              {lang === 'en' ? 'Current balance:' : 'رصيدك الحالي:'}{' '}
+                              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                                {currentUser?.points ?? 0} {lang === 'en' ? 'Pts' : 'نقطة'}
+                              </span>{' '}
+                              · {lang === 'en' ? 'Unlock cost:' : 'تكلفة الفتح:'}{' '}
+                              <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                                {activeLecture.pointsCost} {lang === 'en' ? 'Pts' : 'نقطة'}
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                              {lang === 'en'
+                                ? 'Points & code redemption is currently paused by the administration. Please check back later.'
+                                : 'نظام النقاط والأكواد متوقف مؤقتاً من قِبل الإدارة. يرجى المراجعة لاحقاً.'}
+                            </p>
+                          )}
                         </div>
 
-                        {inlineNotice && (
-                          <div
-                            className={`max-w-md mx-auto p-3 rounded-xl text-xs font-bold ${
-                              inlineNotice.type === 'success'
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                            }`}
-                          >
-                            {inlineNotice.text}
-                          </div>
-                        )}
-
-                        <div className="max-w-md mx-auto space-y-3">
-                          <button
-                            type="button"
-                            disabled={
-                              inlineBusy ||
-                              (currentUser?.points ?? 0) < (activeLecture.pointsCost || 0)
-                            }
-                            onClick={async () => {
-                              if (!onUnlockLecture || inlineBusy) return;
-                              setInlineNotice(null);
-                              setInlineBusy(true);
-                              try {
-                                await onUnlockLecture(activeLecture);
-                                setInlineNotice({
-                                  type: 'success',
-                                  text:
-                                    lang === 'en'
-                                      ? 'Lecture unlocked! Enjoy watching.'
-                                      : 'تم فتح المحاضرة بنجاح! استمتع بالمشاهدة.',
-                                });
-                              } catch (err: any) {
-                                setInlineNotice({
-                                  type: 'error',
-                                  text:
-                                    err?.message ||
-                                    (lang === 'en'
-                                      ? 'Could not unlock lecture.'
-                                      : 'تعذر فتح المحاضرة بالنقاط.'),
-                                });
-                              } finally {
-                                setInlineBusy(false);
-                              }
-                            }}
-                            className={`w-full min-h-[48px] px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
-                              (currentUser?.points ?? 0) >= (activeLecture.pointsCost || 0)
-                                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer shadow-sm'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            {inlineBusy ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Unlock className="w-4 h-4" />
+                        {featureFlags.enablePointsSystem && (
+                          <>
+                            {inlineNotice && (
+                              <div
+                                className={`max-w-md mx-auto p-3 rounded-xl text-xs font-bold ${
+                                  inlineNotice.type === 'success'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                                }`}
+                              >
+                                {inlineNotice.text}
+                              </div>
                             )}
-                            <span>
-                              {(currentUser?.points ?? 0) >= (activeLecture.pointsCost || 0)
-                                ? lang === 'en'
-                                  ? `Unlock Now for ${activeLecture.pointsCost} Pts`
-                                  : `افتح المحاضرة الآن بـ ${activeLecture.pointsCost} نقطة`
-                                : lang === 'en'
-                                ? `Need ${
-                                    (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
-                                  } more points`
-                                : `رصيدك غير كافٍ — ينقصك ${
-                                    (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
-                                  } نقطة`}
-                            </span>
-                          </button>
 
-                          {/* Inline Quick Redeem Code Form */}
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              if (!onRedeemCode || !inlineCodeInput.trim() || inlineBusy) return;
-                              setInlineNotice(null);
-                              setInlineBusy(true);
-                              try {
-                                const res = await onRedeemCode(inlineCodeInput);
-                                setInlineCodeInput('');
-                                setInlineNotice({
-                                  type: 'success',
-                                  text:
-                                    lang === 'en'
-                                      ? `Added +${res.pointsAdded} Pts! Balance is now ${res.newBalance} Pts.`
-                                      : `تم شحن +${res.pointsAdded} نقطة! رصيدك الآن ${res.newBalance} نقطة.`,
-                                });
-                              } catch (err: any) {
-                                setInlineNotice({
-                                  type: 'error',
-                                  text:
-                                    err?.message ||
-                                    (lang === 'en'
-                                      ? 'Invalid or expired code.'
-                                      : 'الكود غير صحيح أو منتهي.'),
-                                });
-                              } finally {
-                                setInlineBusy(false);
-                              }
-                            }}
-                            className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-2"
-                          >
-                            <input
-                              type="text"
-                              value={inlineCodeInput}
-                              onChange={(e) => setInlineCodeInput(e.target.value.toUpperCase())}
-                              placeholder={lang === 'en' ? 'Have a redeem code?' : 'معاك كود شحن؟ اكتبه هنا'}
-                              dir="ltr"
-                              className="flex-1 min-h-[42px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-xs font-bold uppercase text-center"
-                            />
-                            <button
-                              type="submit"
-                              disabled={inlineBusy || !inlineCodeInput.trim()}
-                              className="min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                              <span>{lang === 'en' ? 'Redeem' : 'شحن الكود'}</span>
-                            </button>
-                          </form>
-                        </div>
+                            <div className="max-w-md mx-auto space-y-3">
+                              <button
+                                type="button"
+                                disabled={
+                                  inlineBusy ||
+                                  (currentUser?.points ?? 0) < (activeLecture.pointsCost || 0)
+                                }
+                                onClick={async () => {
+                                  if (!onUnlockLecture || inlineBusy) return;
+                                  setInlineNotice(null);
+                                  setInlineBusy(true);
+                                  try {
+                                    await onUnlockLecture(activeLecture);
+                                    setInlineNotice({
+                                      type: 'success',
+                                      text:
+                                        lang === 'en'
+                                          ? 'Lecture unlocked! Enjoy watching.'
+                                          : 'تم فتح المحاضرة بنجاح! استمتع بالمشاهدة.',
+                                    });
+                                  } catch (err: any) {
+                                    setInlineNotice({
+                                      type: 'error',
+                                      text:
+                                        err?.message ||
+                                        (lang === 'en'
+                                          ? 'Could not unlock lecture.'
+                                          : 'تعذر فتح المحاضرة بالنقاط.'),
+                                    });
+                                  } finally {
+                                    setInlineBusy(false);
+                                  }
+                                }}
+                                className={`w-full min-h-[48px] px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
+                                  (currentUser?.points ?? 0) >= (activeLecture.pointsCost || 0)
+                                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer shadow-sm'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                {inlineBusy ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Unlock className="w-4 h-4" />
+                                )}
+                                <span>
+                                  {(currentUser?.points ?? 0) >= (activeLecture.pointsCost || 0)
+                                    ? lang === 'en'
+                                      ? `Unlock Now for ${activeLecture.pointsCost} Pts`
+                                      : `افتح المحاضرة الآن بـ ${activeLecture.pointsCost} نقطة`
+                                    : lang === 'en'
+                                    ? `Need ${
+                                        (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
+                                      } more points`
+                                    : `رصيدك غير كافٍ — ينقصك ${
+                                        (activeLecture.pointsCost || 0) - (currentUser?.points ?? 0)
+                                      } نقطة`}
+                                </span>
+                              </button>
+
+                              {/* Inline Quick Redeem Code Form */}
+                              <form
+                                onSubmit={async (e) => {
+                                  e.preventDefault();
+                                  if (!onRedeemCode || !inlineCodeInput.trim() || inlineBusy) return;
+                                  setInlineNotice(null);
+                                  setInlineBusy(true);
+                                  try {
+                                    const res = await onRedeemCode(inlineCodeInput);
+                                    setInlineCodeInput('');
+                                    setInlineNotice({
+                                      type: 'success',
+                                      text:
+                                        lang === 'en'
+                                          ? `Added +${res.pointsAdded} Pts! Balance is now ${res.newBalance} Pts.`
+                                          : `تم شحن +${res.pointsAdded} نقطة! رصيدك الآن ${res.newBalance} نقطة.`,
+                                    });
+                                  } catch (err: any) {
+                                    setInlineNotice({
+                                      type: 'error',
+                                      text:
+                                        err?.message ||
+                                        (lang === 'en'
+                                          ? 'Invalid or expired code.'
+                                          : 'الكود غير صحيح أو منتهي.'),
+                                    });
+                                  } finally {
+                                    setInlineBusy(false);
+                                  }
+                                }}
+                                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-2"
+                              >
+                                <input
+                                  type="text"
+                                  value={inlineCodeInput}
+                                  onChange={(e) => setInlineCodeInput(e.target.value.toUpperCase())}
+                                  placeholder={lang === 'en' ? 'Have a redeem code?' : 'معاك كود شحن؟ اكتبه هنا'}
+                                  dir="ltr"
+                                  className="flex-1 min-h-[42px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-xs font-bold uppercase text-center"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={inlineBusy || !inlineCodeInput.trim()}
+                                  className="min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>{lang === 'en' ? 'Redeem' : 'شحن الكود'}</span>
+                                </button>
+                              </form>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ) : (
                       /* Locked Prerequisite Screen */
@@ -1618,7 +1718,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 )}
                               </div>
 
-                              {prereq.prevQuiz && (
+                              {prereq.prevQuiz && featureFlags.enableQuizzes && (
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
                                   <div className="flex items-center gap-2.5">
                                     {prereq.prevQuizPassed ? (
@@ -2012,7 +2112,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           )}
 
             {/* 2. QUIZZES TAB & ACTIVE EXAM ENGINE */}
-            {(activeTab === 'quizzes' || activeQuiz) && (
+            {(activeTab === 'quizzes' || activeQuiz) && featureFlags.enableQuizzes && (
               <QuizRunner
                 lang={lang}
                 currentUser={currentUser}
@@ -2039,7 +2139,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             )}
 
             {/* 3. FILES & ATTACHMENTS TAB */}
-            {activeTab === 'files' && !activeQuiz && (
+            {activeTab === 'files' && !activeQuiz && featureFlags.enableHandouts && (
               <HandoutsTab
                 lang={lang}
                 gradeTitle={getGradeTitle(selectedGrade)}
@@ -2050,7 +2150,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             )}
 
             {/* 4. POINTS WALLET & REDEEM CODES TAB */}
-            {activeTab === 'points' && !activeQuiz && (
+            {activeTab === 'points' && !activeQuiz && featureFlags.enablePointsSystem && (
               <PointsWalletTab
                 lang={lang}
                 currentUser={currentUser}
@@ -2088,7 +2188,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             )}
 
             {/* 5. NOTIFICATIONS & ANNOUNCEMENTS TAB */}
-            {activeTab === 'notifications' && !activeQuiz && (
+            {activeTab === 'notifications' && !activeQuiz && featureFlags.enableNotifications && (
               <StudentNotificationsTab
                 notifications={visibleNotifications}
                 readNotificationIds={readNotificationIds}
@@ -2133,12 +2233,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       </div>
 
       {/* Fixed Mobile Bottom Tab Bar (hidden inside distraction-free exam mode) */}
-      {!activeQuiz && (
+      {!activeQuiz && (() => {
+        const bottomCount =
+          2 +
+          (featureFlags.enableQuizzes ? 1 : 0) +
+          (featureFlags.enablePointsSystem ? 1 : 0) +
+          (featureFlags.enableHandouts ? 1 : 0);
+        const bottomGridClass =
+          bottomCount === 5
+            ? 'grid-cols-5'
+            : bottomCount === 4
+            ? 'grid-cols-4'
+            : bottomCount === 3
+            ? 'grid-cols-3'
+            : 'grid-cols-2';
+        return (
       <nav
         aria-label={lang === 'en' ? 'Student Navigation' : 'التنقل الرئيسي للطالب'}
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)]"
       >
-        <div className="grid grid-cols-5 h-14 max-w-lg mx-auto">
+        <div className={`grid ${bottomGridClass} h-14 max-w-lg mx-auto`}>
           <button
             type="button"
             onClick={() => {
@@ -2155,50 +2269,56 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <span>{lang === 'en' ? 'Lectures' : 'المحاضرات'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('quizzes')}
-            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              activeTab === 'quizzes' || activeQuiz
-                ? 'text-teal-600 dark:text-teal-400'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            <Award className="w-5 h-5" />
-            <span>{lang === 'en' ? 'Quizzes' : 'الامتحانات'}</span>
-          </button>
+          {featureFlags.enableQuizzes && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('quizzes')}
+              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
+                activeTab === 'quizzes' || activeQuiz
+                  ? 'text-teal-600 dark:text-teal-400'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <Award className="w-5 h-5" />
+              <span>{lang === 'en' ? 'Quizzes' : 'الامتحانات'}</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('points');
-              setActiveQuiz(null);
-            }}
-            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              activeTab === 'points'
-                ? 'text-amber-600 dark:text-amber-400'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            <Ticket className="w-5 h-5" />
-            <span>{lang === 'en' ? 'Points' : 'النقاط'}</span>
-          </button>
+          {featureFlags.enablePointsSystem && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('points');
+                setActiveQuiz(null);
+              }}
+              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
+                activeTab === 'points'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <Ticket className="w-5 h-5" />
+              <span>{lang === 'en' ? 'Points' : 'النقاط'}</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('files');
-              setActiveQuiz(null);
-            }}
-            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
-              activeTab === 'files'
-                ? 'text-teal-600 dark:text-teal-400'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            <FileText className="w-5 h-5" />
-            <span>{lang === 'en' ? 'PDFs' : 'الملازم'}</span>
-          </button>
+          {featureFlags.enableHandouts && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('files');
+                setActiveQuiz(null);
+              }}
+              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer ${
+                activeTab === 'files'
+                  ? 'text-teal-600 dark:text-teal-400'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <FileText className="w-5 h-5" />
+              <span>{lang === 'en' ? 'PDFs' : 'الملازم'}</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -2214,7 +2334,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </button>
         </div>
       </nav>
-      )}
+        );
+      })()}
     </div>
   );
 };

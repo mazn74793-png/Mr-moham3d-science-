@@ -49,6 +49,14 @@ service cloud.firestore {
       );
     }
 
+    function isAutoApproveEnabled() {
+      return exists(/databases/$(database)/documents/publicConfig/site) &&
+        'featureFlags' in get(/databases/$(database)/documents/publicConfig/site).data &&
+        get(/databases/$(database)/documents/publicConfig/site).data.featureFlags is map &&
+        'requireStudentApproval' in get(/databases/$(database)/documents/publicConfig/site).data.featureFlags &&
+        get(/databases/$(database)/documents/publicConfig/site).data.featureFlags.requireStudentApproval == false;
+    }
+
     // ==========================================
     // ENTITY VALIDATION HELPERS
     // ==========================================
@@ -63,7 +71,7 @@ service cloud.firestore {
           'gradeFirstDescAr', 'gradeSecondTitleAr', 'gradeSecondTitleEn', 'gradeSecondBadgeAr',
           'gradeSecondDescAr', 'gradeThirdTitleAr', 'gradeThirdTitleEn', 'gradeThirdBadgeAr',
           'gradeThirdDescAr', 'feature1Title', 'feature1Desc', 'feature2Title', 'feature2Desc',
-          'feature3Title', 'feature3Desc', 'feature4Title', 'feature4Desc', 'updatedAt'
+          'feature3Title', 'feature3Desc', 'feature4Title', 'feature4Desc', 'featureFlags', 'updatedAt'
         ]) &&
         data.teacherName is string && data.teacherName.size() > 0 && data.teacherName.size() <= 150 &&
         data.teacherTitle is string && data.teacherTitle.size() > 0 && data.teacherTitle.size() <= 150 &&
@@ -107,7 +115,27 @@ service cloud.firestore {
         (!('feature3Title' in data) || (data.feature3Title is string && data.feature3Title.size() <= 200)) &&
         (!('feature3Desc' in data) || (data.feature3Desc is string && data.feature3Desc.size() <= 1000)) &&
         (!('feature4Title' in data) || (data.feature4Title is string && data.feature4Title.size() <= 200)) &&
-        (!('feature4Desc' in data) || (data.feature4Desc is string && data.feature4Desc.size() <= 1000));
+        (!('feature4Desc' in data) || (data.feature4Desc is string && data.feature4Desc.size() <= 1000)) &&
+        (!('featureFlags' in data) || (
+          data.featureFlags is map &&
+          data.featureFlags.keys().hasOnly([
+            'requireStudentApproval', 'allowPublicRegistration', 'allowGoogleAuth',
+            'allowManualEmailAuth', 'enableQuizzes', 'enableExamAntiCheat',
+            'enableHandouts', 'enablePointsSystem', 'enableNotifications',
+            'enableWhatsAppSupport', 'maintenanceMode'
+          ]) &&
+          (!('requireStudentApproval' in data.featureFlags) || data.featureFlags.requireStudentApproval is bool) &&
+          (!('allowPublicRegistration' in data.featureFlags) || data.featureFlags.allowPublicRegistration is bool) &&
+          (!('allowGoogleAuth' in data.featureFlags) || data.featureFlags.allowGoogleAuth is bool) &&
+          (!('allowManualEmailAuth' in data.featureFlags) || data.featureFlags.allowManualEmailAuth is bool) &&
+          (!('enableQuizzes' in data.featureFlags) || data.featureFlags.enableQuizzes is bool) &&
+          (!('enableExamAntiCheat' in data.featureFlags) || data.featureFlags.enableExamAntiCheat is bool) &&
+          (!('enableHandouts' in data.featureFlags) || data.featureFlags.enableHandouts is bool) &&
+          (!('enablePointsSystem' in data.featureFlags) || data.featureFlags.enablePointsSystem is bool) &&
+          (!('enableNotifications' in data.featureFlags) || data.featureFlags.enableNotifications is bool) &&
+          (!('enableWhatsAppSupport' in data.featureFlags) || data.featureFlags.enableWhatsAppSupport is bool) &&
+          (!('maintenanceMode' in data.featureFlags) || data.featureFlags.maintenanceMode is bool)
+        ));
     }
 
     function isValidAdminConfig(data) {
@@ -420,7 +448,10 @@ service cloud.firestore {
           incoming().id == studentId &&
           incoming().uid == request.auth.uid &&
           incoming().role == 'student' &&
-          (!('approvalStatus' in incoming()) || incoming().approvalStatus == 'pending') &&
+          (!('approvalStatus' in incoming()) ||
+            incoming().approvalStatus == 'pending' ||
+            (incoming().approvalStatus == 'approved' && isAutoApproveEnabled())
+          ) &&
           (!('points' in incoming()) || incoming().points == 0) &&
           (!('unlockedLectureIds' in incoming()) || incoming().unlockedLectureIds.size() == 0) &&
           (!('unlockedAttachmentIds' in incoming()) || incoming().unlockedAttachmentIds.size() == 0) &&
@@ -441,9 +472,23 @@ service cloud.firestore {
               'name', 'email', 'grade', 'phone', 'parentPhone', 'governorate',
               'avatarUrl', 'profileCompleted', 'updatedAt'
             ]) ||
-            // Action 1B: Academic Progress / Quiz Results / Anti-Cheat Exam Lock Update (approved students only)
+            // Action 1A-Auto: Onboarding / Auto-Approval when admin disabled student approval gate
             (
-              (!('approvalStatus' in existing()) || existing().approvalStatus == 'approved') &&
+              existing().approvalStatus != 'rejected' &&
+              incoming().approvalStatus == 'approved' &&
+              isAutoApproveEnabled() &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'email', 'grade', 'phone', 'parentPhone', 'governorate',
+                'avatarUrl', 'profileCompleted', 'approvalStatus', 'updatedAt'
+              ])
+            ) ||
+            // Action 1B: Academic Progress / Quiz Results / Anti-Cheat Exam Lock Update (approved students only, or auto-approved non-rejected)
+            (
+              (
+                !('approvalStatus' in existing()) ||
+                existing().approvalStatus == 'approved' ||
+                (existing().approvalStatus == 'pending' && isAutoApproveEnabled())
+              ) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'name', 'email', 'grade', 'phone', 'parentPhone', 'governorate',
                 'avatarUrl', 'score', 'profileCompleted', 'watchedLectureIds',
@@ -451,9 +496,13 @@ service cloud.firestore {
                 'updatedAt'
               ])
             ) ||
-            // Action 2: Redeem Code Atomic Credit (approved students only)
+            // Action 2: Redeem Code Atomic Credit (approved students only, or auto-approved non-rejected)
             (
-              (!('approvalStatus' in existing()) || existing().approvalStatus == 'approved') &&
+              (
+                !('approvalStatus' in existing()) ||
+                existing().approvalStatus == 'approved' ||
+                (existing().approvalStatus == 'pending' && isAutoApproveEnabled())
+              ) &&
               incoming().diff(existing()).affectedKeys().hasOnly(['points', 'lastRedeemedCode', 'pointsHistory', 'updatedAt']) &&
               incoming().lastRedeemedCode is string &&
               isValidId(incoming().lastRedeemedCode) &&
@@ -464,9 +513,13 @@ service cloud.firestore {
                 ('points' in existing() && existing().points is number && incoming().points == existing().points + get(/databases/$(database)/documents/redeemCodes/$(incoming().lastRedeemedCode)).data.points)
               )
             ) ||
-            // Action 3: Spend Points to Unlock Lecture, Handout, or Reward (approved students only)
+            // Action 3: Spend Points to Unlock Lecture, Handout, or Reward (approved students only, or auto-approved non-rejected)
             (
-              (!('approvalStatus' in existing()) || existing().approvalStatus == 'approved') &&
+              (
+                !('approvalStatus' in existing()) ||
+                existing().approvalStatus == 'approved' ||
+                (existing().approvalStatus == 'pending' && isAutoApproveEnabled())
+              ) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'points', 'unlockedLectureIds', 'unlockedAttachmentIds', 'claimedRewardIds',
                 'pointsHistory', 'lastSpendTargetType', 'lastSpendTargetId', 'updatedAt'

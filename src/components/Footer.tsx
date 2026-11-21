@@ -1,6 +1,6 @@
 import React from 'react';
 import { MessageCircle, Phone, Youtube, Facebook, Send } from 'lucide-react';
-import { SiteConfig } from '../types/siteConfig';
+import { SiteConfig, getResolvedFeatureFlags } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 
 export type AppView =
@@ -36,6 +36,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenSecretAdmin,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
 
   const bioText =
     lang === 'en'
@@ -92,15 +93,17 @@ export const Footer: React.FC<FooterProps> = ({
               >
                 <Youtube className="w-4 h-4" />
               </a>
-              <a
-                href={`https://wa.me/${siteConfig.whatsappNumber}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500 hover:text-teal-400 flex items-center justify-center transition-colors text-slate-300"
-                aria-label="WhatsApp"
-              >
-                <MessageCircle className="w-4 h-4" />
-              </a>
+              {featureFlags.enableWhatsAppSupport && (
+                <a
+                  href={`https://wa.me/${siteConfig.whatsappNumber}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500 hover:text-teal-400 flex items-center justify-center transition-colors text-slate-300"
+                  aria-label="WhatsApp"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </a>
+              )}
               <a
                 href={siteConfig.telegramUrl}
                 target="_blank"

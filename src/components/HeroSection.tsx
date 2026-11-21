@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Play, Sparkles, Award, Atom } from 'lucide-react';
-import { SiteConfig, DEFAULT_TEACHER_PORTRAIT } from '../types/siteConfig';
+import { SiteConfig, DEFAULT_TEACHER_PORTRAIT, getResolvedFeatureFlags } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 import { optimizeImageUrl, getImageLqipUrl } from '../utils/mediaOptimizer';
 
@@ -16,6 +16,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onExploreLectures,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
   const ActionArrow = isRtl ? ArrowLeft : ArrowRight;
@@ -143,7 +144,15 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 className="group relative overflow-hidden flex-1 sm:flex-none px-5 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-extrabold text-white bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800 hover:from-teal-700 hover:to-teal-900 rounded-2xl shadow-xl shadow-teal-700/25 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 sm:gap-3 cursor-pointer hover:-translate-y-0.5 min-h-[48px] sm:min-h-[50px] whitespace-nowrap"
               >
                 <div className="absolute inset-0 w-1/2 h-full bg-white/20 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
-                <span className="relative z-10">{lang === 'en' ? '+ Join Us Now' : '+ انضم لينا الآن'}</span>
+                <span className="relative z-10">
+                  {featureFlags.allowPublicRegistration
+                    ? lang === 'en'
+                      ? '+ Join Us Now'
+                      : '+ انضم لينا الآن'
+                    : lang === 'en'
+                    ? 'Student Sign In'
+                    : 'تسجيل دخول الطلاب'}
+                </span>
                 <ActionArrow className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 relative z-10 ${isRtl ? 'group-hover:-translate-x-1.5' : 'group-hover:translate-x-1.5'}`} />
               </button>
 

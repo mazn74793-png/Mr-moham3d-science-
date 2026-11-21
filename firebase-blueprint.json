@@ -47,6 +47,7 @@
         "feature3Desc": { "type": "string", "maxLength": 1000 },
         "feature4Title": { "type": "string", "maxLength": 200 },
         "feature4Desc": { "type": "string", "maxLength": 1000 },
+        "featureFlags": { "type": "object", "description": "Admin-controlled feature toggles (requireStudentApproval, allowPublicRegistration, allowGoogleAuth, allowManualEmailAuth, enableQuizzes, enableExamAntiCheat, enableHandouts, enablePointsSystem, enableNotifications, enableWhatsAppSupport, maintenanceMode)" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["teacherName", "teacherTitle", "profileImageUrl", "updatedAt"]

@@ -24,11 +24,17 @@ export function buildWhatsAppSupportUrl(
   return `https://wa.me/${target}?text=${encodeURIComponent(customMessage)}`;
 }
 
-export function isStudentApproved(user: UserProfile | null | undefined): boolean {
+export function isStudentApproved(
+  user: UserProfile | null | undefined,
+  siteConfig?: SiteConfig | null
+): boolean {
   if (!user) return false;
   if (user.role === 'teacher') return true;
+  if (user.isBlocked) return false;
+  if (user.approvalStatus === 'rejected') return false;
+  if (siteConfig?.featureFlags?.requireStudentApproval === false) return true;
   if (user.approvalStatus === 'approved') return true;
-  if (user.approvalStatus === 'pending' || user.approvalStatus === 'rejected') return false;
+  if (user.approvalStatus === 'pending') return false;
   // Backward compatibility: legacy student accounts created before approval gating had profileCompleted=true and no approvalStatus field
   return Boolean(user.profileCompleted);
 }

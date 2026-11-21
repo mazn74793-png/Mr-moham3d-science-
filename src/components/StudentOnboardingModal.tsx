@@ -11,7 +11,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { GradeLevel, UserProfile } from '../types';
-import { SiteConfig, getResolvedGrades } from '../types/siteConfig';
+import { SiteConfig, getResolvedGrades, getResolvedFeatureFlags } from '../types/siteConfig';
 import { useLanguage } from '../context/LanguageContext';
 import { buildWhatsAppSupportUrl } from '../utils/whatsapp';
 
@@ -61,6 +61,7 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
   onCancel,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const featureFlags = getResolvedFeatureFlags(siteConfig);
   const resolvedGrades = getResolvedGrades(siteConfig);
   const [name, setName] = useState(currentUser.name || '');
   const [grade, setGrade] = useState<GradeLevel>(
@@ -87,6 +88,13 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
       return;
     }
 
+    const nextApprovalStatus: UserProfile['approvalStatus'] =
+      currentUser.approvalStatus === 'rejected'
+        ? 'rejected'
+        : currentUser.approvalStatus === 'approved' || !featureFlags.requireStudentApproval
+        ? 'approved'
+        : 'pending';
+
     const updated: UserProfile = {
       ...currentUser,
       name: name.trim(),
@@ -95,7 +103,7 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
       parentPhone: parentPhone.trim(),
       governorate,
       profileCompleted: true,
-      approvalStatus: currentUser.approvalStatus === 'approved' ? 'approved' : 'pending',
+      approvalStatus: nextApprovalStatus,
       score: currentUser.score ?? 0,
       watchedLectureIds: currentUser.watchedLectureIds || [],
       passedQuizIds: currentUser.passedQuizIds || [],
@@ -270,25 +278,31 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
             <div className="flex items-start gap-2.5">
               <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
               <span>
-                {lang === 'en'
-                  ? 'After saving, the admin reviews & approves your account before platform access unlocks.'
-                  : 'بعد الحفظ يتم إرسال طلبك لمراجعة الإدارة وتفعيل الحساب، ويمكنك التواصل مع الدعم لتسريع التفعيل.'}
+                {featureFlags.requireStudentApproval
+                  ? lang === 'en'
+                    ? 'After saving, the admin reviews & approves your account before platform access unlocks.'
+                    : 'بعد الحفظ يتم إرسال طلبك لمراجعة الإدارة وتفعيل الحساب، ويمكنك التواصل مع الدعم لتسريع التفعيل.'
+                  : lang === 'en'
+                  ? 'After saving, your account activates immediately so you can enter Student Portal right away.'
+                  : 'بعد الحفظ يتم تفعيل حسابك تلقائياً وتفتح لك منصة الطالب مباشرة.'}
               </span>
             </div>
-            <a
-              href={buildWhatsAppSupportUrl(
-                siteConfig,
-                lang === 'en'
-                  ? `Hello Support, I just registered (${name || currentUser.name}) and need help activating my account.`
-                  : `السلام عليكم فريق الدعم، قمت بتسجيل حسابي (${name || currentUser.name}) وأرجو المراجعة والتفعيل.`
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 transition-colors"
-            >
-              <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{lang === 'en' ? 'WhatsApp Support' : 'واتساب الدعم'}</span>
-            </a>
+            {featureFlags.enableWhatsAppSupport && (
+              <a
+                href={buildWhatsAppSupportUrl(
+                  siteConfig,
+                  lang === 'en'
+                    ? `Hello Support, I just registered (${name || currentUser.name}) and need help activating my account.`
+                    : `السلام عليكم فريق الدعم، قمت بتسجيل حسابي (${name || currentUser.name}) وأرجو المراجعة والتفعيل.`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 transition-colors"
+              >
+                <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{lang === 'en' ? 'WhatsApp Support' : 'واتساب الدعم'}</span>
+              </a>
+            )}
           </div>
 
           {/* Submit */}
@@ -298,9 +312,13 @@ export const StudentOnboardingModal: React.FC<StudentOnboardingModalProps> = ({
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>
-              {lang === 'en'
-                ? 'Save Details & Request Activation'
-                : 'حفظ البيانات وإرسال طلب التفعيل'}
+              {featureFlags.requireStudentApproval
+                ? lang === 'en'
+                  ? 'Save Details & Request Activation'
+                  : 'حفظ البيانات وإرسال طلب التفعيل'
+                : lang === 'en'
+                ? 'Save Details & Enter Platform'
+                : 'حفظ البيانات ودخول المنصة مباشرة'}
             </span>
           </button>
         </form>

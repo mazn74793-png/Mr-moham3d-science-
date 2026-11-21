@@ -353,7 +353,7 @@ const ALLOWED_SITE_CONFIG_KEYS: (keyof SiteConfig)[] = [
   'gradeFirstDescAr', 'gradeSecondTitleAr', 'gradeSecondTitleEn', 'gradeSecondBadgeAr',
   'gradeSecondDescAr', 'gradeThirdTitleAr', 'gradeThirdTitleEn', 'gradeThirdBadgeAr',
   'gradeThirdDescAr', 'feature1Title', 'feature1Desc', 'feature2Title', 'feature2Desc',
-  'feature3Title', 'feature3Desc', 'feature4Title', 'feature4Desc',
+  'feature3Title', 'feature3Desc', 'feature4Title', 'feature4Desc', 'featureFlags',
 ];
 
 export interface AdminCloudConfig {
@@ -843,7 +843,10 @@ export async function saveStudentToCloud(
             unlockedAttachmentIds: [],
             claimedRewardIds: [],
             pointsHistory: [],
-            approvalStatus: student.role === 'teacher' ? 'approved' : 'pending',
+            approvalStatus:
+              student.role === 'teacher' || student.approvalStatus === 'approved'
+                ? 'approved'
+                : 'pending',
           };
 
       await setDoc(ref, {

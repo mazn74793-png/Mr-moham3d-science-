@@ -161,6 +161,44 @@ export interface SiteConfig {
   feature3Desc: string;
   feature4Title: string;
   feature4Desc: string;
+
+  // Dynamic Platform Feature Toggles (controlled from Admin Dashboard)
+  featureFlags?: Partial<PlatformFeatureFlags>;
+}
+
+export interface PlatformFeatureFlags {
+  requireStudentApproval: boolean;
+  allowPublicRegistration: boolean;
+  allowGoogleAuth: boolean;
+  allowManualEmailAuth: boolean;
+  enableQuizzes: boolean;
+  enableExamAntiCheat: boolean;
+  enableHandouts: boolean;
+  enablePointsSystem: boolean;
+  enableNotifications: boolean;
+  enableWhatsAppSupport: boolean;
+  maintenanceMode: boolean;
+}
+
+export const DEFAULT_FEATURE_FLAGS: PlatformFeatureFlags = {
+  requireStudentApproval: true,
+  allowPublicRegistration: true,
+  allowGoogleAuth: true,
+  allowManualEmailAuth: true,
+  enableQuizzes: true,
+  enableExamAntiCheat: true,
+  enableHandouts: true,
+  enablePointsSystem: true,
+  enableNotifications: true,
+  enableWhatsAppSupport: true,
+  maintenanceMode: false,
+};
+
+export function getResolvedFeatureFlags(siteConfig?: SiteConfig | null): PlatformFeatureFlags {
+  return {
+    ...DEFAULT_FEATURE_FLAGS,
+    ...(siteConfig?.featureFlags || {}),
+  };
 }
 
 export const DEFAULT_TEACHER_PORTRAIT = '/assets/aistudio/2023-removebg-preview_ecfeb13b.png';
@@ -228,6 +266,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   feature4Title: '⚡ متابعة 24/7 مع مستر محمد',
   feature4Desc:
     'فريق عمل متكامل للرد الفوري على كل الأسئلة والمسائل الصعبة ومتابعة ولي الأمر عبر واتساب.',
+  featureFlags: DEFAULT_FEATURE_FLAGS,
 };
 
 export function getResolvedGrades(siteConfig?: SiteConfig): GradeItem[] {

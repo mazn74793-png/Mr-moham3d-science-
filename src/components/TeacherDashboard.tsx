@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
-  Users, Shield, ShieldCheck, ShieldAlert, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck
+  Users, Shield, ShieldCheck, ShieldAlert, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck, SlidersHorizontal
 } from 'lucide-react';
 import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCode, PointReward, PlatformNotification, ExamSecurityAlert } from '../types';
 import { SiteConfig, getResolvedGrades, DEFAULT_TEACHER_PORTRAIT } from '../types/siteConfig';
@@ -33,6 +33,8 @@ const loadNotificationsTab = () =>
   import('./teacher/NotificationsTab').then((m) => ({ default: m.NotificationsTab }));
 const loadExamAlertsTab = () =>
   import('./teacher/ExamAlertsTab').then((m) => ({ default: m.ExamAlertsTab }));
+const loadFeatureControlsTab = () =>
+  import('./teacher/FeatureControlsTab').then((m) => ({ default: m.FeatureControlsTab }));
 const loadLinkPasswordSetup = () =>
   import('./LinkPasswordSetup').then((m) => ({ default: m.LinkPasswordSetup }));
 
@@ -48,6 +50,7 @@ const SiteCustomizerTab = lazy(loadSiteCustomizerTab);
 const PointsCodesTab = lazy(loadPointsCodesTab);
 const NotificationsTab = lazy(loadNotificationsTab);
 const ExamAlertsTab = lazy(loadExamAlertsTab);
+const FeatureControlsTab = lazy(loadFeatureControlsTab);
 const LinkPasswordSetup = lazy(loadLinkPasswordSetup);
 
 interface TeacherDashboardProps {
@@ -109,6 +112,7 @@ export type TeacherDashboardTab =
   | 'files'
   | 'academic-years'
   | 'co-admins'
+  | 'feature-controls'
   | 'site-customizer'
   | 'cloudinary';
 
@@ -218,6 +222,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         break;
       case 'co-admins':
         loadCoAdminsTab().catch(() => {});
+        break;
+      case 'feature-controls':
+        loadFeatureControlsTab().catch(() => {});
         break;
       case 'site-customizer':
         loadSiteCustomizerTab().catch(() => {});
@@ -639,6 +646,53 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="px-2 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                 {isEn ? 'Platform & Brand' : 'إدارة المنصة وهوية الموقع'}
               </div>
+
+              <button
+                type="button"
+                onMouseEnter={() => prefetchTab('feature-controls')}
+                onFocus={() => prefetchTab('feature-controls')}
+                onClick={() => {
+                  setActiveTab('feature-controls');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                  activeTab === 'feature-controls'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : siteForm.featureFlags?.maintenanceMode
+                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <SlidersHorizontal
+                    className={`w-4 h-4 ${
+                      activeTab === 'feature-controls'
+                        ? 'text-white'
+                        : siteForm.featureFlags?.maintenanceMode
+                        ? 'text-rose-500'
+                        : 'text-teal-500'
+                    }`}
+                  />
+                  <span>{isEn ? 'Feature Toggles' : 'تفعيل وإغلاق الوظائف'}</span>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activeTab === 'feature-controls'
+                      ? 'bg-white/20 text-white'
+                      : siteForm.featureFlags?.maintenanceMode
+                      ? 'bg-rose-600 text-white'
+                      : 'bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300'
+                  }`}
+                >
+                  {siteForm.featureFlags?.maintenanceMode
+                    ? isEn
+                      ? 'Maint.'
+                      : 'صيانة'
+                    : isEn
+                    ? 'Live'
+                    : 'تحكم'}
+                </span>
+              </button>
 
               <button
                 type="button"
@@ -1149,6 +1203,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               authorName={siteForm.teacherName ? `أ/ ${siteForm.teacherName}` : 'أ/ محمد مصطفى'}
               onSaveNotification={async (n) => (onSaveNotification ? await onSaveNotification(n) : false)}
               onDeleteNotification={async (id) => (onDeleteNotification ? await onDeleteNotification(id) : false)}
+            />
+          )}
+
+          {activeTab === 'feature-controls' && (
+            <FeatureControlsTab
+              siteConfig={siteConfig}
+              siteForm={siteForm}
+              setSiteForm={setSiteForm}
+              onSaveSiteConfig={onSaveSiteConfig}
+              pendingApprovalsCount={pendingApprovalsCount}
+              onNavigateToStudents={() => setActiveTab('all-students')}
             />
           )}
 
