@@ -225,14 +225,20 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
   ): Promise<boolean> => {
     const cleanUnits = nextUnits
       .filter((u) => u.id !== '__uncategorized__')
-      .map((u, idx) => ({
-        id: u.id,
-        titleAr: u.titleAr.trim(),
-        titleEn: u.titleEn?.trim() || undefined,
-        descriptionAr: u.descriptionAr?.trim() || undefined,
-        isIndependent: u.isIndependent !== false,
-        order: idx + 1,
-      }));
+      .map((u, idx) => {
+        const cleanLegacy = Array.isArray(u.legacyTitles)
+          ? Array.from(new Set(u.legacyTitles.map((t) => t.trim()).filter(Boolean))).slice(-10)
+          : undefined;
+        return {
+          id: u.id,
+          titleAr: u.titleAr.trim(),
+          titleEn: u.titleEn?.trim() || undefined,
+          descriptionAr: u.descriptionAr?.trim() || undefined,
+          isIndependent: u.isIndependent !== false,
+          order: idx + 1,
+          legacyTitles: cleanLegacy && cleanLegacy.length > 0 ? cleanLegacy : undefined,
+        };
+      });
 
     const nextGrades = resolvedGrades.map((g) =>
       g.id === targetGradeId ? { ...g, units: cleanUnits } : g
@@ -321,17 +327,53 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
       setEditingUnitId(null);
       return;
     }
+
+    const lecturesInUnit = getLecturesInUnit(listGradeLectures, unit);
+    const previousTitle = unit.titleAr.trim();
+    const nextLegacyTitles = Array.from(
+      new Set([
+        ...(unit.legacyTitles || []),
+        ...(previousTitle && previousTitle !== clean ? [previousTitle] : []),
+      ])
+    ).slice(-10);
+
     const currentUnits = listGradeUnits.filter((u) => u.id !== '__uncategorized__');
     const existsInExplicit = currentUnits.some((u) => u.id === unit.id);
     const baseList = existsInExplicit ? currentUnits : [...currentUnits, unit];
-    const nextUnits = baseList.map((u) => (u.id === unit.id ? { ...u, titleAr: clean } : u));
+    const nextUnits = baseList.map((u) =>
+      u.id === unit.id
+        ? {
+            ...u,
+            titleAr: clean,
+            legacyTitles: nextLegacyTitles.length > 0 ? nextLegacyTitles : u.legacyTitles,
+          }
+        : u
+    );
+
     const ok = await persistUnitsForGrade(
       selectedListGrade,
       nextUnits,
-      `تم تعديل اسم الوحدة إلى "${clean}".`
+      `تم تعديل اسم الوحدة إلى "${clean}" مع الحفاظ على جميع المحاضرات (${lecturesInUnit.length}).`
     );
+
     if (ok) {
       setEditingUnitId(null);
+      if (onUpdateLecture && lecturesInUnit.length > 0) {
+        const toSync = lecturesInUnit.filter(
+          (lec) => lec.unitId !== unit.id || lec.chapter.trim() !== clean
+        );
+        if (toSync.length > 0) {
+          await Promise.all(
+            toSync.map((lec) =>
+              onUpdateLecture({
+                ...lec,
+                unitId: unit.id !== '__uncategorized__' ? unit.id : undefined,
+                chapter: clean,
+              })
+            )
+          );
+        }
+      }
     }
   };
 
@@ -1736,20 +1778,33 @@ export const LecturesTab: React.FC<LecturesTabProps> = ({
                       <input
                         type="text"
                         value={editingUnitTitle}
+                        disabled={savingUnit}
                         onChange={(e) => setEditingUnitTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (!savingUnit) handleRenameUnit(unit);
+                          } else if (e.key === 'Escape') {
+                            setEditingUnitId(null);
+                          }
+                        }}
                         className="px-3 py-1.5 text-xs rounded-lg border border-teal-400 bg-white dark:bg-slate-800 min-w-[180px]"
                       />
                       <button
                         type="button"
+                        disabled={savingUnit}
                         onClick={() => handleRenameUnit(unit)}
-                        className="p-1.5 rounded-lg bg-teal-600 text-white cursor-pointer"
+                        className="p-1.5 rounded-lg bg-teal-600 text-white cursor-pointer disabled:opacity-50"
+                        title="حفظ الاسم الجديد"
                       >
                         <Check className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
+                        disabled={savingUnit}
                         onClick={() => setEditingUnitId(null)}
-                        className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                        className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer disabled:opacity-50"
+                        title="إلغاء"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>

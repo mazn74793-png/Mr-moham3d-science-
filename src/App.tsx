@@ -24,6 +24,7 @@ import {
 } from './types';
 import { SiteConfig, DEFAULT_SITE_CONFIG, DEFAULT_TEACHER_PORTRAIT, getGradeDisplayName } from './types/siteConfig';
 import { LinkPasswordSetup } from './components/LinkPasswordSetup';
+import { DashboardLayoutSkeleton } from './components/teacher/DashboardSkeleton';
 import {
   auth,
   db,
@@ -197,6 +198,7 @@ export default function App() {
   });
 
   const [students, setStudents] = useState<UserProfile[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
 
   const [cloudinaryConfig, setCloudinaryConfig] = useState<CloudinaryConfig>(
     INITIAL_CLOUDINARY_CONFIG
@@ -841,6 +843,7 @@ export default function App() {
 
     if (userIsAdmin) {
       let cancelled = false;
+      setStudentsLoading(true);
 
       const attachAdminListeners = async () => {
         if (!activeFbUser.emailVerified) {
@@ -849,10 +852,14 @@ export default function App() {
             await activeFbUser.getIdToken(true);
           } catch {}
         }
-        if (cancelled) return;
+        if (cancelled) {
+          setStudentsLoading(false);
+          return;
+        }
 
         const refreshedUser = auth.currentUser || activeFbUser;
         if (!refreshedUser.emailVerified) {
+          setStudentsLoading(false);
           const msg =
             lang === 'en'
               ? `Account (${refreshedUser.email}) is not email-verified yet, so cloud security rules block reading students & admin settings. Verify your email or sign in with Google.`
@@ -916,11 +923,13 @@ export default function App() {
           onSnapshot(
             collection(db, 'students'),
             (snap) => {
+              setStudentsLoading(false);
               setStudentsSyncError(null);
               const list = snap.docs.map((d) => d.data() as UserProfile);
               setStudents(list);
             },
             (error) => {
+              setStudentsLoading(false);
               console.warn('Students admin listener error:', error.message);
               const details = extractFirestoreErrorDetails(error);
               setStudentsSyncError(
@@ -1014,6 +1023,7 @@ export default function App() {
 
       return () => {
         cancelled = true;
+        setStudentsLoading(false);
         unsubscribers.forEach((unsub) => unsub());
       };
     } else {
@@ -2340,7 +2350,7 @@ export default function App() {
           )}
 
         {!shouldPromptPasswordLink && currentView === 'teacher' && isUserAdmin(currentUser) && (
-          <Suspense fallback={<ViewLoadingFallback />}>
+          <Suspense fallback={<DashboardLayoutSkeleton />}>
             <TeacherDashboard
               initialTab={teacherInitialTab}
               lectures={lectures}
@@ -2356,6 +2366,7 @@ export default function App() {
               onUpdateQuiz={handleUpdateQuiz}
               onDeleteQuiz={handleDeleteQuiz}
               students={students}
+              studentsLoading={studentsLoading}
               onUpdateStudent={handleAdminUpdateStudent}
               onDeleteStudent={handleAdminDeleteStudent}
               onAddStudent={handleAdminAddStudent}

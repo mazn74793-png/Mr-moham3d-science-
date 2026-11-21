@@ -15,16 +15,28 @@ export function slugifyUnitId(title: string): string {
   return clean ? `unit_${clean.slice(0, 24)}_${suffix}` : `unit_${suffix}`;
 }
 
-export function lectureBelongsToUnit(lec: Lecture, unit: GradeUnit): boolean {
-  if (lec.unitId && lec.unitId === unit.id) return true;
-  if (lec.unitId && lec.unitId !== unit.id) {
-    // Only fallback to chapter match if no unitId matches elsewhere; strict id match preferred
-    return false;
+export function deriveChapterUnitId(title?: string): string {
+  const chKey = normalizeUnitKey(title || '');
+  return chKey ? `chapter_${chKey.replace(/\s+/g, '_').slice(0, 32)}` : '';
+}
+
+function unitMatchesChapterKey(lecChapter: string | undefined, unit: GradeUnit): boolean {
+  const lecKey = normalizeUnitKey(lecChapter || '');
+  if (!lecKey) return unit.id === '__uncategorized__';
+  if (normalizeUnitKey(unit.titleAr) === lecKey) return true;
+  if (
+    Array.isArray(unit.legacyTitles) &&
+    unit.legacyTitles.some((legacy) => normalizeUnitKey(legacy) === lecKey)
+  ) {
+    return true;
   }
-  const lecKey = normalizeUnitKey(lec.chapter || '');
-  const unitKey = normalizeUnitKey(unit.titleAr);
-  if (!lecKey && unit.id === '__uncategorized__') return true;
-  return lecKey !== '' && lecKey === unitKey;
+  const derivedId = deriveChapterUnitId(lecChapter);
+  return Boolean(derivedId && derivedId === unit.id);
+}
+
+export function lectureBelongsToUnit(lec: Lecture, unit: GradeUnit): boolean {
+  if (lec.unitId) return lec.unitId === unit.id;
+  return unitMatchesChapterKey(lec.chapter, unit);
 }
 
 /**
@@ -45,7 +57,17 @@ export function resolveUnitsForGrade(
 
   const result: GradeUnit[] = [...explicitUnits];
   const knownIds = new Set(result.map((u) => u.id));
-  const knownTitles = new Set(result.map((u) => normalizeUnitKey(u.titleAr)));
+  const knownTitles = new Set<string>();
+  for (const u of result) {
+    const tKey = normalizeUnitKey(u.titleAr);
+    if (tKey) knownTitles.add(tKey);
+    if (Array.isArray(u.legacyTitles)) {
+      for (const lt of u.legacyTitles) {
+        const lKey = normalizeUnitKey(lt);
+        if (lKey) knownTitles.add(lKey);
+      }
+    }
+  }
 
   // Discover any existing lecture chapters/unitIds not yet in explicitUnits
   for (const lec of gradeLectures) {
@@ -56,7 +78,7 @@ export function resolveUnitsForGrade(
       continue;
     }
 
-    if (chKey && knownTitles.has(chKey)) {
+    if (!lec.unitId && chKey && knownTitles.has(chKey)) {
       continue;
     }
 
@@ -74,7 +96,7 @@ export function resolveUnitsForGrade(
       continue;
     }
 
-    const derivedId = lec.unitId || `chapter_${chKey.replace(/\s+/g, '_').slice(0, 32)}`;
+    const derivedId = lec.unitId || deriveChapterUnitId(chTitle);
     if (!knownIds.has(derivedId)) {
       knownIds.add(derivedId);
       if (chKey) knownTitles.add(chKey);
@@ -101,20 +123,26 @@ export function getUnitForLecture(lec: Lecture, units: GradeUnit[]): GradeUnit |
   if (!chKey) {
     return units.find((u) => u.id === '__uncategorized__');
   }
-  return units.find((u) => normalizeUnitKey(u.titleAr) === chKey);
+  const byTitle = units.find((u) => normalizeUnitKey(u.titleAr) === chKey);
+  if (byTitle) return byTitle;
+
+  const byLegacyTitle = units.find(
+    (u) =>
+      Array.isArray(u.legacyTitles) &&
+      u.legacyTitles.some((legacy) => normalizeUnitKey(legacy) === chKey)
+  );
+  if (byLegacyTitle) return byLegacyTitle;
+
+  const derivedId = deriveChapterUnitId(lec.chapter);
+  if (derivedId) {
+    return units.find((u) => u.id === derivedId);
+  }
+  return undefined;
 }
 
 export function getLecturesInUnit(gradeLectures: Lecture[], unit: GradeUnit): Lecture[] {
-  const unitKey = normalizeUnitKey(unit.titleAr);
   return gradeLectures
-    .filter((lec) => {
-      if (lec.unitId) {
-        return lec.unitId === unit.id;
-      }
-      const lecKey = normalizeUnitKey(lec.chapter || '');
-      if (!lecKey && unit.id === '__uncategorized__') return true;
-      return lecKey !== '' && lecKey === unitKey;
-    })
+    .filter((lec) => lectureBelongsToUnit(lec, unit))
     .sort(
       (a, b) =>
         (a.sessionOrder ?? 9999) - (b.sessionOrder ?? 9999) ||

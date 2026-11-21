@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback, useDeferredValue } from 'react';
 import { 
   Trophy, Users, UserX, UserCheck, MessageSquare, Phone, 
-  Search, Filter, ExternalLink, Sparkles, Award, ArrowUpRight, 
+  Search, Filter, ExternalLink, Sparkles, Award, ArrowUpRight, ArrowUp,
   CheckCircle2, AlertTriangle, ShieldCheck, Edit3, Trash2, RotateCcw, 
   UserPlus, X, Check, AlertCircle, RefreshCw, Ban, Unlock, Lock, KeyRound, ShieldAlert, Plus,
   Clock3, XCircle, MessageCircle
@@ -9,6 +9,12 @@ import {
 import { UserProfile, GradeLevel, Lecture, Quiz, AttachmentFile } from '../types';
 import { DEFAULT_GRADES, GradeItem } from '../types/siteConfig';
 import { isStudentApproved, normalizeWhatsAppDigits } from '../utils/whatsapp';
+import { StudentListSkeleton } from './teacher/DashboardSkeleton';
+
+const DEFAULT_ROW_HEIGHT = 74;
+const DEFAULT_EXPANDED_DRAWER_HEIGHT = 420;
+const VIRTUAL_OVERSCAN = 6;
+const PENDING_PREVIEW_LIMIT = 6;
 
 interface TeacherReportsManagerProps {
   students: UserProfile[];
@@ -20,6 +26,7 @@ interface TeacherReportsManagerProps {
   onDeleteStudent?: (studentId: string) => Promise<boolean> | boolean | void;
   onAddStudent?: (student: UserProfile) => Promise<boolean> | boolean | void;
   studentsSyncError?: string | null;
+  studentsLoading?: boolean;
   onRetryCloudSync?: () => Promise<void> | void;
 }
 
@@ -33,10 +40,12 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   onDeleteStudent,
   onAddStudent,
   studentsSyncError = null,
+  studentsLoading = false,
   onRetryCloudSync,
 }) => {
   const [retryingSync, setRetryingSync] = useState(false);
   const [savingAction, setSavingAction] = useState(false);
+  const [showAllPendingPreview, setShowAllPendingPreview] = useState(false);
 
   const handleRetrySyncClick = async () => {
     if (!onRetryCloudSync || retryingSync) return;
@@ -47,15 +56,28 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
       setRetryingSync(false);
     }
   };
-  const resolvedGrades = grades && grades.length > 0 ? grades : DEFAULT_GRADES;
-  const getGradeLabel = (gradeId?: string) => {
-    if (!gradeId) return 'غير محدد';
-    const found = resolvedGrades.find((g) => g.id === gradeId);
-    return found?.badgeAr || found?.titleAr || gradeId;
-  };
+  const resolvedGrades = useMemo(
+    () => (grades && grades.length > 0 ? grades : DEFAULT_GRADES),
+    [grades]
+  );
+  const gradeLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const g of resolvedGrades) {
+      map[g.id] = g.badgeAr || g.titleAr || g.id;
+    }
+    return map;
+  }, [resolvedGrades]);
+  const getGradeLabel = useCallback(
+    (gradeId?: string) => {
+      if (!gradeId) return 'غير محدد';
+      return gradeLabelMap[gradeId] || gradeId;
+    },
+    [gradeLabelMap]
+  );
   const [filterGrade, setFilterGrade] = useState<GradeLevel | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'active' | 'absent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
 
   // Inline feedback banner
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -226,36 +248,65 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     }
   };
 
-  // Only consider student role (exclude teacher)
-  const allStudents = students.filter((s) => s.role !== 'teacher');
-  const pendingStudents = allStudents.filter((s) => s.approvalStatus === 'pending');
-
-  // Filter students
-  const filteredStudents = allStudents.filter((std) => {
-    if (filterGrade !== 'all' && std.grade !== filterGrade) return false;
-
-    const watchedCount = std.watchedLectureIds?.length || 0;
-    if (filterStatus === 'pending' && std.approvalStatus !== 'pending') return false;
-    if (filterStatus === 'rejected' && std.approvalStatus !== 'rejected') return false;
-    if (filterStatus === 'approved' && !isStudentApproved(std)) return false;
-    if (filterStatus === 'active' && watchedCount === 0) return false;
-    if (filterStatus === 'absent' && watchedCount > 0) return false;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = std.name?.toLowerCase().includes(q);
-      const matchPhone = std.phone?.includes(q) || std.parentPhone?.includes(q);
-      const matchEmail = std.email?.toLowerCase().includes(q);
-      if (!matchName && !matchPhone && !matchEmail) return false;
+  // Precompute O(1) lecture count map by grade
+  const lecturesCountByGrade = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const lec of lectures) {
+      counts[lec.grade] = (counts[lec.grade] || 0) + 1;
     }
+    return counts;
+  }, [lectures]);
 
-    return true;
-  });
+  // Only consider student role (exclude teacher)
+  const allStudents = useMemo(
+    () => students.filter((s) => s.role !== 'teacher'),
+    [students]
+  );
+
+  const pendingStudents = useMemo(
+    () => allStudents.filter((s) => s.approvalStatus === 'pending'),
+    [allStudents]
+  );
+
+  const visiblePendingPreview = useMemo(
+    () => (showAllPendingPreview ? pendingStudents : pendingStudents.slice(0, PENDING_PREVIEW_LIMIT)),
+    [pendingStudents, showAllPendingPreview]
+  );
+
+  // Filter students with deferred search query for smooth typing at scale
+  const filteredStudents = useMemo(() => {
+    const q = deferredSearch.toLowerCase().trim();
+    return allStudents.filter((std) => {
+      if (filterGrade !== 'all' && std.grade !== filterGrade) return false;
+
+      const watchedCount = std.watchedLectureIds?.length || 0;
+      if (filterStatus === 'pending' && std.approvalStatus !== 'pending') return false;
+      if (filterStatus === 'rejected' && std.approvalStatus !== 'rejected') return false;
+      if (filterStatus === 'approved' && !isStudentApproved(std)) return false;
+      if (filterStatus === 'active' && watchedCount === 0) return false;
+      if (filterStatus === 'absent' && watchedCount > 0) return false;
+
+      if (q) {
+        const matchName = std.name?.toLowerCase().includes(q);
+        const matchPhone = std.phone?.includes(q) || std.parentPhone?.includes(q);
+        const matchEmail = std.email?.toLowerCase().includes(q);
+        if (!matchName && !matchPhone && !matchEmail) return false;
+      }
+
+      return true;
+    });
+  }, [allStudents, filterGrade, filterStatus, deferredSearch]);
 
   // Calculate high-level stats
-  const totalStudents = allStudents.length;
-  const activeStudents = allStudents.filter((s) => (s.watchedLectureIds?.length || 0) > 0).length;
-  const absentStudents = totalStudents - activeStudents;
+  const { totalStudents, activeStudents, absentStudents } = useMemo(() => {
+    const total = allStudents.length;
+    const active = allStudents.filter((s) => (s.watchedLectureIds?.length || 0) > 0).length;
+    return {
+      totalStudents: total,
+      activeStudents: active,
+      absentStudents: total - active,
+    };
+  }, [allStudents]);
 
   const buildStudentDirectWhatsAppUrl = (student: UserProfile): string | null => {
     const raw = (student.phone || student.parentPhone || '').replace(/\D/g, '');
@@ -266,10 +317,170 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
   };
 
   // Leaderboard: Top 5 students based on real scores
-  const topStudents = [...allStudents]
-    .filter(s => (s.score ?? 0) > 0)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, 5);
+  const topStudents = useMemo(
+    () =>
+      [...allStudents]
+        .filter((s) => (s.score ?? 0) > 0)
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, 5),
+    [allStudents]
+  );
+
+  // Virtualization state & refs for high-traffic student table
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const rowElementsRef = useRef<Record<string, { main: HTMLTableRowElement | null; drawer: HTMLTableRowElement | null }>>({});
+  const rowHeightsRef = useRef<Record<string, number>>({});
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(560);
+  const [measureVersion, setMeasureVersion] = useState(0);
+
+  const registerMainRowRef = useCallback((studentId: string) => (el: HTMLTableRowElement | null) => {
+    if (!rowElementsRef.current[studentId]) {
+      rowElementsRef.current[studentId] = { main: el, drawer: null };
+    } else {
+      rowElementsRef.current[studentId].main = el;
+    }
+  }, []);
+
+  const registerDrawerRowRef = useCallback((studentId: string) => (el: HTMLTableRowElement | null) => {
+    if (!rowElementsRef.current[studentId]) {
+      rowElementsRef.current[studentId] = { main: null, drawer: el };
+    } else {
+      rowElementsRef.current[studentId].drawer = el;
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      if (el.clientHeight > 0) {
+        setViewportHeight(el.clientHeight);
+      }
+    };
+    updateSize();
+
+    let rafId = 0;
+    const handleScroll = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setScrollTop(el.scrollTop);
+      });
+    };
+
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateSize);
+      resizeObserver.observe(el);
+    }
+
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (resizeObserver) resizeObserver.disconnect();
+    };
+  }, [filteredStudents.length, studentsLoading]);
+
+  // Reset scroll to top when filters/search change
+  useEffect(() => {
+    setScrollTop(0);
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTop = 0;
+    }
+  }, [filterGrade, filterStatus, deferredSearch]);
+
+  const virtualWindow = useMemo(() => {
+    const total = filteredStudents.length;
+    if (total === 0) {
+      return {
+        startIndex: 0,
+        endIndex: -1,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+        visibleStudents: [] as UserProfile[],
+      };
+    }
+
+    const heights = new Array<number>(total);
+    const offsets = new Array<number>(total + 1);
+    offsets[0] = 0;
+
+    for (let i = 0; i < total; i++) {
+      const std = filteredStudents[i];
+      const measured = rowHeightsRef.current[std.id];
+      const isExpanded = controllingStudentId === std.id;
+      const fallback = isExpanded
+        ? DEFAULT_ROW_HEIGHT + DEFAULT_EXPANDED_DRAWER_HEIGHT
+        : DEFAULT_ROW_HEIGHT;
+      const h = measured && (!isExpanded || measured > DEFAULT_ROW_HEIGHT + 40) ? measured : fallback;
+      heights[i] = h;
+      offsets[i + 1] = offsets[i] + h;
+    }
+
+    const totalHeight = offsets[total];
+    const targetTop = Math.max(0, scrollTop);
+    const targetBottom = targetTop + viewportHeight;
+
+    // Binary search for first visible row
+    let lo = 0;
+    let hi = total - 1;
+    let firstVisible = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (offsets[mid + 1] <= targetTop) {
+        lo = mid + 1;
+      } else {
+        firstVisible = mid;
+        hi = mid - 1;
+      }
+    }
+
+    // Binary search for last visible row
+    lo = firstVisible;
+    hi = total - 1;
+    let lastVisible = firstVisible;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (offsets[mid] < targetBottom) {
+        lastVisible = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    const startIndex = Math.max(0, firstVisible - VIRTUAL_OVERSCAN);
+    const endIndex = Math.min(total - 1, lastVisible + VIRTUAL_OVERSCAN);
+
+    return {
+      startIndex,
+      endIndex,
+      topSpacerHeight: offsets[startIndex],
+      bottomSpacerHeight: Math.max(0, totalHeight - offsets[endIndex + 1]),
+      visibleStudents: filteredStudents.slice(startIndex, endIndex + 1),
+    };
+  }, [filteredStudents, scrollTop, viewportHeight, controllingStudentId, measureVersion]);
+
+  // Measure rendered visible rows so dynamic heights & expanded drawers stay accurate
+  useEffect(() => {
+    let changed = false;
+    for (const std of virtualWindow.visibleStudents) {
+      const refs = rowElementsRef.current[std.id];
+      if (!refs) continue;
+      const mainH = refs.main?.offsetHeight || 0;
+      const drawerH = controllingStudentId === std.id ? refs.drawer?.offsetHeight || 0 : 0;
+      const combined = mainH + drawerH;
+      if (combined > 0 && Math.abs((rowHeightsRef.current[std.id] || 0) - combined) > 2) {
+        rowHeightsRef.current[std.id] = combined;
+        changed = true;
+      }
+    }
+    if (changed) {
+      setMeasureVersion((v) => v + 1);
+    }
+  }, [virtualWindow.visibleStudents, controllingStudentId]);
 
   // Build WhatsApp URL for parent follow-up report
   const buildParentWhatsAppUrl = (student: UserProfile): string | null => {
@@ -277,8 +488,7 @@ export const TeacherReportsManager: React.FC<TeacherReportsManagerProps> = ({
     if (!parentPhoneClean) return null;
 
     const watchedCount = student.watchedLectureIds?.length || 0;
-    const gradeLecs = lectures.filter((l) => l.grade === student.grade);
-    const totalLecs = gradeLecs.length || 1;
+    const totalLecs = (student.grade ? lecturesCountByGrade[student.grade] : 0) || 1;
     const avgScore = student.score ?? 0;
     const isAttending = watchedCount > 0;
 
@@ -497,7 +707,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {pendingStudents.map((std) => {
+            {visiblePendingPreview.map((std) => {
               const directWa = buildStudentDirectWhatsAppUrl(std);
               return (
                 <div
@@ -565,6 +775,23 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
               );
             })}
           </div>
+
+          {pendingStudents.length > PENDING_PREVIEW_LIMIT && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-amber-800 dark:text-amber-300 font-sans">
+                {showAllPendingPreview
+                  ? `عرض جميع الطلبات (${pendingStudents.length})`
+                  : `يتم عرض أول ${PENDING_PREVIEW_LIMIT} طلبات من أصل ${pendingStudents.length} للحفاظ على سرعة التصفح`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAllPendingPreview((prev) => !prev)}
+                className="px-3 py-1.5 rounded-xl bg-amber-400/30 hover:bg-amber-400/50 text-amber-950 dark:text-amber-200 text-xs font-bold cursor-pointer"
+              >
+                {showAllPendingPreview ? 'عرض أقل' : `عرض باقي الطلبات (${pendingStudents.length - PENDING_PREVIEW_LIMIT}+)`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -967,32 +1194,78 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
           </div>
         )}
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-kufi">
-                <th className="py-3 px-3">الطالب</th>
-                <th className="py-3 px-3">الصف</th>
-                <th className="py-3 px-3">هاتف الطالب</th>
-                <th className="py-3 px-3">هاتف ولي الأمر</th>
-                <th className="py-3 px-3">الحصص المشاهدة</th>
-                <th className="py-3 px-3">النقاط</th>
-                <th className="py-3 px-3">التقييم</th>
-                <th className="py-3 px-3">حالة الحضور</th>
-                <th className="py-3 px-3 text-center">إجراءات الإدارة والمتابعة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredStudents.map((std) => {
-                const watchedCount = std.watchedLectureIds?.length || 0;
-                const gradeLecs = lectures.filter((l) => l.grade === std.grade);
-                const totalLecs = gradeLecs.length || 1;
-                const isAttending = watchedCount > 0;
+        {/* Virtualized Table Section */}
+        {studentsLoading && allStudents.length === 0 && !studentsSyncError ? (
+          <StudentListSkeleton rows={8} />
+        ) : (
+          <div className="space-y-3">
+            {filteredStudents.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-[11px] font-sans text-slate-600 dark:text-slate-300">
+                <span className="tabular-nums">
+                  عرض الطلاب{' '}
+                  <strong className="font-mono text-teal-700 dark:text-teal-300">
+                    {virtualWindow.startIndex + 1}–{Math.min(virtualWindow.endIndex + 1, filteredStudents.length)}
+                  </strong>{' '}
+                  من إجمالي{' '}
+                  <strong className="font-mono text-slate-900 dark:text-white">
+                    {filteredStudents.length}
+                  </strong>{' '}
+                  طالب
+                </span>
+                {scrollTop > 220 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-teal-700 dark:text-teal-300 font-bold hover:bg-teal-50 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <ArrowUp className="w-3 h-3" />
+                    <span>العودة لأعلى</span>
+                  </button>
+                )}
+              </div>
+            )}
 
-                return (
-                  <React.Fragment key={std.id}>
-                  <tr className={`transition-colors ${std.isBlocked ? 'bg-rose-50/40 dark:bg-rose-950/20' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}>
+            <div
+              ref={tableScrollRef}
+              className="max-h-[620px] overflow-y-auto overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800"
+            >
+              <table className="w-full text-right text-xs">
+                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 shadow-2xs">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-kufi">
+                    <th className="py-3 px-3">الطالب</th>
+                    <th className="py-3 px-3">الصف</th>
+                    <th className="py-3 px-3">هاتف الطالب</th>
+                    <th className="py-3 px-3">هاتف ولي الأمر</th>
+                    <th className="py-3 px-3">الحصص المشاهدة</th>
+                    <th className="py-3 px-3">النقاط</th>
+                    <th className="py-3 px-3">التقييم</th>
+                    <th className="py-3 px-3">حالة الحضور</th>
+                    <th className="py-3 px-3 text-center">إجراءات الإدارة والمتابعة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {virtualWindow.topSpacerHeight > 0 && (
+                    <tr aria-hidden="true" className="border-0">
+                      <td
+                        colSpan={9}
+                        className="p-0 border-0"
+                        style={{ height: `${virtualWindow.topSpacerHeight}px` }}
+                      />
+                    </tr>
+                  )}
+                  {virtualWindow.visibleStudents.map((std) => {
+                    const watchedCount = std.watchedLectureIds?.length || 0;
+                    const totalLecs = (std.grade ? lecturesCountByGrade[std.grade] : 0) || 1;
+                    const isAttending = watchedCount > 0;
+
+                    return (
+                      <React.Fragment key={std.id}>
+                      <tr
+                        ref={registerMainRowRef(std.id)}
+                        className={`transition-colors ${std.isBlocked ? 'bg-rose-50/40 dark:bg-rose-950/20' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}
+                      >
                     
                     {/* Student Info */}
                     <td className="py-3.5 px-3">
@@ -1254,7 +1527,7 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
 
                   {/* EXPANDED ADMIN STUDENT CONTROL DRAWER */}
                   {controllingStudentId === std.id && onUpdateStudent && (
-                    <tr>
+                    <tr ref={registerDrawerRowRef(std.id)}>
                       <td colSpan={9} className="p-4 bg-slate-50/90 dark:bg-slate-900/90 border-b border-teal-200 dark:border-teal-800">
                         <div className="rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-5">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -1509,6 +1782,15 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
                   </React.Fragment>
                 );
               })}
+              {virtualWindow.bottomSpacerHeight > 0 && (
+                <tr aria-hidden="true" className="border-0">
+                  <td
+                    colSpan={9}
+                    className="p-0 border-0"
+                    style={{ height: `${virtualWindow.bottomSpacerHeight}px` }}
+                  />
+                </tr>
+              )}
             </tbody>
           </table>
 
@@ -1547,6 +1829,8 @@ ${isAttending ? 'نشكر الطالب على اجتهاده ونتمنى له �
             </div>
           )}
         </div>
+        </div>
+        )}
 
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   Plus, Video, FileText, Cloud, AlertCircle, ChevronRight, Palette, Award, Trophy,
   Users, Shield, ShieldCheck, ShieldAlert, GraduationCap, LayoutDashboard, Menu, X, ExternalLink, Ticket, Bell, RefreshCw, MailCheck
@@ -7,19 +7,48 @@ import { Lecture, AttachmentFile, CloudinaryConfig, Quiz, UserProfile, RedeemCod
 import { SiteConfig, getResolvedGrades, DEFAULT_TEACHER_PORTRAIT } from '../types/siteConfig';
 import { auth, hasPasswordLinked, resendVerificationEmail } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
-import { TeacherQuizManager } from './TeacherQuizManager';
-import { TeacherReportsManager } from './TeacherReportsManager';
-import { OverviewTab } from './teacher/OverviewTab';
-import { LecturesTab } from './teacher/LecturesTab';
-import { FilesTab } from './teacher/FilesTab';
-import { AcademicYearsTab } from './teacher/AcademicYearsTab';
-import { CoAdminsTab } from './teacher/CoAdminsTab';
-import { CloudinaryTab } from './teacher/CloudinaryTab';
-import { SiteCustomizerTab } from './teacher/SiteCustomizerTab';
-import { PointsCodesTab } from './teacher/PointsCodesTab';
-import { NotificationsTab } from './teacher/NotificationsTab';
-import { ExamAlertsTab } from './teacher/ExamAlertsTab';
-import { LinkPasswordSetup } from './LinkPasswordSetup';
+import { TeacherTabSkeleton } from './teacher/DashboardSkeleton';
+
+const loadTeacherQuizManager = () =>
+  import('./TeacherQuizManager').then((m) => ({ default: m.TeacherQuizManager }));
+const loadTeacherReportsManager = () =>
+  import('./TeacherReportsManager').then((m) => ({ default: m.TeacherReportsManager }));
+const loadOverviewTab = () =>
+  import('./teacher/OverviewTab').then((m) => ({ default: m.OverviewTab }));
+const loadLecturesTab = () =>
+  import('./teacher/LecturesTab').then((m) => ({ default: m.LecturesTab }));
+const loadFilesTab = () =>
+  import('./teacher/FilesTab').then((m) => ({ default: m.FilesTab }));
+const loadAcademicYearsTab = () =>
+  import('./teacher/AcademicYearsTab').then((m) => ({ default: m.AcademicYearsTab }));
+const loadCoAdminsTab = () =>
+  import('./teacher/CoAdminsTab').then((m) => ({ default: m.CoAdminsTab }));
+const loadCloudinaryTab = () =>
+  import('./teacher/CloudinaryTab').then((m) => ({ default: m.CloudinaryTab }));
+const loadSiteCustomizerTab = () =>
+  import('./teacher/SiteCustomizerTab').then((m) => ({ default: m.SiteCustomizerTab }));
+const loadPointsCodesTab = () =>
+  import('./teacher/PointsCodesTab').then((m) => ({ default: m.PointsCodesTab }));
+const loadNotificationsTab = () =>
+  import('./teacher/NotificationsTab').then((m) => ({ default: m.NotificationsTab }));
+const loadExamAlertsTab = () =>
+  import('./teacher/ExamAlertsTab').then((m) => ({ default: m.ExamAlertsTab }));
+const loadLinkPasswordSetup = () =>
+  import('./LinkPasswordSetup').then((m) => ({ default: m.LinkPasswordSetup }));
+
+const TeacherQuizManager = lazy(loadTeacherQuizManager);
+const TeacherReportsManager = lazy(loadTeacherReportsManager);
+const OverviewTab = lazy(loadOverviewTab);
+const LecturesTab = lazy(loadLecturesTab);
+const FilesTab = lazy(loadFilesTab);
+const AcademicYearsTab = lazy(loadAcademicYearsTab);
+const CoAdminsTab = lazy(loadCoAdminsTab);
+const CloudinaryTab = lazy(loadCloudinaryTab);
+const SiteCustomizerTab = lazy(loadSiteCustomizerTab);
+const PointsCodesTab = lazy(loadPointsCodesTab);
+const NotificationsTab = lazy(loadNotificationsTab);
+const ExamAlertsTab = lazy(loadExamAlertsTab);
+const LinkPasswordSetup = lazy(loadLinkPasswordSetup);
 
 interface TeacherDashboardProps {
   initialTab?: TeacherDashboardTab;
@@ -59,6 +88,7 @@ interface TeacherDashboardProps {
   onSaveNotification?: (notif: PlatformNotification) => Promise<boolean>;
   onDeleteNotification?: (id: string) => Promise<boolean>;
   studentsSyncError?: string | null;
+  studentsLoading?: boolean;
   adminCloudError?: string | null;
   lastCloudError?: string | null;
   onRetryCloudSync?: () => Promise<void> | void;
@@ -122,6 +152,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onSaveNotification,
   onDeleteNotification,
   studentsSyncError = null,
+  studentsLoading = false,
   adminCloudError = null,
   lastCloudError = null,
   onRetryCloudSync,
@@ -131,10 +162,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 }) => {
   const { lang } = useLanguage();
   const isEn = lang === 'en';
-  const unresolvedExamAlertsCount = examAlerts.filter((a) => !a.resolved).length;
-  const pendingApprovalsCount = students.filter(
-    (s) => s.role !== 'teacher' && s.approvalStatus === 'pending'
-  ).length;
+  const unresolvedExamAlertsCount = useMemo(
+    () => examAlerts.filter((a) => !a.resolved).length,
+    [examAlerts]
+  );
+  const { nonTeacherStudentsCount, pendingApprovalsCount } = useMemo(() => {
+    let total = 0;
+    let pending = 0;
+    for (const s of students) {
+      if (s.role !== 'teacher') {
+        total++;
+        if (s.approvalStatus === 'pending') pending++;
+      }
+    }
+    return { nonTeacherStudentsCount: total, pendingApprovalsCount: pending };
+  }, [students]);
+
   const [activeTab, setActiveTab] = useState<TeacherDashboardTab>(initialTab || 'overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -142,6 +185,48 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [retryingSync, setRetryingSync] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationSentMsg, setVerificationSentMsg] = useState<string | null>(null);
+
+  const prefetchTab = (tab: TeacherDashboardTab) => {
+    switch (tab) {
+      case 'overview':
+        loadOverviewTab().catch(() => {});
+        break;
+      case 'all-students':
+        loadTeacherReportsManager().catch(() => {});
+        break;
+      case 'exam-alerts':
+        loadExamAlertsTab().catch(() => {});
+        break;
+      case 'points-codes':
+        loadPointsCodesTab().catch(() => {});
+        break;
+      case 'notifications':
+        loadNotificationsTab().catch(() => {});
+        break;
+      case 'upload-lecture':
+      case 'lectures-list':
+        loadLecturesTab().catch(() => {});
+        break;
+      case 'quizzes-bank':
+        loadTeacherQuizManager().catch(() => {});
+        break;
+      case 'files':
+        loadFilesTab().catch(() => {});
+        break;
+      case 'academic-years':
+        loadAcademicYearsTab().catch(() => {});
+        break;
+      case 'co-admins':
+        loadCoAdminsTab().catch(() => {});
+        break;
+      case 'site-customizer':
+        loadSiteCustomizerTab().catch(() => {});
+        break;
+      case 'cloudinary':
+        loadCloudinaryTab().catch(() => {});
+        break;
+    }
+  };
 
   const handleTriggerRetrySync = async () => {
     if (!onRetryCloudSync || retryingSync) return;
@@ -184,10 +269,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setSiteForm(siteConfig);
   }, [siteConfig]);
 
-  const resolvedGrades = getResolvedGrades(siteForm);
+  const resolvedGrades = useMemo(() => getResolvedGrades(siteForm), [siteForm]);
 
-  // Storage quota calculations
-  const totalUsedMB = (() => {
+  // Storage quota calculations (memoized for high-traffic render stability)
+  const { totalUsedMB, totalUsedGB, remainingGB, usedPercentage } = useMemo(() => {
     let total = 0;
     attachments.forEach((file) => {
       const raw = (file.fileSize || '').trim().toLowerCase();
@@ -203,14 +288,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     lectures.forEach((lec) => {
       if (lec.videoUrl) total += 125.0;
     });
-    return total;
-  })();
-
-  const totalUsedGB = Number((totalUsedMB / 1024).toFixed(2));
-  const remainingGB = Number(Math.max(0, CLOUDINARY_TOTAL_QUOTA_GB - totalUsedGB).toFixed(2));
-  const usedPercentage = Number(
-    Math.min(100, (totalUsedGB / CLOUDINARY_TOTAL_QUOTA_GB) * 100).toFixed(1)
-  );
+    const usedGb = Number((total / 1024).toFixed(2));
+    const remGb = Number(Math.max(0, CLOUDINARY_TOTAL_QUOTA_GB - usedGb).toFixed(2));
+    const pct = Number(Math.min(100, (usedGb / CLOUDINARY_TOTAL_QUOTA_GB) * 100).toFixed(1));
+    return {
+      totalUsedMB: total,
+      totalUsedGB: usedGb,
+      remainingGB: remGb,
+      usedPercentage: pct,
+    };
+  }, [attachments, lectures]);
 
   return (
     <div className="min-h-screen bg-[#fafffb] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors w-full max-w-full overflow-x-hidden">
@@ -321,6 +408,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('overview')}
+                onFocus={() => prefetchTab('overview')}
                 onClick={() => {
                   setActiveTab('overview');
                   setIsMobileSidebarOpen(false);
@@ -340,6 +429,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('all-students')}
+                onFocus={() => prefetchTab('all-students')}
                 onClick={() => {
                   setActiveTab('all-students');
                   setIsMobileSidebarOpen(false);
@@ -363,13 +454,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </span>
                   )}
                   <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-slate-900 dark:text-amber-200 text-[10px] font-bold font-mono tabular-nums">
-                    {students.filter((s) => s.role !== 'teacher').length}
+                    {nonTeacherStudentsCount}
                   </span>
                 </div>
               </button>
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('points-codes')}
+                onFocus={() => prefetchTab('points-codes')}
                 onClick={() => {
                   setActiveTab('points-codes');
                   setIsMobileSidebarOpen(false);
@@ -391,6 +484,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('notifications')}
+                onFocus={() => prefetchTab('notifications')}
                 onClick={() => {
                   setActiveTab('notifications');
                   setIsMobileSidebarOpen(false);
@@ -412,6 +507,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('exam-alerts')}
+                onFocus={() => prefetchTab('exam-alerts')}
                 onClick={() => {
                   setActiveTab('exam-alerts');
                   setIsMobileSidebarOpen(false);
@@ -449,6 +546,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('upload-lecture')}
+                onFocus={() => prefetchTab('upload-lecture')}
                 onClick={() => {
                   setActiveTab('upload-lecture');
                   setIsMobileSidebarOpen(false);
@@ -468,6 +567,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('lectures-list')}
+                onFocus={() => prefetchTab('lectures-list')}
                 onClick={() => {
                   setActiveTab('lectures-list');
                   setIsMobileSidebarOpen(false);
@@ -489,6 +590,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('quizzes-bank')}
+                onFocus={() => prefetchTab('quizzes-bank')}
                 onClick={() => {
                   setActiveTab('quizzes-bank');
                   setIsMobileSidebarOpen(false);
@@ -510,6 +613,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('files')}
+                onFocus={() => prefetchTab('files')}
                 onClick={() => {
                   setActiveTab('files');
                   setIsMobileSidebarOpen(false);
@@ -537,6 +642,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('academic-years')}
+                onFocus={() => prefetchTab('academic-years')}
                 onClick={() => {
                   setActiveTab('academic-years');
                   setIsMobileSidebarOpen(false);
@@ -556,6 +663,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('co-admins')}
+                onFocus={() => prefetchTab('co-admins')}
                 onClick={() => {
                   setActiveTab('co-admins');
                   setIsMobileSidebarOpen(false);
@@ -577,6 +686,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('site-customizer')}
+                onFocus={() => prefetchTab('site-customizer')}
                 onClick={() => {
                   setActiveTab('site-customizer');
                   setIsMobileSidebarOpen(false);
@@ -596,6 +707,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
               <button
                 type="button"
+                onMouseEnter={() => prefetchTab('cloudinary')}
+                onFocus={() => prefetchTab('cloudinary')}
                 onClick={() => {
                   setActiveTab('cloudinary');
                   setIsMobileSidebarOpen(false);
@@ -824,6 +937,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
+          <Suspense fallback={<TeacherTabSkeleton tab={activeTab} />}>
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {auth.currentUser && !hasPasswordLinked(auth.currentUser) && (
@@ -884,7 +998,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </span>
                 </div>
                 <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono tabular-nums">
-                  {students.filter((s) => s.role !== 'teacher').length}{' '}
+                  {nonTeacherStudentsCount}{' '}
                   {isEn ? 'students' : 'طالب مسجل'}
                 </span>
               </div>
@@ -899,6 +1013,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 onDeleteStudent={onDeleteStudent}
                 onAddStudent={onAddStudent}
                 studentsSyncError={studentsSyncError}
+                studentsLoading={studentsLoading}
                 onRetryCloudSync={onRetryCloudSync}
               />
             </div>
@@ -935,7 +1050,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   ...student,
                   cancelledQuizIds: nextCancelled,
                   passedQuizIds: nextPassed,
-                      quizScores: nextScores,
+                  quizScores: nextScores,
                   quizViolations: nextViolations,
                   score: nextAvg,
                 });
@@ -1046,6 +1161,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               onSaveSiteConfig={onSaveSiteConfig}
             />
           )}
+          </Suspense>
         </main>
       </div>
     </div>

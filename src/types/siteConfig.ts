@@ -11,6 +11,7 @@ export interface GradeUnit {
   descriptionAr?: string;
   isIndependent?: boolean;
   order?: number;
+  legacyTitles?: string[];
 }
 
 export interface GradeItem {
