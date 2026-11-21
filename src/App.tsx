@@ -1224,17 +1224,20 @@ export default function App() {
       return false;
     }
 
-    if (!activeUser.emailVerified) {
+    const currentAuthUser = auth.currentUser || activeUser;
+    let tokenResult = await currentAuthUser.getIdTokenResult().catch(() => null);
+    if (!currentAuthUser.emailVerified || tokenResult?.claims?.email_verified !== true) {
       try {
-        await reload(activeUser);
-        await activeUser.getIdToken(true);
+        await reload(currentAuthUser);
+        await currentAuthUser.getIdToken(true);
+        tokenResult = await currentAuthUser.getIdTokenResult(true).catch(() => null);
       } catch {}
-      const refreshedUser = auth.currentUser || activeUser;
-      if (!refreshedUser.emailVerified) {
+      const refreshedUser = auth.currentUser || currentAuthUser;
+      if (!refreshedUser.emailVerified || tokenResult?.claims?.email_verified !== true) {
         const msg =
           lang === 'en'
-            ? `Cannot save to cloud because (${refreshedUser.email}) is not email-verified yet. Click the verification link in your email or sign in once with Google.`
-            : `لا يمكن الحفظ في السحابة لأن بريد هذا الحساب (${refreshedUser.email}) غير مؤكد بعد. قم بتأكيد البريد من رسالتك أو سجل الدخول بحساب Google مرة واحدة.`;
+            ? `Cannot save to cloud because (${refreshedUser.email}) does not have an email-verified token yet. Click the verification link in your email or sign in once with Google.`
+            : `لا يمكن الحفظ في السحابة لأن بريد هذا الحساب (${refreshedUser.email}) غير مؤكد في توكن الجلسة بعد. قم بتأكيد البريد من رسالتك أو سجل الدخول بحساب Google مرة واحدة.`;
         setLastCloudWriteError(msg);
         setLastCloudError(msg);
         setAdminCloudError(msg);
@@ -1295,12 +1298,22 @@ export default function App() {
           return true;
         } catch (retryErr) {
           const retryDetails = extractFirestoreErrorDetails(retryErr);
-          console.error('Cloud write error after token refresh:', retryErr);
+          const freshTokenRes = await auth.currentUser.getIdTokenResult().catch(() => null);
+          const claimVerified = String(freshTokenRes?.claims?.email_verified ?? 'unknown');
+          const signInProvider = String(
+            (freshTokenRes?.claims?.firebase as { sign_in_provider?: string } | undefined)
+              ?.sign_in_provider ?? 'unknown'
+          );
+          console.error('Cloud write error after token refresh:', retryErr, {
+            claimEmail: freshTokenRes?.claims?.email,
+            claimVerified,
+            signInProvider,
+          });
           const pathHint = retryDetails.path ? ` (${retryDetails.path})` : '';
           const msg = retryDetails.isPermissionDenied
             ? lang === 'en'
-              ? `Cloud rejected write${pathHint} for (${auth.currentUser?.email}): ${retryDetails.rawMessage}`
-              : `رفضت السحابة الحفظ${pathHint} لحساب (${auth.currentUser?.email}): تأكد من تأكيد البريد، وصلاحية المشرف، وصحة الحقول (${retryDetails.rawMessage}).`
+              ? `Cloud rejected write${pathHint} for (${auth.currentUser?.email}) [verified=${claimVerified}, provider=${signInProvider}]: ${retryDetails.rawMessage}`
+              : `رفضت السحابة الحفظ${pathHint} لحساب (${auth.currentUser?.email}) [التأكيد=${claimVerified}، المزود=${signInProvider}]: ${retryDetails.rawMessage}.`
             : lang === 'en'
             ? `Cloud save failed${pathHint}: ${retryDetails.rawMessage}`
             : `تعذر الحفظ في السحابة${pathHint}: ${retryDetails.rawMessage}`;
